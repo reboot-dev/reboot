@@ -2,7 +2,7 @@
 title: Schedule Future Work with `ref.schedule(when=...)`
 impact: MEDIUM
 impactDescription: Without scheduling, deferred work has to live in external timers
-tags: scheduling, schedule, timedelta, datetime, deferred, async
+tags: scheduling, schedule, timedelta, datetime, deferred, async, task, task id, cancel
 ---
 
 ## Schedule Future Work with `ref.schedule(when=...)`
@@ -97,3 +97,93 @@ schedule is still there and will fire.
 
 If the scheduled method raises a `<Method>Aborted`, Reboot surfaces it as
 the error result — the scheduled invocation does not retry by default.
+
+## Keeping a Task's Id
+
+`schedule(...).method(context)` returns the task's id, a
+`reboot.api.TaskId`, and `spawn().method(context)` (inside a workflow)
+returns a `<Service>.<Method>Task` handle whose `task_id` is one. A
+`TaskId` is a `Model` (`state_id` and `task_uuid`, both `str`), so it
+is stored in state or returned in a response like any other nested
+model. To get back to the task later, build its handle with
+`<Service>.<Method>Task.retrieve(context, task_id=...)` and `await`
+it for the task's response. `<Method>` is the PascalCase form of the
+method name (`generate_report` → `GenerateReportTask`).
+
+```python
+from reboot.api import Field, Model, TaskId
+from typing import Optional
+
+
+class ReportState(Model):
+    generate_task_id: Optional[TaskId] = Field(tag=1, default=None)
+```
+
+```python
+class ReportServicer(Report.Servicer):
+
+    async def start(
+        self, context: WriterContext, request: Report.StartRequest,
+    ) -> None:
+        self.state.generate_task_id = (
+            await self.ref().schedule().generate(context)
+        )
+
+    async def generate_task_id(
+        self, context: ReaderContext,
+    ) -> Report.GenerateTaskIdResponse:
+        return Report.GenerateTaskIdResponse(
+            task_id=self.state.generate_task_id,
+        )
+```
+
+Anything that gets hold of the id, e.g. a test through the reader, can
+wait for the task's response:
+
+```python
+task_id = (await report.generate_task_id(context)).task_id
+response = await Report.GenerateTask.retrieve(context, task_id=task_id)
+```
+
+## Cancelling a Scheduled or Spawned Task
+
+A task whose id you kept (see "Keeping a Task's Id" above) can be
+cancelled: build its handle with
+`<Service>.<Method>Task.retrieve(context, task_id=...)` and
+`await handle.cancel()`. A handle from `spawn()` cancels the same way.
+
+```python
+    async def stop(self, context: WriterContext) -> None:
+        if self.state.generate_task_id is not None:
+            await Report.GenerateTask.retrieve(
+                context,
+                task_id=self.state.generate_task_id,
+            ).cancel()
+            self.state.generate_task_id = None
+```
+
+What `cancel()` does depends on the context it is called with:
+
+- **From a writer or transaction**, cancelling is an _effect_, like
+  scheduling: it is requested only once the method's effects commit.
+  A method that aborts after calling `cancel()` cancels nothing, and
+  the effect-validation re-run cancels only once. `cancel()` returns
+  right away; the task is cancelled shortly after the commit.
+- **From a workflow, or from a test's `ExternalContext`** (an admin
+  operation; see "Cancelling a Task from a Test" in
+  `testing-external-context.md`), the cancellation is requested
+  immediately and `cancel()` returns once the task has finished.
+- **From a reader**, `cancel()` raises: a reader can not have effects.
+
+Cancelling a task that already finished leaves it as is. A cancelled
+task's method sees an `asyncio.CancelledError`; a workflow should let
+it propagate (see "How a Workflow Exits" in `servicer-workflow.md`).
+`await`ing the handle of a cancelled task raises an `Aborted` whose
+`error` is `Cancelled`.
+
+> **Critical:** a cancellation requested by a writer or transaction
+> is sent after the effects are stored but is not itself stored, so
+> an application that stops in that window leaves the task running.
+> Guard anything that must not happen after cancellation with a state
+> flag the task checks, as in "Stopping a Recurring Schedule" in
+> `scheduling-recurring.md`.

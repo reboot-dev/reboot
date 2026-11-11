@@ -79,9 +79,12 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":channel_manager_py",
         ":contextvars_py",
         ":tasks_cache_py",
         "//reboot:run_environments_py",
+        "//reboot/aio:caller_id_py",
+        "//reboot/aio:task_handles_py",
         "//reboot/aio:tasks_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
@@ -110,6 +113,7 @@ py_library(
     deps = [
         ":tasks_cache_py",
         "//reboot/aio:concurrently_py",
+        "//reboot/aio:contexts_py",
         "//reboot/aio:state_managers_py",
         "//reboot/aio:tasks_py",
         "//reboot/aio/auth:admin_auth_py",

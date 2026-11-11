@@ -506,6 +506,26 @@ py_library(
 )
 
 py_library(
+    name = "task_handles_py",
+    srcs = ["task_handles.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":caller_id_py",
+        ":contexts_py",
+        ":external_py",
+        ":headers_py",
+        ":stubs_py",
+        ":types_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+    ],
+)
+
+py_library(
     name = "tasks_py",
     srcs = ["tasks.py"],
     srcs_version = "PY3",

@@ -66,6 +66,7 @@ import reboot.aio.placement as IMPORT_reboot_aio_placement
 import reboot.aio.servicers as IMPORT_reboot_aio_servicers
 import reboot.aio.state_managers as IMPORT_reboot_aio_state_managers
 import reboot.aio.stubs as IMPORT_reboot_aio_stubs
+import reboot.aio.task_handles as IMPORT_reboot_aio_task_handles
 import reboot.aio.tasks as IMPORT_reboot_aio_tasks
 import reboot.aio.types as IMPORT_reboot_aio_types
 import reboot.aio.external as IMPORT_reboot_aio_external
@@ -1099,6 +1100,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            channel_manager=channel_manager,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -3955,6 +3957,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
@@ -4896,6 +4899,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
@@ -5566,6 +5570,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     IMPORT_reboot_aio_state_managers.Effects(
                         state=state,
                         response=response,
+                        task_ids_to_cancel=context._task_ids_to_cancel,
                     )
                 )
                 return response
@@ -7235,6 +7240,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
@@ -9525,6 +9531,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
@@ -10009,6 +10016,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 state=state,
                 response=response,
                 tasks=context._tasks,
+                task_ids_to_cancel=context._task_ids_to_cancel,
                 _colocated_upserts=context._colocated_upserts,
             )
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
@@ -11136,6 +11144,7 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     IMPORT_reboot_aio_state_managers.Effects(
                         state=state,
                         response=response,
+                        task_ids_to_cancel=context._task_ids_to_cancel,
                     )
                 )
                 return response
@@ -15106,11 +15115,12 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: IMPORT_typing.Optional[IMPORT_google_protobuf_message.Message] = None,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
     # For 'tests.reboot.GreeterMethods.Create'.
     class CreateEffects(Effects):
@@ -15122,12 +15132,13 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: tests.reboot.greeter_pb2.CreateResponse,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
             IMPORT_reboot_aio_types.assert_type(response, [tests.reboot.greeter_pb2.CreateResponse])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
 
 
@@ -15141,12 +15152,13 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: tests.reboot.greeter_pb2.SetAdjectiveResponse,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
             IMPORT_reboot_aio_types.assert_type(response, [tests.reboot.greeter_pb2.SetAdjectiveResponse])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
 
 
@@ -15163,12 +15175,13 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: google.protobuf.empty_pb2.Empty,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
             IMPORT_reboot_aio_types.assert_type(response, [google.protobuf.empty_pb2.Empty])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
 
 
@@ -15185,12 +15198,13 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: google.protobuf.empty_pb2.Empty,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
             IMPORT_reboot_aio_types.assert_type(response, [google.protobuf.empty_pb2.Empty])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
 
     # For 'tests.reboot.GreeterMethods.StoreRecursiveMessage'.
@@ -15203,12 +15217,13 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             state: tests.reboot.greeter_pb2.Greeter,
             response: tests.reboot.greeter_pb2.StoreRecursiveMessageResponse,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
+            task_ids_to_cancel: IMPORT_typing.Optional[list[IMPORT_rbt_v1alpha1.tasks_pb2.TaskId]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
         ):
             IMPORT_reboot_aio_types.assert_type(state, [tests.reboot.greeter_pb2.Greeter])
             IMPORT_reboot_aio_types.assert_type(response, [tests.reboot.greeter_pb2.StoreRecursiveMessageResponse])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, task_ids_to_cancel=task_ids_to_cancel, _colocated_upserts=_colocated_upserts)
 
 
 
@@ -17930,11 +17945,15 @@ class Greeter:
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("tests.reboot.Greeter")
 
-    class CreateTask:
+    class CreateTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -17952,18 +17971,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -18162,11 +18170,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class GreetTask:
+    class GreetTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -18184,18 +18196,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -18393,11 +18394,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class SetAdjectiveTask:
+    class SetAdjectiveTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -18415,18 +18420,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -18625,11 +18619,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TransactionSetAdjectiveTask:
+    class TransactionSetAdjectiveTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -18647,18 +18645,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -18856,11 +18843,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TryToConstructContextTask:
+    class TryToConstructContextTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -18878,18 +18869,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -19087,11 +19067,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TryToConstructExternalContextTask:
+    class TryToConstructExternalContextTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -19109,18 +19093,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -19318,11 +19291,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TestLongRunningFetchTask:
+    class TestLongRunningFetchTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -19340,18 +19317,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -19549,11 +19515,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class TestLongRunningWriterTask:
+    class TestLongRunningWriterTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -19571,18 +19541,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -19781,11 +19740,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class GetWholeStateTask:
+    class GetWholeStateTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -19803,18 +19766,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -20012,11 +19964,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class FailWithExceptionTask:
+    class FailWithExceptionTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -20034,18 +19990,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -20243,11 +20188,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class FailWithAbortedTask:
+    class FailWithAbortedTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -20265,18 +20214,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -20483,11 +20421,15 @@ class Greeter:
                 return True
             return False
 
-    class WorkflowTask:
+    class WorkflowTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -20505,18 +20447,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -20723,11 +20654,15 @@ class Greeter:
                 return True
             return False
 
-    class DangerousFieldsTask:
+    class DangerousFieldsTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -20745,18 +20680,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -20955,11 +20879,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class StoreRecursiveMessageTask:
+    class StoreRecursiveMessageTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -20977,18 +20905,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -21187,11 +21104,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class ReadRecursiveMessageTask:
+    class ReadRecursiveMessageTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -21209,18 +21130,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -21418,11 +21328,15 @@ class Greeter:
         ) -> bool:
             return False
 
-    class ConstructAndStoreRecursiveMessageTask:
+    class ConstructAndStoreRecursiveMessageTask(IMPORT_reboot_aio_task_handles.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to cancel the task (see
+        `reboot.aio.task_handles.TaskHandle.cancel()`).
         """
 
         @classmethod
@@ -21440,18 +21354,7 @@ class Greeter:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
+            super().__init__(context, task_id=task_id)
 
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -26749,13 +26652,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Greet(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26778,7 +26682,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Greet(
                     __request__,
@@ -26786,6 +26690,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26858,13 +26764,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).SetAdjective(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26887,7 +26794,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SetAdjective(
                     __request__,
@@ -26895,6 +26802,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26967,13 +26876,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TransactionSetAdjective(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26996,7 +26906,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TransactionSetAdjective(
                     __request__,
@@ -27004,6 +26914,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27062,13 +26974,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TryToConstructContext(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27091,7 +27004,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TryToConstructContext(
                     __request__,
@@ -27099,6 +27012,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27157,13 +27072,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TryToConstructExternalContext(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27186,7 +27102,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TryToConstructExternalContext(
                     __request__,
@@ -27194,6 +27110,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27258,13 +27176,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TestLongRunningFetch(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27287,7 +27206,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TestLongRunningFetch(
                     __request__,
@@ -27295,6 +27214,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27353,13 +27274,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TestLongRunningWriter(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27382,7 +27304,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TestLongRunningWriter(
                     __request__,
@@ -27390,6 +27312,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27448,13 +27372,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).GetWholeState(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27477,7 +27402,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).GetWholeState(
                     __request__,
@@ -27485,6 +27410,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27543,13 +27470,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailWithException(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27572,7 +27500,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailWithException(
                     __request__,
@@ -27580,6 +27508,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27638,13 +27568,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailWithAborted(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27667,7 +27598,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailWithAborted(
                     __request__,
@@ -27675,6 +27606,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27733,13 +27666,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Workflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27762,7 +27696,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Workflow(
                     __request__,
@@ -27770,6 +27704,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27874,13 +27810,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).DangerousFields(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27903,7 +27840,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DangerousFields(
                     __request__,
@@ -27911,6 +27848,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27975,13 +27914,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).StoreRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28004,7 +27944,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).StoreRecursiveMessage(
                     __request__,
@@ -28012,6 +27952,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28070,13 +28012,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ReadRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28099,7 +28042,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ReadRecursiveMessage(
                     __request__,
@@ -28107,6 +28050,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28171,13 +28116,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ConstructAndStoreRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28200,7 +28146,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ConstructAndStoreRecursiveMessage(
                     __request__,
@@ -28208,6 +28154,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
