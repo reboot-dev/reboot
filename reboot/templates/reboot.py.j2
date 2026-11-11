@@ -4762,6 +4762,22 @@ class {{ client.proto.state_name }}:
         will soon be).
         """
 
+        {% if options.proto.pydantic %}
+        @classmethod
+        def retrieve(
+            cls,
+            context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
+            *,
+            task_id: IMPORT_reboot_api.TaskId,
+        ):
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
+                    task_id,
+                ),
+            )
+        {% else %}
         @classmethod
         def retrieve(
             cls,
@@ -4770,6 +4786,7 @@ class {{ client.proto.state_name }}:
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ):
             return cls(context, task_id=task_id)
+        {% endif %}
 
         def __init__(
             self,
@@ -4790,9 +4807,15 @@ class {{ client.proto.state_name }}:
             self._channel_manager = context.channel_manager
             self._task_id = task_id
 
+        {% if options.proto.pydantic %}
+        @property
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
+        {% else %}
         @property
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
             return self._task_id
+        {% endif %}
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}]:
             """Awaits for task to finish and returns its response."""
@@ -6141,7 +6164,7 @@ class {{ client.proto.state_name }}:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 ...
 
             @IMPORT_typing.overload
@@ -6159,7 +6182,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 ...
             {% endif %}
 
@@ -6180,7 +6203,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -6252,7 +6275,11 @@ class {{ client.proto.state_name }}:
                     bearer_token=__bearer_token__,
                 )
 
+                {% if options.proto.pydantic %}
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
+                {% else %}
                 return __task_id__
+                {% endif %}
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -6297,7 +6324,7 @@ class {{ client.proto.state_name }}:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 ...
 
             @IMPORT_typing.overload
@@ -6315,7 +6342,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 ...
             {% endif %}
 
@@ -6336,7 +6363,7 @@ class {{ client.proto.state_name }}:
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> {% if options.proto.pydantic %}IMPORT_reboot_api.TaskId{% else %}IMPORT_rbt_v1alpha1.tasks_pb2.TaskId{% endif %}:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -6378,7 +6405,7 @@ class {{ client.proto.state_name }}:
                 {% endif %}
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await {{ client.proto.state_name }}ServicerTasks(
+                    __writer_task_id__ = (await {{ client.proto.state_name }}ServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).{{ method.proto.name }}(
@@ -6387,6 +6414,11 @@ class {{ client.proto.state_name }}:
                         {% endif %}
                         schedule=__this__._when,
                     )).task_id
+                    {% if options.proto.pydantic %}
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
+                    {% else %}
+                    return __writer_task_id__
+                    {% endif %}
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -6409,7 +6441,7 @@ class {{ client.proto.state_name }}:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).{{ method.proto.name }}(
                     {% if method.has_non_none_request %}
@@ -6419,6 +6451,12 @@ class {{ client.proto.state_name }}:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                {% if options.proto.pydantic %}
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
+                {% else %}
+                return __task_id__
+                {% endif %}
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

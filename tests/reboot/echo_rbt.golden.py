@@ -24183,13 +24183,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Reply(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24212,7 +24213,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Reply(
                     __request__,
@@ -24220,6 +24221,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24278,13 +24281,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Replay(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24307,7 +24311,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Replay(
                     __request__,
@@ -24315,6 +24319,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24379,13 +24385,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).WaitFor(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24408,7 +24415,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).WaitFor(
                     __request__,
@@ -24416,6 +24423,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24484,13 +24493,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).SearchAndReplace(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24513,7 +24523,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SearchAndReplace(
                     __request__,
@@ -24521,6 +24531,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24585,13 +24597,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailOnceShouldBeRetried(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24614,7 +24627,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailOnceShouldBeRetried(
                     __request__,
@@ -24622,6 +24635,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24686,13 +24701,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailOnceShouldBeRetriedWorkflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24715,7 +24731,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailOnceShouldBeRetriedWorkflow(
                     __request__,
@@ -24723,6 +24739,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24781,13 +24799,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TooManyTasks(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24810,7 +24829,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TooManyTasks(
                     __request__,
@@ -24818,6 +24837,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24876,13 +24897,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Hanging(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -24905,7 +24927,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Hanging(
                     __request__,
@@ -24913,6 +24935,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24971,13 +24995,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ReactiveWorkflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25000,7 +25025,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ReactiveWorkflow(
                     __request__,
@@ -25008,6 +25033,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25066,13 +25093,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ControlLoop(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25095,7 +25123,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ControlLoop(
                     __request__,
@@ -25103,6 +25131,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25161,13 +25191,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).AtMostOnceWorkflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25190,7 +25221,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).AtMostOnceWorkflow(
                     __request__,
@@ -25198,6 +25229,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25262,13 +25295,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).WorkflowCallingWorkflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25291,7 +25325,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).WorkflowCallingWorkflow(
                     __request__,
@@ -25299,6 +25333,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25357,13 +25393,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).RaiseValueError(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25386,7 +25423,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).RaiseValueError(
                     __request__,
@@ -25394,6 +25431,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25452,13 +25491,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).RaiseSpecifiedError(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25481,7 +25521,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).RaiseSpecifiedError(
                     __request__,
@@ -25489,6 +25529,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25553,13 +25595,14 @@ class Echo:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await EchoServicerTasks(
+                    __writer_task_id__ = (await EchoServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailingWorkflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25582,7 +25625,7 @@ class Echo:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailingWorkflow(
                     __request__,
@@ -25590,6 +25633,8 @@ class Echo:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
