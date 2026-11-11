@@ -212,6 +212,40 @@ LLM that runs through a scripted sequence of tool calls), an
 step gives the test a clean synchronization point — see the
 `ScriptedLibrarian` pattern in the next section.
 
+## Cancelling a Task from a Test
+
+The same handle cancels the task. From an `ExternalContext`,
+`cancel()` requests the cancellation right away and returns once the
+task has finished; `await`ing the handle afterwards raises an
+`Aborted` whose `error` is `Cancelled`. Cancelling from outside the
+application is an admin operation: set the `SECRET_REBOOT_ADMIN_TOKEN`
+environment variable for the test and pass the same value as the
+context's `bearer_token` (inside the application, a writer's or
+workflow's `cancel()` needs no token):
+
+```python
+import os
+from rbt.v1alpha1 import errors_pb2
+from reboot.aio.aborted import Aborted
+
+os.environ['SECRET_REBOOT_ADMIN_TOKEN'] = 'admin-secret'
+context = self.rbt.create_external_context(
+    name=self.id(), bearer_token='admin-secret',
+)
+
+task = Hello.WarningTask.retrieve(context, task_id=send_response.task_id)
+await task.cancel()
+
+with self.assertRaises(Aborted) as aborted:
+    await task
+self.assertIsInstance(aborted.exception.error, errors_pb2.Cancelled)
+```
+
+To test that a writer cancels a task only when it commits, call the
+writer and then `await` the task as above; an aborted writer leaves
+the task running, so `await`ing it would block (see "Cancelling a
+Scheduled or Spawned Task" in `scheduling-basic.md`).
+
 ## Mocking External Services and LLM Calls
 
 Three techniques cover almost every external integration:
