@@ -20205,9 +20205,15 @@ class Ping:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -20229,8 +20235,8 @@ class Ping:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DoPingResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20484,9 +20490,15 @@ class Ping:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -20508,8 +20520,8 @@ class Ping:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DoPingPeriodicallyResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20763,9 +20775,15 @@ class Ping:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -20787,8 +20805,8 @@ class Ping:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.DescribeResponse]:
             """Awaits for task to finish and returns its response."""
@@ -21042,9 +21060,15 @@ class Ping:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Ping'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -21066,8 +21090,8 @@ class Ping:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Ping.NumPingsResponse]:
             """Awaits for task to finish and returns its response."""
@@ -22267,7 +22291,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22307,7 +22331,7 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22319,7 +22343,7 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: Ping.DoPingPeriodicallyRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -22330,7 +22354,7 @@ class Ping:
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def DoPingPeriodically(
@@ -22341,7 +22365,7 @@ class Ping:
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22404,7 +22428,7 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22415,7 +22439,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22455,7 +22479,7 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22466,7 +22490,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22506,7 +22530,7 @@ class Ping:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22540,7 +22564,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22553,12 +22577,13 @@ class Ping:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PingServicerTasks(
+                    __writer_task_id__ = (await PingServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).DoPing(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -22581,13 +22606,15 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPing(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22599,7 +22626,7 @@ class Ping:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: Ping.DoPingPeriodicallyRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -22610,7 +22637,7 @@ class Ping:
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def DoPingPeriodically(
@@ -22621,7 +22648,7 @@ class Ping:
                 *,
                 num_pings: int | Unset = UNSET,
                 period_seconds: float | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22656,13 +22683,14 @@ class Ping:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PingServicerTasks(
+                    __writer_task_id__ = (await PingServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).DoPingPeriodically(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -22685,7 +22713,7 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPingPeriodically(
                     __request__,
@@ -22693,6 +22721,8 @@ class Ping:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22703,7 +22733,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22716,12 +22746,13 @@ class Ping:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PingServicerTasks(
+                    __writer_task_id__ = (await PingServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Describe(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -22744,13 +22775,15 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Describe(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -22761,7 +22794,7 @@ class Ping:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -22774,12 +22807,13 @@ class Ping:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PingServicerTasks(
+                    __writer_task_id__ = (await PingServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).NumPings(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -22802,13 +22836,15 @@ class Ping:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).NumPings(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -23681,9 +23717,15 @@ class Pong:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -23705,8 +23747,8 @@ class Pong:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Pong.DoPongResponse]:
             """Awaits for task to finish and returns its response."""
@@ -23961,9 +24003,15 @@ class Pong:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Pong'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -23985,8 +24033,8 @@ class Pong:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Pong.NumPongsResponse]:
             """Awaits for task to finish and returns its response."""
@@ -24873,7 +24921,7 @@ class Pong:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -24913,7 +24961,7 @@ class Pong:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24924,7 +24972,7 @@ class Pong:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -24964,7 +25012,7 @@ class Pong:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -24998,7 +25046,7 @@ class Pong:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -25011,12 +25059,13 @@ class Pong:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PongServicerTasks(
+                    __writer_task_id__ = (await PongServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).DoPong(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25039,13 +25088,15 @@ class Pong:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DoPong(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25056,7 +25107,7 @@ class Pong:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -25069,12 +25120,13 @@ class Pong:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await PongServicerTasks(
+                    __writer_task_id__ = (await PongServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).NumPongs(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -25097,13 +25149,15 @@ class Pong:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).NumPongs(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -25661,9 +25715,15 @@ class User:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -25685,8 +25745,8 @@ class User:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.CreateCounterResponse]:
             """Awaits for task to finish and returns its response."""
@@ -25940,9 +26000,15 @@ class User:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -25964,8 +26030,8 @@ class User:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.ListCountersResponse]:
             """Awaits for task to finish and returns its response."""
@@ -26219,9 +26285,15 @@ class User:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -26243,8 +26315,8 @@ class User:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, User.WhoamiResponse]:
             """Awaits for task to finish and returns its response."""
@@ -26498,9 +26570,15 @@ class User:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -26522,8 +26600,8 @@ class User:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
@@ -26777,9 +26855,15 @@ class User:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -26801,8 +26885,8 @@ class User:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
@@ -28025,7 +28109,7 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: User.CreateCounterRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -28035,7 +28119,7 @@ class User:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def CreateCounter(
@@ -28045,7 +28129,7 @@ class User:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28106,7 +28190,7 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28117,7 +28201,7 @@ class User:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28157,7 +28241,7 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28168,7 +28252,7 @@ class User:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28208,7 +28292,7 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28220,7 +28304,7 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: User.SetClaimsRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -28230,7 +28314,7 @@ class User:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def SetClaims(
@@ -28240,7 +28324,7 @@ class User:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28301,7 +28385,7 @@ class User:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28336,7 +28420,7 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: User.CreateCounterRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -28346,7 +28430,7 @@ class User:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def CreateCounter(
@@ -28356,7 +28440,7 @@ class User:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 description: str | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28389,13 +28473,14 @@ class User:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await UserServicerTasks(
+                    __writer_task_id__ = (await UserServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).CreateCounter(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28418,7 +28503,7 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).CreateCounter(
                     __request__,
@@ -28426,6 +28511,8 @@ class User:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28436,7 +28523,7 @@ class User:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28449,12 +28536,13 @@ class User:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await UserServicerTasks(
+                    __writer_task_id__ = (await UserServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ListCounters(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28477,13 +28565,15 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ListCounters(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28494,7 +28584,7 @@ class User:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28507,12 +28597,13 @@ class User:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await UserServicerTasks(
+                    __writer_task_id__ = (await UserServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Whoami(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28535,13 +28626,15 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Whoami(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28553,7 +28646,7 @@ class User:
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: User.SetClaimsRequest,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             @IMPORT_typing.overload
@@ -28563,7 +28656,7 @@ class User:
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 ...
 
             async def SetClaims(
@@ -28573,7 +28666,7 @@ class User:
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 *,
                 claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -28606,13 +28699,14 @@ class User:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await UserServicerTasks(
+                    __writer_task_id__ = (await UserServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).SetClaims(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28635,7 +28729,7 @@ class User:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SetClaims(
                     __request__,
@@ -28643,6 +28737,8 @@ class User:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -29858,9 +29954,15 @@ class Counter:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -29882,8 +29984,8 @@ class Counter:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
             """Awaits for task to finish and returns its response."""
@@ -30138,9 +30240,15 @@ class Counter:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -30162,8 +30270,8 @@ class Counter:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.IncrementResponse]:
             """Awaits for task to finish and returns its response."""
@@ -30418,9 +30526,15 @@ class Counter:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -30442,8 +30556,8 @@ class Counter:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.ValueResponse]:
             """Awaits for task to finish and returns its response."""
@@ -30697,9 +30811,15 @@ class Counter:
             cls,
             context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
             *,
-            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+            task_id: IMPORT_reboot_api.TaskId,
         ):
-            return cls(context, task_id=task_id)
+            return cls(
+                context,
+                task_id=IMPORT_reboot_api.task_id_from_pydantic(
+                    IMPORT_reboot_aio_types.StateTypeName('reboot.ping.Counter'),
+                    task_id,
+                ),
+            )
 
         def __init__(
             self,
@@ -30721,8 +30841,8 @@ class Counter:
             self._task_id = task_id
 
         @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+        def task_id(self) -> IMPORT_reboot_api.TaskId:
+            return IMPORT_reboot_api.task_id_to_pydantic(self._task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Counter.DescriptionResponse]:
             """Awaits for task to finish and returns its response."""
@@ -31832,7 +31952,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -31872,7 +31992,7 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -31883,7 +32003,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -31923,7 +32043,7 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -31934,7 +32054,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only a `transaction` (or, via `self.ref()`, a `writer`)
                 # should `schedule()`; a `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -31974,7 +32094,7 @@ class Counter:
                     bearer_token=__bearer_token__,
                 )
 
-                return __task_id__
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -32008,7 +32128,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -32021,12 +32141,13 @@ class Counter:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await CounterServicerTasks(
+                    __writer_task_id__ = (await CounterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Increment(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -32049,13 +32170,15 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Increment(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -32066,7 +32189,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -32079,12 +32202,13 @@ class Counter:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await CounterServicerTasks(
+                    __writer_task_id__ = (await CounterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Value(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -32107,13 +32231,15 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Value(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -32124,7 +32250,7 @@ class Counter:
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            ) -> IMPORT_reboot_api.TaskId:
                 # Only `writer`s and `transaction`s should `schedule()`, a
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_contexts.assert_context_type(
@@ -32137,12 +32263,13 @@ class Counter:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await CounterServicerTasks(
+                    __writer_task_id__ = (await CounterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Description(
                         schedule=__this__._when,
                     )).task_id
+                    return IMPORT_reboot_api.task_id_to_pydantic(__writer_task_id__)
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -32165,13 +32292,15 @@ class Counter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Description(
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return IMPORT_reboot_api.task_id_to_pydantic(__task_id__)
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

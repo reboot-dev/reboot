@@ -134,7 +134,7 @@ from rbt.v1alpha1 import tasks_pb2
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.api import Model
+from reboot.api import Model, TaskId
 from reboot.bdd import given, then, when
 from reboot.bdd.fixtures import (
     Assignment,
@@ -1058,9 +1058,16 @@ async def _awaits_task(
     task_type = world.task_type(state_type=state_type, method=method)
     if task_type is None:
         raise ValueError(f"`{state_type}` has no `{method}` task")
+    # A pydantic API's task id is a `reboot.api.TaskId`, a protobuf
+    # API's a `tasks_pb2.TaskId`; the saved JSON tells them apart.
+    retrieved_task_id: Union[TaskId, tasks_pb2.TaskId]
+    if 'state_id' in saved:
+        retrieved_task_id = TaskId.model_validate(saved)
+    else:
+        retrieved_task_id = json_format.ParseDict(saved, tasks_pb2.TaskId())
     task = getattr(task_type, 'retrieve')(
         world.context(user),
-        task_id=json_format.ParseDict(saved, tasks_pb2.TaskId()),
+        task_id=retrieved_task_id,
     )
     try:
         world.response = await asyncio.wait_for(task, timeout=seconds)

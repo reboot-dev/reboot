@@ -26749,13 +26749,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Greet(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26778,7 +26779,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Greet(
                     __request__,
@@ -26786,6 +26787,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26858,13 +26861,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).SetAdjective(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26887,7 +26891,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).SetAdjective(
                     __request__,
@@ -26895,6 +26899,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -26967,13 +26973,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TransactionSetAdjective(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -26996,7 +27003,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TransactionSetAdjective(
                     __request__,
@@ -27004,6 +27011,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27062,13 +27071,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TryToConstructContext(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27091,7 +27101,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TryToConstructContext(
                     __request__,
@@ -27099,6 +27109,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27157,13 +27169,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TryToConstructExternalContext(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27186,7 +27199,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TryToConstructExternalContext(
                     __request__,
@@ -27194,6 +27207,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27258,13 +27273,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TestLongRunningFetch(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27287,7 +27303,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TestLongRunningFetch(
                     __request__,
@@ -27295,6 +27311,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27353,13 +27371,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).TestLongRunningWriter(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27382,7 +27401,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).TestLongRunningWriter(
                     __request__,
@@ -27390,6 +27409,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27448,13 +27469,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).GetWholeState(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27477,7 +27499,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).GetWholeState(
                     __request__,
@@ -27485,6 +27507,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27543,13 +27567,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailWithException(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27572,7 +27597,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailWithException(
                     __request__,
@@ -27580,6 +27605,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27638,13 +27665,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).FailWithAborted(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27667,7 +27695,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).FailWithAborted(
                     __request__,
@@ -27675,6 +27703,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27733,13 +27763,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).Workflow(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27762,7 +27793,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).Workflow(
                     __request__,
@@ -27770,6 +27801,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27874,13 +27907,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).DangerousFields(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -27903,7 +27937,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).DangerousFields(
                     __request__,
@@ -27911,6 +27945,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -27975,13 +28011,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).StoreRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28004,7 +28041,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).StoreRecursiveMessage(
                     __request__,
@@ -28012,6 +28049,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28070,13 +28109,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ReadRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28099,7 +28139,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ReadRecursiveMessage(
                     __request__,
@@ -28107,6 +28147,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -28171,13 +28213,14 @@ class Greeter:
                     )
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return (await GreeterServicerTasks(
+                    __writer_task_id__ = (await GreeterServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).ConstructAndStoreRecursiveMessage(
                         __request__,
                         schedule=__this__._when,
                     )).task_id
+                    return __writer_task_id__
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -28200,7 +28243,7 @@ class Greeter:
                     __schedule__.isoformat() if __schedule__ else ''),
                 ) + (__metadata__ or tuple())
 
-                return await __this__._tasks(
+                __task_id__ = await __this__._tasks(
                     __context__
                 ).ConstructAndStoreRecursiveMessage(
                     __request__,
@@ -28208,6 +28251,8 @@ class Greeter:
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                 )
+
+                return __task_id__
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in

@@ -21,6 +21,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":settings_py",
+        "//reboot/aio:types_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         requirement("protobuf"),
         requirement("pydantic"),
     ],
