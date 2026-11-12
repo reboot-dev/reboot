@@ -138,8 +138,10 @@ for a web app):
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
-  machinery. Both front ends use `oauth=` for identity, so real rules
-  are viable immediately.
+  machinery. Both front ends sign users in with `oauth=`, even in dev
+  (the `Development()` provider), so `context.auth.user_id` is set
+  from the first run and `allow_if` rules work from the start; there
+  is no reason for a placeholder `allow()`.
 - `python/references/auth-allow-deny.md` — narrow uses of
   unconditional rules; specifically, when **not** to reach for
   `allow()`.
