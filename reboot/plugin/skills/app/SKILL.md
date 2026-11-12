@@ -49,9 +49,11 @@ settled. This holds in auto mode too.
 
 ## Each Front End's Pages
 
-The steps below are the same for every app. What one front end adds
-to a step is in that front end's pages, in the layer it belongs to.
-An app with both front ends reads both columns.
+Every app goes through the same steps below. An MCP App and a web
+app each add their own work at some of those steps, and that guidance
+lives in the `python` skill or the `frontend` skill. The table lists,
+for each step, which section to read for each front end. An app with
+both front ends reads both columns.
 
 | Step | MCP App | Web app |
 | --- | --- | --- |
