@@ -22,8 +22,9 @@ session, where no processes and no exported environment survive
 from last time.
 
 > This skill **runs** an app; it does not build or modify one. To
-> build, see the [`app` skill](../app/SKILL.md) — its build defers here
-> for its "run the app" step.
+> build, see the [`app` skill](../app/SKILL.md) — its
+> [Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow)
+> defers here to run the app.
 
 ## Step 1 — Locate the project
 
