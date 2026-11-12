@@ -218,7 +218,7 @@ a worked set are in
 
 ## Designing an MCP App
 
-The design of an MCP App names, beside its application types and
+An MCP App's design includes, besides its application types and
 method map:
 
 - The `User` type and its methods (the MCP front door
@@ -232,7 +232,9 @@ method map:
   "Example Prompts" above).
 - Which methods get `UI()`.
 
-And the State Model Assessment adds, for an MCP App:
+And the app skill's
+[State Model Assessment](../../app/SKILL.md#state-model-assessment)
+adds, for an MCP App:
 
 - **The `User` type.** An MCP App always has one: it is the front
   door.

@@ -31,15 +31,15 @@ Use".
   used in a normal browser, with the Reboot backend behind a React
   frontend.
 - **Both** — one backend serves both, with one `oauth=...` and one
-  `User` actor per upstream identity. A user who signs in on one
+  `User` state type per upstream identity. A user who signs in on one
   frontend is signed in on both (cross-frontend SSO): the OAuth
   server's `/authorize` short-circuits when the browser already
   carries a session cookie, and `/callback` sets that cookie on every
   flow.
 
-### Commit-without-asking triggers (must be VERBATIM in the prompt)
+### Commit-to-frontend-without-asking triggers (must be VERBATIM in the prompt)
 
-Commit immediately **only** when the user's prompt contains one of
+Commit to a front end immediately **only** when the user's prompt contains one of
 the explicit phrases below. No inference, no synonyms, no "well
 they probably mean…":
 
