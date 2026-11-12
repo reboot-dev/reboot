@@ -77,6 +77,31 @@ Your state class should end in `State`, e.g., `UserState`,
 `CounterState`.
 :::
 
+## Protobuf messages as fields
+
+Any protobuf message is a field type of a `Model`, on its own or in a
+`list` or `dict`, with the same rules as a nested `Model`: on its own it
+is either required or `Optional[...]` with `default=None`. The most common
+one is the `TaskId` that `schedule()` returns, which you can keep in your
+state to `retrieve()` the task later:
+
+```python
+from rbt.v1alpha1.tasks_pb2 import TaskId
+from reboot.api import Field, Model
+from typing import Optional
+
+
+class ReportState(Model):
+    generate_task_id: Optional[TaskId] = Field(
+        tag=1,
+        default=None,
+        description="The id of the scheduled `generate` task.",
+    )
+```
+
+In JSON, e.g. as the argument of an MCP tool, a protobuf field takes the
+message's JSON form.
+
 ## Special state: `User`
 
 Naming a type `User` in your `API(User=Type(...))` definition triggers

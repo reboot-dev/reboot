@@ -1,0 +1,54 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load(
+    "//reboot:pydantic_to_proto.bzl",
+    "py_reboot_library_from_pydantic",
+    "pydantic_to_zod",
+)
+
+py_library(
+    name = "servicer_api_py",
+    srcs = ["servicer_api.py"],
+    deps = [
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "servicer_py_reboot",
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+py_library(
+    name = "servicer_py",
+    srcs = ["servicer.py"],
+    deps = [
+        ":servicer_api_py",
+        ":servicer_py_reboot",
+        "//reboot/aio:types_py",
+    ],
+)
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        ":servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+    ],
+)
+
+# The Zod declarations of the API, for a TypeScript client.
+pydantic_to_zod(
+    name = "servicer_api_zod_file",
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)

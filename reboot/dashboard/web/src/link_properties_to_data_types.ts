@@ -112,9 +112,9 @@ const SCALAR_NAMES: Record<schema_pb.Scalar, string> = {
 };
 
 // A type written the way its author would write it: a reference by
-// the model's class name, a list as `Item[]`, a dict as
-// `Record<string, T>`, literals as `"a" | "b"`, an optional as
-// `T | null`. The changelog and the properties table share this, so a
+// the model's class name, a protobuf message by its name, a list as
+// `Item[]`, a dict as `Record<string, T>`, literals as `"a" | "b"`, an
+// optional as `T | null`. The changelog and the properties table share this, so a
 // change reads the way the table does.
 export const formatType = (type: schema_pb.Type | undefined): string => {
   const form = type?.type;
@@ -137,6 +137,8 @@ export const formatType = (type: schema_pb.Type | undefined): string => {
       return form.value.variants
         .map((variant) => shortNameOfTypeName(variant.reference?.name ?? ""))
         .join(" | ");
+    case "protobufMessage":
+      return shortNameOfTypeName(form.value.name);
     case undefined:
       return "any";
   }

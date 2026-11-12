@@ -13,6 +13,7 @@ import inspect
 import json
 import types
 import typing
+from google.protobuf.message import Message
 from pydantic_core import PydanticUndefined, to_jsonable_python
 from rbt.v1alpha1.api import schema_pb2
 from rbt.v1alpha1.api.schema_pb2 import (
@@ -27,6 +28,7 @@ from rbt.v1alpha1.api.schema_pb2 import (
     Literals,
     Map,
     Property,
+    ProtobufMessage,
     Reference,
     Schema,
     Type,
@@ -105,6 +107,18 @@ _CONSTRAINTS = (
     ('max_length', 'max_length'),
     ('pattern', 'pattern'),
 )
+
+
+def _protobuf_message_type(message: type[Message]) -> Type:
+    """Reads a protobuf message class into its type: the message's
+    full name and the `.proto` file that declares it."""
+    descriptor = message.DESCRIPTOR
+    return Type(
+        protobuf_message=ProtobufMessage(
+            name=descriptor.full_name,
+            file=descriptor.file.name,
+        )
+    )
 
 
 def _constraints(field_info: Any) -> Optional[Constraints]:
@@ -378,6 +392,16 @@ def _schema_of(
                         constraints=constraints, deprecated=deprecated
                     )
                 )
+            elif isinstance(inner_type,
+                            type) and issubclass(inner_type, Message):
+                schema.properties.append(
+                    _property(
+                        field_name, tag, _protobuf_message_type(inner_type),
+                        required, optional, description=description,
+                        default=default, constraints=constraints,
+                        deprecated=deprecated
+                    )
+                )
             elif not field_args and inner_origin is None:
                 # Better error message for unparameterized generics.
                 #
@@ -434,6 +458,9 @@ def _schema_of(
                     f"{path}.[value]",
                     schemas=schemas,
                 )
+            elif isinstance(value_type,
+                            type) and issubclass(value_type, Message):
+                value = _protobuf_message_type(value_type)
             elif value_origin is Literal:
                 literal_args = get_args(value_type)
 
@@ -492,6 +519,9 @@ def _schema_of(
                 item, schemas = _schema_of(
                     item_type, f"{path}.[item]", schemas=schemas
                 )
+            elif isinstance(item_type,
+                            type) and issubclass(item_type, Message):
+                item = _protobuf_message_type(item_type)
             elif item_origin is Literal:
                 literal_args = get_args(item_type)
 

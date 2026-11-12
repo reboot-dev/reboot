@@ -18,6 +18,7 @@ message Type {
     Reference reference = 5;
     Optional optional = 6;
     DiscriminatedUnion discriminated_union = 7;
+    ProtobufMessage protobuf_message = 8;
   }
 }
 
@@ -54,6 +55,15 @@ message Literals {
 // several places, or in itself, is described once.
 message Reference {
   string name = 1;
+}
+
+// Represents a protobuf message used as it is, e.g. the
+// `rbt.v1alpha1.TaskId` that `schedule()` returns: the message's full
+// name and the `.proto` file that declares it, which the generated
+// proto imports.
+message ProtobufMessage {
+  string name = 1;
+  string file = 2;
 }
 
 // Represents an `Optional[inner]`: the inner type, or `None`.
