@@ -370,8 +370,13 @@ Before writing code, analyze the user's request:
 7. **Auth**: Anonymous-only, public-read + authed-write, fully
    locked down, …? See `python/references/auth-*.md`.
 8. **Identity**: Single default instance vs. multiple instances?
-9. **Cross-state coordination**: Does any operation touch multiple
-   state instances? If yes, use `Transaction`.
+9. **Cross-state coordination**: Does any operation change several
+   state instances? If they must change together or not at all, and
+   the operation is quick, use a `Transaction`. A transaction locks
+   every state it touches until it finishes, so a slow one (an
+   external call, a long loop) blocks every other write to them:
+   coordinate it in a `Workflow` instead, which updates each state in
+   turn and is consistent in the end, not at every moment.
 10. **Each front end's own items**, from the design section of its
     skill ([What Each Front End Adds](#what-each-front-end-adds)).
 
