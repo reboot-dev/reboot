@@ -70,7 +70,7 @@ same version as the backend's `reboot` dependency, and `zod`:
   "devDependencies": {
     "<as the scaffold wrote them>": "",
     "portless": "^0.15.7",
-    "vite-plugin-singlefile": "^2.0.3"
+    "vite-plugin-singlefile": "^2.3.4"
   }
 }
 ```
