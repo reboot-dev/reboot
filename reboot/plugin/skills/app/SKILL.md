@@ -165,8 +165,9 @@ for a web app):
   `OAuthTokens` for `store_tokens=True` support.
 
 **Before writing the frontend:** the [`frontend` skill](../frontend/SKILL.md).
-Its "Which page to read" names the pages for a web app, for MCP App
-UIs, and for every app.
+Its [Which page to read](../frontend/SKILL.md#which-page-to-read)
+section names the pages for a web app, for MCP App UIs, and for every
+app.
 
 **Before writing the tests:** `python/references/testing-project-setup.md`
 and `python/references/testing-features.md` (the built-in steps'
