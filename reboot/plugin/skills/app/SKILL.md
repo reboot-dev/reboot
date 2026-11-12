@@ -47,7 +47,7 @@ settled. This holds in auto mode too.
   Cloud that runs the backend and serves the built MCP Apps and web
   app from it.
 
-## Each Front End's Pages
+## What Each Front End Adds
 
 Every app goes through the same steps below. An MCP App and a web
 app each add their own work at some of those steps, and that guidance
@@ -69,8 +69,8 @@ every later turn, so **read each reference at the step that needs
 it** — not all of them up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it. Each front end adds
-pages of its own at some steps; "Each Front End's Pages" says where
-they are listed.
+references of its own at some steps; [What Each Front End Adds](#what-each-front-end-adds)
+above says where they are listed.
 
 **Before writing the project files** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
@@ -225,8 +225,8 @@ wrong means regenerating everything across 12+ files.
    - Application types: state shape (fields, types, tags).
    - Method map: which operations, which method type
      (Reader/Writer/Transaction/Workflow).
-   - The design items of each front end you build: see "Each Front
-     End's Pages" below.
+   - The design items of each front end you build: see
+     [What Each Front End Adds](#what-each-front-end-adds) above.
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
@@ -316,7 +316,8 @@ Before writing code, analyze the user's request:
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **The `User` type.** Whether the app has one, and what it does,
-   is among the front end's design items ("Each Front End's Pages").
+   is among the front end's design items
+   ([What Each Front End Adds](#what-each-front-end-adds)).
 3. **Container shape for each collection.** Once an entity is its
    own `Type`, the parent (typically `User`) stores **references**,
    not objects. Three shapes (full table + worked PRM example in
@@ -370,8 +371,8 @@ Before writing code, analyze the user's request:
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
-10. **Each front end's own items**, from its design pages
-    ("Each Front End's Pages").
+10. **Each front end's own items**, from the design section of its
+    skill ([What Each Front End Adds](#what-each-front-end-adds)).
 
 ## When Correct Decomposition Fights the UI
 
@@ -439,7 +440,8 @@ puts under `frontend/` is in its section of the
 ## Step-by-Step Build Flow
 
 **All commands run from the application directory.** At each step,
-also do what your front end adds to it ("Each Front End's Pages").
+also do what your front end adds to it: the table in
+[What Each Front End Adds](#what-each-front-end-adds) names the step each addition belongs to.
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — same shape as in
@@ -470,8 +472,9 @@ also do what your front end adds to it ("Each Front End's Pages").
 9. `cd frontend && npm install`.
 10. `uv run rbt generate` again — the React bindings need
     `node_modules` to resolve types correctly.
-11. Build the frontend from the [`frontend` skill](../frontend/SKILL.md)'s
-    pages for your front end. Write the calls from those references
+11. Build the frontend from the references the
+    [`frontend` skill](../frontend/SKILL.md) lists for your front end.
+    Write the calls from those references
     and do **not** open `frontend/api/**/*_rbt_react.ts` to check
     them — it is tens of thousands of lines that then ride along on
     every later turn.
@@ -521,7 +524,7 @@ also do what your front end adds to it ("Each Front End's Pages").
 ## Update Flow
 
 When modifying an existing app (and at each step, what your front end
-adds to it, "Each Front End's Pages"):
+adds to it, as the table in [What Each Front End Adds](#what-each-front-end-adds) says):
 
 1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer, and
    `main.py`.

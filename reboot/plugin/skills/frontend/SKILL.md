@@ -216,8 +216,8 @@ patterns.
 
 The web app's tree and config, plus `frontend/mcp/<name>/` beside
 `web/` and `mcpAppPath: "mcp"` in `reboot()`; the same dev server and
-`npm run build` serve and build both. Read the pages of both
-sections above.
+`npm run build` serve and build both. Read the references named in
+both sections above.
 
 ## Web app: feeding the user's identity into hooks
 
