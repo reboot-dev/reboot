@@ -8,7 +8,7 @@ tags: web-app, react, vite, hooks, errors, RebootClientProvider
 ## Wire the Web SPA to the Reboot Backend
 
 Everything the standalone browser frontend needs. This is the
-web app's equivalent of the MCP App scaffolding pages beside it
+web app's equivalent of the MCP App scaffolding references beside it
 (`react-mcp-scaffolding.md`, `react-app-tsx.md`) — **do not read those**. The `frontend/` shell is the same one (the
 stock Vite file plus Reboot's `reboot()` plugin), and this file
 has the web app's version of it;
