@@ -37,8 +37,7 @@ below send you to these `python` pages; read them from here:
 
 ## Which page to read
 
-Read a page at the step that needs it, and read it once: everything
-you read is sent again on every later turn.
+Read a page at the step that needs it, and read it once.
 
 | Page | Read it when |
 | --- | --- |
