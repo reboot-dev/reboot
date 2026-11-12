@@ -323,13 +323,13 @@ Before writing code, analyze the user's request:
    not objects. Three shapes (full table + worked PRM example in
    `python/references/state-collections.md`):
 
-   - `list[Sub]` of non-state `Model`s — for bounded sub-records
+   - **Shape A**, `list[Sub]` of non-state `Model`s — for bounded sub-records
      that genuinely belong with the parent (line items on an Order,
      tags on a Post). NOT for entity collections.
-   - `list[str]` of foreign state IDs — when the collection of
+   - **Shape B**, `list[str]` of foreign state IDs — when the collection of
      entity IDs is bounded (low hundreds, occasionally low
      thousands) and you always read it whole.
-   - `OrderedMap` of foreign state IDs — when the collection
+   - **Shape C**, `OrderedMap` of foreign state IDs — when the collection
      grows without bound, needs pagination, range queries, or
      ordered iteration. The default choice for any "list of
      things the user keeps adding to" (people in a PRM, posts
@@ -347,7 +347,8 @@ Before writing code, analyze the user's request:
 4. **User methods**: How are instances of application types
    created? Each gets a `Transaction` on `User` that calls
    `<Type>.create(context)`, then registers the new ID in the
-   appropriate container (Shape B or C above).
+   appropriate container (Shape B or C, under **Container shape for
+   each collection** above).
 5. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
    sub-objects** owned 1:1 by a parent state must be
@@ -514,8 +515,9 @@ also do what your front end adds to it: the table in
     relevance. A dashboard URL, or instructions saved in a README, do
     not satisfy this requirement.
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
-    step 6. What to hand over for each front end is the run skill's
-    Step 6.
+    [Required final hand-over: the connector](../dashboard/SKILL.md#step-6--required-final-hand-over-the-connector).
+    What to hand over for each front end is the run skill's
+    [Hand off](../run/SKILL.md#step-6--hand-off).
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
     API/MCP/inspect URLs, dropping the hand-over the user actually

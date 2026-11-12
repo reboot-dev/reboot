@@ -106,4 +106,4 @@ Leave rule 5 out until the project has a rule of its own.
 
 A change that moves a file, adds a state type, page or UI, changes a
 command, or teaches a rule updates `AGENTS.md` in the same change (the
-last step of the app skill's Update Flow).
+app skill's [Update Flow](../app/SKILL.md#update-flow) includes it).

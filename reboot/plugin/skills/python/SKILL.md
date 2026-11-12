@@ -469,7 +469,8 @@ optional extra:
 ## Building an MCP App
 
 What an MCP App adds to the app skill's build, step by step. The
-React side is the frontend skill's "Building MCP App UIs".
+React side is the frontend skill's
+[Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis).
 
 **Design:**
 [`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
@@ -548,7 +549,8 @@ the wizard surfaces the new flow.
 ## Building a web app
 
 What a web app adds to the app skill's build, step by step. The
-React side is the frontend skill's "Building a web app".
+React side is the frontend skill's
+[Building a web app](../frontend/SKILL.md#building-a-web-app).
 
 **Project files:** in `.rbtrc`, point the React codegen at
 `frontend/api`:
