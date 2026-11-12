@@ -467,6 +467,115 @@ optional extra:
   non-existence, and `--name` vs. `--application-name`. Read it once
   per task.
 
+## Building an MCP App
+
+What an MCP App adds to the app skill's build, step by step. The
+React side is the frontend skill's
+[Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis).
+
+**Design:**
+[`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
+— the `User` front door, tool exposure, `UI()`, `oauth=` and
+example prompts the design names.
+
+**Project files:**
+
+- [`references/lifecycle-mcp-app-project-files.md`](references/lifecycle-mcp-app-project-files.md) —
+  `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
+  `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
+  module wired into `Application(example_prompts=...)`,
+  durable-state setup.
+
+**API definition:**
+
+- [`references/api-method-types.md`](references/api-method-types.md)
+  — the pydantic API file for an MCP App: `User`-type front door,
+  `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
+  props), `factory=True` on `create`, the `Workflow(...)`
+  declaration shape. Full Counter API example.
+- [`references/api-state-shapes.md`](references/api-state-shapes.md)
+  — two recurring state shapes: `list[Item]` with
+  `default_factory=list`; single nested `Model` sub-objects as
+  `Optional[X] = Field(tag=N, default=None)` hydrated in factory
+  `create` (the gotcha "Nested `Model` fields can't take
+  `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
+  The state-inside-state regression and how to compose state actors
+  via string ID + `ref(id)`.
+- [`references/patterns-mcp-app-gotchas.md`](references/patterns-mcp-app-gotchas.md)
+  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
+  `factory=True` on app-type `create`, `MyType.ref()` not
+  `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
+  Transaction, Optional+`default=None` for nested Models, `.read()`
+  only on a no-arg ref inside a workflow, method-name PascalCase →
+  generated `<Type>.<Method>Request`.
+
+**Servicers:**
+
+- [`references/servicer-patterns.md`](references/servicer-patterns.md)
+  — the MCP App servicer shapes: `UserServicer` calling
+  `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
+  (no-arg) magic, inline writers via
+  `.per_workflow("alias").write(context, fn)` /
+  `.per_iteration("alias").write(...)` / `.always().write(...)`,
+  scheduling a workflow from a Transaction with `.schedule()`.
+
+**`main.py`:** also write `backend/src/example_prompts.py` (the
+wizard's example prompts), which `main.py` imports and passes as
+`example_prompts=` to `Application` — see
+[`references/lifecycle-mcp-app-project-files.md`](references/lifecycle-mcp-app-project-files.md).
+
+**Authorizers:**
+
+- [`references/auth-store-tokens.md`](references/auth-store-tokens.md)
+  — **acting on the user's behalf** at an external service: when the
+  API belongs to your `Application(oauth=...)` identity provider,
+  add extra OAuth `scopes=[...]` + `store_tokens=True` (needs
+  `oauth_library()` + `ciphertext_library()` +
+  `ordered_map_library()`) and the server captures its tokens.
+  Reboot stores **the provider's own tokens only** (an `Auth0`
+  sign-in stores an Auth0 token, not the upstream Google token). The
+  full host-agnostic recipe — custom OAuth endpoints for any _other_
+  service, reading tokens back, calling the API **inside a
+  `Workflow`**, refresh tokens, erasure — is
+  [`references/auth-external-api-calls.md`](references/auth-external-api-calls.md).
+
+**Scenarios:** every action through the MCP tool surface ("create a
+new todo list", "add an item and see it listed", "rename a list") is
+a scenario, calling the methods the tools call.
+
+**Updates:** when the change adds a new user-facing capability, add
+or update an example prompt in `backend/src/example_prompts.py` so
+the wizard surfaces the new flow.
+
+## Building a web app
+
+What a web app adds to the app skill's build, step by step. The
+React side is the frontend skill's
+[Building a web app](../frontend/SKILL.md#building-a-web-app).
+
+**Project files:** in `.rbtrc`, point the React codegen at
+`frontend/api`:
+
+```sh
+generate --react=frontend/api
+```
+
+**API definition:** every `Reader`, `Writer`, `Transaction` and
+`Workflow` still requires the `mcp=` argument: write `mcp=None` on
+each one. Do **not** add `mcp=Tool()` or `UI()`; those are MCP App
+only.
+
+**Authorizers:** the dev-vs-prod sign-in sequence is
+[`references/auth-web-apps.md`](references/auth-web-apps.md). Calling
+an external service as the user:
+
+- `python/references/auth-external-api-calls.md` and
+  `python/references/stdlib-oauth-tokens.md` — **calling an external
+  service's API as the user**: custom OAuth endpoints (web apps use
+  Path B — no `store_tokens=True` shortcut) → `OAuthTokenManager.store`
+  → read back + call inside a `Workflow`. Never a plain `str` token
+  field.
+
 ## Available Reference Files
 
 Reference files live in `references/` and are named

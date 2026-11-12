@@ -1,6 +1,6 @@
 ---
 name: agents-md
-description: Give a Reboot application an `AGENTS.md`, the project's map and rules for any coding agent, and a `CLAUDE.md` that imports it. Use when creating a Reboot app (the `mcp-app` and `web-app` skills call this at their first step), when working in an existing Reboot project (one with a `.rbtrc`) that has no `AGENTS.md`, and whenever a change moves a file, changes a command, or teaches a rule the next session needs.
+description: Give a Reboot application an `AGENTS.md`, the project's map and rules for any coding agent, and a `CLAUDE.md` that imports it. Use when creating a Reboot app (the app skill's build calls this at its first step), when working in an existing Reboot project (one with a `.rbtrc`) that has no `AGENTS.md`, and whenever a change moves a file, changes a command, or teaches a rule the next session needs.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -106,4 +106,4 @@ Leave rule 5 out until the project has a rule of its own.
 
 A change that moves a file, adds a state type, page or UI, changes a
 command, or teaches a rule updates `AGENTS.md` in the same change (the
-last step of the `mcp-app` and `web-app` Update Flows).
+app skill's [Update Flow](../app/SKILL.md#update-flow) includes it).
