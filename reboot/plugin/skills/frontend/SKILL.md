@@ -148,7 +148,11 @@ adds:
 
 ## Building a web app
 
-What a web app adds to the app skill's frontend steps.
+What a web app adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Scaffold** goes with "Scaffold the frontend", **Build** with "Build
+the frontend", **Scenarios** with the scenarios step, and **Updates**
+with the [Update Flow](../app/SKILL.md#update-flow).
 
 **Scaffold:** `npm create vite@latest frontend -- --template react-ts`,
 shaped as [`react-client.md`](references/react-client.md) shows: the
@@ -194,7 +198,10 @@ a flow a person clicks through.
 
 ## Building MCP App UIs
 
-What an MCP App adds to the app skill's frontend steps.
+What an MCP App adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Scaffold** goes with "Scaffold the frontend", and **Build** with
+"Build the frontend".
 
 **Scaffold:** `npm create @reboot-dev/ui`.
 
