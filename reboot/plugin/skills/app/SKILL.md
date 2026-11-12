@@ -476,16 +476,14 @@ also do what your front end adds to it: the table in
 8. Scaffold the frontend at `frontend/`, as the
    [`frontend` skill](../frontend/SKILL.md) says for your front end.
 9. `cd frontend && npm install`.
-10. `uv run rbt generate` again — the React bindings need
-    `node_modules` to resolve types correctly.
-11. Build the frontend from the references the
+10. Build the frontend from the references the
     [`frontend` skill](../frontend/SKILL.md) lists for your front end.
     Write the calls from those references
     and do **not** open `frontend/api/**/*_rbt_react.ts` to check
     them — it is tens of thousands of lines that then ride along on
     every later turn.
-12. `cd frontend && npm run build` (sanity check the bundle).
-13. **Write and run the scenarios of every feature before handing
+11. `cd frontend && npm run build` (sanity check the bundle).
+12. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase (the
     [`feature` skill](../feature/SKILL.md)) gets its scenarios now:
     every action the user should be able to _do_ is a scenario in
@@ -507,7 +505,7 @@ also do what your front end adds to it: the table in
     `@blocked` with a reason) and mypy is green — together they
     are what catches contract bugs before the user sees them. Point
     the user at the dashboard's Features page to review the features.
-14. Run the app — load the [`run` skill](../run/SKILL.md) and
+13. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, starts the backend and frontend,
