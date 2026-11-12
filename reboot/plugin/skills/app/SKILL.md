@@ -126,8 +126,10 @@ they are listed.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
 
-**Before the authorizers** (write rules from day one; your front
-end's sign-in page says how):
+**Before the authorizers** (avoid defaulting to `allow()`; sign-in
+is in [`mcp-app-concepts.md`](../python/references/mcp-app-concepts.md#auth-oauth-provider-selection-and-real-authorizers-from-day-one)
+for an MCP App and [`auth-web-apps.md`](../python/references/auth-web-apps.md)
+for a web app):
 
 - `python/references/servicer-authorizer.md` — **start here**.
   Explains `oauth=` (the default, with rules from day one) vs.
