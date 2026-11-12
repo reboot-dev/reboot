@@ -472,7 +472,7 @@ optional extra:
 What an MCP App adds to the app skill's build, step by step. The
 React side is the frontend skill's "Building MCP App UIs".
 
-**Before the design:**
+**Design:**
 [`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
 — the `User` front door, tool exposure, `UI()`, `oauth=` and
 example prompts the design names.
