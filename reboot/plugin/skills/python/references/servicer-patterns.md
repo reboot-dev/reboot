@@ -18,11 +18,13 @@ wrappers, raise typed `<Method>Aborted`) are in
 - The User Servicer's `create_<X>` Transaction calls
   `<X>.create(context)` and returns the `state_id` in a response.
 - Workflow Servicers use `MyType.ref()` (no args, picks up `state_id`
-  from `WorkflowContext`) — see Gotcha #11 below; `cls.ref()` and
-  `self.ref()` are both wrong.
+  from `WorkflowContext`); `cls.ref()` and `self.ref()` are both
+  wrong. See the gotcha "Inside a Workflow classmethod, `cls` is the
+  BaseServicer, not the state class" in `patterns-mcp-app-gotchas.md`.
 - Workflows that should run after a User-side `create_<X>`
   Transaction must be **scheduled** (`.schedule().workflow_method()`),
-  not awaited directly — see Gotcha #12.
+  not awaited directly. See the gotcha "Workflows must be scheduled,
+  not awaited" in `patterns-mcp-app-gotchas.md`.
 
 ## Simple Servicer (Counter)
 
@@ -112,7 +114,9 @@ class MyTypeServicer(MyType.Servicer):
             # `MyType.ref()` with no args is Workflow-only magic: it
             # reads `state_id` from `WorkflowContext`, returning a
             # ref to this workflow's own instance. Do NOT write
-            # `cls.ref()` or `self.ref()` here — see Gotcha #11.
+            # `cls.ref()` or `self.ref()` here. See the gotcha "Inside
+            # a Workflow classmethod, `cls` is the BaseServicer, not the
+            # state class" in `patterns-mcp-app-gotchas.md`.
             await MyType.ref().do_ping(context)
             pings_sent = iteration + 1  # iteration starts at 0.
             if pings_sent >= request.num_pings:
@@ -121,8 +125,9 @@ class MyTypeServicer(MyType.Servicer):
         # `.read()` is only valid on the workflow's own no-arg ref;
         # a foreign-state read like `OtherType.ref(id).read(context)`
         # raises a "only supported within workflows" RuntimeError.
-        # Call a Reader method on the foreign type instead — see
-        # Gotcha #15.
+        # Call a Reader method on the foreign type instead. See the
+        # gotcha "`.read(context)` only works on the workflow's own
+        # no-argument `MyType.ref()`" in `patterns-mcp-app-gotchas.md`.
         state = await MyType.ref().read(context)
         return MyType.DoPingPeriodicallyResponse(
             num_pings=state.num_pings,

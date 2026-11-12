@@ -146,5 +146,5 @@ state, transient caches, per-concern workflows — moves to its own
   principle applies here.
 - `servicer-writer.md` — the serialization contract that makes this
   a runtime rule, not just hygiene.
-- `mcp-app/SKILL.md` — "User and Application Types": **"front door"
+- `mcp-app-concepts.md` — "`User` and Application Types": **"front door"
   means entry point + delegation, not container.**

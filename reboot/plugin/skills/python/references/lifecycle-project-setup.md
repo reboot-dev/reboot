@@ -108,7 +108,7 @@ Create a project-root `.gitignore` when scaffolding the project.
 Reboot projects produce artifacts that must never be committed:
 `rbt dev run` persists application state under `.rbt/`, `rbt generate` output is recreated from the API definitions on every run,
 `.env` holds secrets (see `lifecycle-secrets.md`), and running the
-tests records every browser scenario (see `testing-web-app.md`).
+tests records every browser scenario (see `frontend/references/testing-web-app.md`).
 
 ```gitignore
 # Reboot dev-server state.

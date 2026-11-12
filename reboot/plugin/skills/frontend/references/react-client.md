@@ -70,7 +70,7 @@ same version as the backend's `reboot` dependency, and `zod`:
   "devDependencies": {
     "<as the scaffold wrote them>": "",
     "portless": "^0.15.7",
-    "vite-plugin-singlefile": "^2.0.3"
+    "vite-plugin-singlefile": "^2.3.4"
   }
 }
 ```
@@ -204,7 +204,7 @@ when the backend serves the built assets from one origin.
 
 The hook, mutator, and error declarations `rbt generate --react=`
 emits are identical for every frontend, so they live in one place:
-[`python/references/react-generated-client.md`](../../python/references/react-generated-client.md).
+[`react-generated-client.md`](react-generated-client.md).
 Read it before writing components — it has the `useFoo` overloads,
 `UseFooApi`, the three-field reader return, `ResponseOrAborted`, the
 `<Type><Method>Aborted` error classes, the snake→camel naming rules,
@@ -249,7 +249,7 @@ frontend only _reports_; the backend already refused the operation.
 
 ## Accessible Markup, So Scenarios Can Drive the Page
 
-The web app scenarios (`python/references/testing-web-app.md`)
+The web app scenarios (`testing-web-app.md`)
 find elements the way a person, or a screen reader, does: a button
 by what it says, a field by its label, a table by its heading. They
 never take a selector, so the page has to expose an accessibility

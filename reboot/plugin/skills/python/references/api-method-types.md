@@ -44,7 +44,7 @@ directly. Omitting `mcp=` raises at codegen with
 
 ## `UI()` — React Surface
 
-`UI()` opens a React UI inside the MCP client. Takes
+`UI()` opens a React UI inside the MCP host. Takes
 `request=` (config type or `None`), `path=` (web dir relative to
 project root), `title=`, `description=`, and optionally
 `display_modes=` (such as `["fullscreen", "inline"]`: the UI asks
@@ -83,7 +83,7 @@ no arguments needed. The actor reference is end-to-end implicit:
 the AI calls `person_show(person_id=...)`, the React UI
 materializes for that exact `Person`, no props plumbing, no risk
 of mixing up which entity ID goes where. (Mechanism documented
-in [`react-app-tsx.md`](react-app-tsx.md).)
+in [`react-app-tsx.md`](../../frontend/references/react-app-tsx.md).)
 
 **Why the `User`-placement anti-pattern fails.** If you put
 `show_person=UI(request=ShowPersonProps)` on `User`, where

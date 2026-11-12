@@ -1,7 +1,7 @@
 ---
 title: Authorizers — When to Write Them, When to Skip
 impact: HIGH
-impactDescription: Whether to write `authorizer()` from day one or defer it depends on how identity is wired (`oauth=` works for both MCP and web; `token_verifier=` is the custom-IdP escape hatch)
+impactDescription: Whether to write `authorizer()` from day one or defer it depends on how identity is wired (`oauth=` works for both MCP and web; `token_verifier=` is for identity providers the built-in ones don't cover)
 tags: servicer, authorizer, allow, allow_if, auth, authorizers, production, oauth, anonymous, token-verifier
 ---
 
@@ -60,8 +60,8 @@ identity available).
   frontends, browsers via a `rbt_session` cookie and MCP clients via
   `Authorization: Bearer`.
 - **`Application(token_verifier=...)` before the verifier is wired** —
-  the escape hatch for custom IdPs the built-in `oauth=` providers
-  don't cover. Fine to **omit `authorizer()` during early
+  for identity providers the built-in `oauth=` providers don't
+  cover. Fine to **omit `authorizer()` during early
   development** while standing up the verifier; the dev-mode warning
   serves as the TODO list for what still needs rules. Wire the
   verifier and add real `allow_if(...)` rules before `rbt serve` /

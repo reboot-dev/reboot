@@ -19,6 +19,7 @@
         "./skills/feature",
         "./skills/mcp-app",
         "./skills/web-app",
+        "./skills/frontend",
         "./skills/run",
         "./skills/agents-md",
         "./skills/dashboard",

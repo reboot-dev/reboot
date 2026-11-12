@@ -14,7 +14,7 @@ tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, 
 > fields a reader returns, why mutations resolve to
 > `{ response, aborted }` instead of throwing, and the typed error
 > classes are all in
-> [`python/references/react-generated-client.md`](../../python/references/react-generated-client.md).
+> [`react-generated-client.md`](react-generated-client.md).
 > Read that for the shapes; this file covers what is specific to a
 > UI rendered inside an MCP host.
 
@@ -89,8 +89,9 @@ import {
 
 - The hook is `use<TypeName>()` — `useCounter()`, `useInventory()`,
   etc.
-- The import path is `@api/<pkg>/v1/<name>_rbt_react` (the
-  `@api/*` alias is set up by `vite.config.ts`).
+- The import path is `@api/<pkg>/v1/<name>_rbt_react`. The `@api`
+  alias comes from `reboot({ apiPath })` in `vite.config.ts`, with the
+  matching `paths` entry in `tsconfig`; a relative import works too.
 - Frontend Request/Response types are Zod-validated; the same
   `<MethodPascalCase>Request`/`<MethodPascalCase>Response` rule
   applies on the TypeScript side.
@@ -324,7 +325,7 @@ There each item is a separate actor, and there is no
 The wrong fix is to flatten the model back into `list[Item]` on
 one actor so the dashboard regains a single subscription — see
 "When Correct Decomposition Fights the UI" in
-[`SKILL.md`](../SKILL.md). The right fix keeps the decomposition
+[`mcp-app/SKILL.md`](../../mcp-app/SKILL.md). The right fix keeps the decomposition
 and gives the front-door type a **composing reader**: the UI
 still has exactly one subscription, and the fan-out across item
 actors happens server-side.

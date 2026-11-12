@@ -1,11 +1,11 @@
 ---
-title: Project Shell — MCP App Deltas
+title: Project Files — What an MCP App Adds
 impact: CRITICAL
-impactDescription: The shell files (`.rbtrc`, `pyproject.toml`, `.python-version`, `main.py`) wire the build, the dev server, the HMR routing, and the entry point — wrong shapes break either codegen or live reload before the app even boots.
-tags: project, shell, rbtrc, pyproject, python-version, main, application-entry, hmr, dist
+impactDescription: The project files (`.rbtrc`, `pyproject.toml`, `.python-version`, `main.py`) wire the build, the dev server, the HMR routing, and the entry point — wrong shapes break either codegen or live reload before the app even boots.
+tags: project, files, rbtrc, pyproject, python-version, main, application-entry, hmr, dist
 ---
 
-## Project Shell — MCP App Deltas
+## Project Files — What an MCP App Adds
 
 The `python` skill covers the canonical project shape
 (`lifecycle-project-setup.md`) and the `.rbtrc` format
@@ -181,10 +181,10 @@ chat messages the user sends one per turn. A single example is a
 tools (create something → act on it → view the result), not a single
 isolated message. Write three or so examples that together exercise
 the app's main user stories, phrased the way a real user would talk
-to the chat client. Most prompts should end on a natural
+to the MCP host. Most prompts should end on a natural
 "show me / open / view ..." turn that renders a `UI()` component
 rather than only calling tool-only methods — see "Example Prompts"
-in `SKILL.md` for the full rule. The counter set above does this
+in `mcp-app-concepts.md` for the full rule. The counter set above does this
 with its "…and show me the counter" / "show me the wins counter"
 turns. See the worked set in
 `public/reboot/examples/mcp-app-counter/backend/src/example_prompts.py`.

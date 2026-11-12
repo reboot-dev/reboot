@@ -423,7 +423,8 @@ feature in English, tag it `@wip`, iterate on scenarios) is the
   making ids up, saved values, assertions, `eventually`, attempts
   and aborts, tasks), `@wip` / `@blocked`, feature / rule / scenario
   structure, custom steps as plain Reboot code, mocks and stand-ins
-- `references/testing-web-app.md` — scenarios that open the web app:
+- `../frontend/references/testing-web-app.md` (in the `frontend`
+  skill) — scenarios that open the web app:
   the `frontend` fixture, the web app steps, the accessible markup
   the page needs, sign-in, recordings
 - `references/testing-harness.md` — the `Reboot()` harness the
@@ -479,12 +480,20 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-rbtrc.md`
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-mcp-app-project-files.md` — what an MCP App adds to the
+  project files: `.rbtrc` configs, `pyproject.toml`, the example
+  prompts module, `main.py`
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
 - `references/lifecycle-signals.md` — usually nothing to do on
   `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
   signal handler of your own
+
+**MCP App**:
+
+- `references/mcp-app-concepts.md` — what makes an app an MCP App: the
+  `User` front door, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
 
 **API** (`api-`):
 
@@ -493,6 +502,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-errors.md`
 - `references/api-schema-evolution.md` — schema evolution rules for
   deployed applications / persisted state
+- `references/api-method-types.md` — an MCP App's API file: the
+  `User` front door, `mcp=Tool()` / `mcp=None`, `UI()`
+- `references/api-state-shapes.md` — `list[Item]` and nested `Model`
+  sub-objects in state
 
 **Servicer** (`servicer-`):
 
@@ -505,6 +518,9 @@ above lists the right ones grouped by task type. The full catalog:
   `until` / `until_changes`, and workflow exit semantics)
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
+- `references/servicer-patterns.md` — an MCP App's servicers: the
+  `User` front door creating application types, workflows on
+  `MyType.ref()`
 
 **Agent** (`agent-`):
 
@@ -541,6 +557,15 @@ above lists the right ones grouped by task type. The full catalog:
   call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`
 - `references/auth-http-routes.md`
+- `references/auth-oauth-providers.md` — choosing the
+  `Application(oauth=...)` sign-in provider, for an MCP App or a web
+  app
+- `references/auth-custom-oauth-provider.md` — writing a provider of
+  your own
+- `references/auth-store-tokens.md` — `store_tokens=True`: calling the
+  sign-in provider's API as the user
+- `references/auth-web-apps.md` — sign-in for a web app's browser users,
+  and the order to write authorizers in
 
 **RPC** (`rpc-`):
 
@@ -558,22 +583,23 @@ above lists the right ones grouped by task type. The full catalog:
 
 - `references/testing-project-setup.md`
 - `references/testing-features.md`
-- `references/testing-web-app.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-app`):
-
-- `references/react-generated-client.md` — what
-  `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,
-  reader/mutation return shapes, typed errors, naming rules.
+**Frontend**: the React references and the browser scenarios are in
+the `frontend` skill's `references/`. `react-generated-client.md`
+says what `rbt generate --react=` emits, and `testing-web-app.md`
+covers the browser scenarios.
 
 **Patterns** (`patterns-`):
 
 - `references/patterns-error-handling.md`
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
+- `references/patterns-mcp-app-gotchas.md` — the MCP App's backend gotchas:
+  `mcp=` on every method, `factory=True`, workflow refs,
+  nested `Model` defaults
 
 ## External References
 
