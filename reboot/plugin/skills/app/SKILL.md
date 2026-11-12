@@ -504,7 +504,11 @@ also do what your front end adds to it: the table in
     `@blocked` with a reason) and mypy is green — together they
     are what catches contract bugs before the user sees them. Point
     the user at the dashboard's Features page to review the features.
-13. Run the app — load the [`run` skill](../run/SKILL.md) and
+13. Review what the user will see, as the
+    [`frontend` skill](../frontend/SKILL.md) says for your front end
+    ("Reviewing a web app's pages"), and carry the result into the
+    handoff in a line: passed, or what is still off.
+14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, starts the backend and frontend,
