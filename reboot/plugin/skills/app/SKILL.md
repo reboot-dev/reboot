@@ -27,7 +27,7 @@ skills, read at the step that needs them:
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: commit only when the user's own words name the
+and do what it says: commit to a front end only when the user's own words name the
 front end, and otherwise ask. Write no file until the front end is
 settled. This holds in auto mode too.
 
