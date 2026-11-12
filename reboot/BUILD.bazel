@@ -357,6 +357,7 @@ py_library(
         ":api_py",
         ":fail_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
+        requirement("protobuf"),
         requirement("pydantic"),
     ],
 )
@@ -384,6 +385,7 @@ py_library(
         ":pydantic_api_py",
         ":pydantic_schema_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+        requirement("protobuf"),
         requirement("pydantic"),
         requirement("aiofiles"),
     ],
@@ -396,6 +398,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
+        requirement("protobuf"),
         requirement("pydantic"),
         requirement("aiofiles"),
     ],
@@ -408,6 +411,9 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":pydantic_schema_to_proto_py",
+        # So that an API file can import Reboot's own messages, e.g.
+        # the `TaskId` of `tasks.proto`, as field types.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
     ],
 )
 
@@ -418,6 +424,9 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":pydantic_schema_to_zod_py",
+        # So that an API file can import Reboot's own messages, e.g.
+        # the `TaskId` of `tasks.proto`, as field types.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
     ],
 )
 
