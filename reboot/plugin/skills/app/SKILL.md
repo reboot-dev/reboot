@@ -64,9 +64,8 @@ both front ends reads both columns.
 
 ## Which References to Read, and When
 
-Everything you read stays in the conversation and is re-sent on
-every later turn, so **read each reference at the step that needs
-it** — not all of them up front — and read each one **once**. The
+**Read each reference at the step that needs it** — not all of them
+up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it. Each front end adds
 references of its own at some steps; [What Each Front End Adds](#what-each-front-end-adds)
