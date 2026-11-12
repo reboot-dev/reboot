@@ -72,13 +72,13 @@ exactly one of them — the step that needs it. Each front end adds
 pages of its own at some steps; "Each Front End's Pages" says where
 they are listed.
 
-**Before the project files** (`.python-version`, `pyproject.toml`,
+**Before writing the project files** (`.python-version`, `pyproject.toml`,
 `.rbtrc`, `.mypy.ini`, `main.py`):
 
 - `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout, the CLI flags, the
   `Application(...)` constructor, the `initialize` hook.
 
-**Before the API definition:**
+**Before writing the API definition:**
 
 - `python/references/patterns-common-gotchas.md` — recurring trips
   (`self.ref().state_id`, kwargs convention, a `ref()` belongs to
@@ -111,7 +111,7 @@ they are listed.
   `User` front door, which otherwise turns into a God actor and
   serializes unrelated writers.
 
-**Before the servicer:**
+**Before writing the servicer:**
 
 - `python/references/servicer-{reader,writer,transaction,constructor}.md` — one per context type you actually declared.
 - `python/references/rpc-refs.md` — `self.ref().state_id` (never
@@ -126,7 +126,7 @@ they are listed.
   `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
 
-**Before the authorizers** (avoid defaulting to `allow()`; sign-in
+**Before writing the authorizers** (avoid defaulting to `allow()`; sign-in
 is in [`mcp-app-concepts.md`](../python/references/mcp-app-concepts.md#auth-oauth-provider-selection-and-real-authorizers-from-day-one)
 for an MCP App and [`auth-web-apps.md`](../python/references/auth-web-apps.md)
 for a web app):
@@ -164,11 +164,11 @@ for a web app):
   `validate()` / `mount_routes()` hooks, and `token_service_id` +
   `OAuthTokens` for `store_tokens=True` support.
 
-**Before the frontend:** the [`frontend` skill](../frontend/SKILL.md).
+**Before writing the frontend:** the [`frontend` skill](../frontend/SKILL.md).
 Its "Which page to read" names the pages for a web app, for MCP App
 UIs, and for every app.
 
-**Before the tests:** `python/references/testing-project-setup.md`
+**Before writing the tests:** `python/references/testing-project-setup.md`
 and `python/references/testing-features.md` (the built-in steps'
 spelling; always), plus `python/references/patterns-idempotency.md`
 — it explains `IdempotencyUncertainError`, which is otherwise the
