@@ -164,6 +164,17 @@ def ongoing_transaction_state_key(
         f"{context.state_type_name}/{context.state_id}/"
         f"{context.transaction_root_id}"
     )
+
+
+# Updates `target` in place to hold every field value of `source`,
+# leaving `target` the same object, so that an existing reference to it
+# keeps working.
+def _update_ongoing_transaction_state(
+    target: IMPORT_reboot_api.Model,
+    source: IMPORT_reboot_api.Model,
+) -> None:
+    for field in type(source).model_fields:
+        setattr(target, field, getattr(source, field))
 {% endif %}
 
 {# Since Pydantic model fields might be 'Optional' or have defaults, we
@@ -1059,6 +1070,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     {% elif method.options.proto.kind == 'writer' %}
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Effects:
     {% endif %}
+        {% if options.proto.pydantic and method.options.proto.kind == 'transaction' %}
+        nested_in_ongoing_transaction = False
+        {% endif %}
         try:
             {% if method.options.proto.constructor %}
             states_being_constructed.add(context.state_id)
@@ -1071,11 +1085,26 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             if ongoing_transaction_state_key(context) in ongoing_transaction_states:
                 typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
             {% elif method.options.proto.kind == 'transaction' %}
-            # TODO: assert that there are no ongoing transactions for this state.
+            # A transaction nested within another transaction on this
+            # same state continues from the model its caller is using,
+            # the way a reader or a writer does, because the caller's
+            # writes only reach the protobuf state once the caller
+            # returns. It works on a copy, so that aborting drops its
+            # writes, and hands them back to the caller below once it
+            # has returned successfully.
             #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
-            ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
+            # The outermost transaction on this state registers the
+            # model that the rest of the transaction shares, and is the
+            # one that removes it again, so that a writer the caller
+            # runs after us still finds it. The `typed_state` should
+            # already be validated above, so we can just store it here.
+            nested_in_ongoing_transaction = (
+                ongoing_transaction_state_key(context) in ongoing_transaction_states
+            )
+            if nested_in_ongoing_transaction:
+                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            else:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             {% endif %}
             {% endif %}
             {% endif %}
@@ -1105,8 +1134,19 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # callback API that we invoke only after a writer completes
             # that lets us update the state _reference_ then.
             if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_states[ongoing_transaction_state_key(context)],
+                    typed_state,
+                )
+            {% elif options.proto.pydantic and method.options.proto.kind == 'transaction' %}
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we are nested within, which is still
+            # holding the model we copied ours from.
+            if nested_in_ongoing_transaction:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_states[ongoing_transaction_state_key(context)],
+                    typed_state,
+                )
             {% endif %}
 
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
@@ -1279,8 +1319,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             states_being_constructed.remove(context.state_id)
             {% endif %}
             {% if options.proto.pydantic and method.options.proto.kind == 'transaction' %}
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            if not nested_in_ongoing_transaction:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
             {% endif %}
             {% if method.options.proto.kind == 'workflow' %}
             self._servicer.__servicer__.set(None)

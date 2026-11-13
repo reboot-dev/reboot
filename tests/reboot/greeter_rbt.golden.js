@@ -1069,21 +1069,43 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _TransactionSetAdjective(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        let nestedInOngoingTransaction = false;
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            // TODO: assert that there are no ongoing transactions for this state.
+            // A transaction nested within another transaction on this same
+            // state continues from the state its caller is using, the way a
+            // reader or a writer does, because the caller's writes only reach
+            // the stored state once the caller returns. It works on a copy,
+            // so that aborting drops its writes, and hands them back to the
+            // caller below once it has returned successfully.
             //
-            // The `state` should be already validated above, so we can
-            // just store it here.
-            ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+            // The outermost transaction on this state registers the state
+            // that the rest of the transaction shares, and is the one that
+            // removes it again, so that a writer the caller runs after us
+            // still finds it. The `state` should already be validated above,
+            // so we can just store it here.
+            nestedInOngoingTransaction =
+                ongoingTransactionStateKey(context) in ongoingTransactionStates;
+            if (nestedInOngoingTransaction) {
+                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            }
+            else {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+            }
             const request = GreeterTransactionSetAdjectiveRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__TransactionSetAdjective(context, state, request);
             });
             const response = GreeterTransactionSetAdjectiveResponseToProtobuf(partialResponse);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we are nested within, which is still holding the
+            // state we copied ours from.
+            if (nestedInOngoingTransaction) {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
             result.response = response.toBinary();
@@ -1109,7 +1131,9 @@ export class GreeterBaseServicer extends reboot.Servicer {
             throw error;
         }
         finally {
-            delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            if (!nestedInOngoingTransaction) {
+                delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            }
         }
     }
     async _TryToConstructContext(context, bytesState, // `undefined` for a workflow.
@@ -1588,21 +1612,43 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _ConstructAndStoreRecursiveMessage(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        let nestedInOngoingTransaction = false;
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            // TODO: assert that there are no ongoing transactions for this state.
+            // A transaction nested within another transaction on this same
+            // state continues from the state its caller is using, the way a
+            // reader or a writer does, because the caller's writes only reach
+            // the stored state once the caller returns. It works on a copy,
+            // so that aborting drops its writes, and hands them back to the
+            // caller below once it has returned successfully.
             //
-            // The `state` should be already validated above, so we can
-            // just store it here.
-            ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+            // The outermost transaction on this state registers the state
+            // that the rest of the transaction shares, and is the one that
+            // removes it again, so that a writer the caller runs after us
+            // still finds it. The `state` should already be validated above,
+            // so we can just store it here.
+            nestedInOngoingTransaction =
+                ongoingTransactionStateKey(context) in ongoingTransactionStates;
+            if (nestedInOngoingTransaction) {
+                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            }
+            else {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+            }
             const request = GreeterConstructAndStoreRecursiveMessageRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__ConstructAndStoreRecursiveMessage(context, state, request);
             });
             const response = GreeterConstructAndStoreRecursiveMessageResponseToProtobuf(partialResponse);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we are nested within, which is still holding the
+            // state we copied ours from.
+            if (nestedInOngoingTransaction) {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
             result.response = response.toBinary();
@@ -1628,7 +1674,9 @@ export class GreeterBaseServicer extends reboot.Servicer {
             throw error;
         }
         finally {
-            delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            if (!nestedInOngoingTransaction) {
+                delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            }
         }
     }
     async __dispatch(external, cancelled, bytesCall) {
