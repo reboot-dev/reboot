@@ -603,6 +603,9 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     bytesState: Uint8Array | undefined,  // `undefined` for a workflow.
     bytesRequest: Uint8Array
   ): Promise<Uint8Array> {
+    {% if method.options.proto.kind == 'transaction' %}
+    let nestedInOngoingTransaction = false;
+    {% endif %}
     try {
       {% if method.options.proto.constructor %}
       statesBeingConstructed.add(context.stateId);
@@ -625,11 +628,29 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         {% endif %}
       }
       {% elif method.options.proto.kind == 'transaction' %}
-      // TODO: assert that there are no ongoing transactions for this state.
+      // A transaction nested within another transaction on this same
+      // state continues from the state its caller is using, the way a
+      // reader or a writer does, because the caller's writes only reach
+      // the stored state once the caller returns. It works on a copy,
+      // so that aborting drops its writes, and hands them back to the
+      // caller below once it has returned successfully.
       //
-      // The `state` should be already validated above, so we can
-      // just store it here.
-      ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+      // The outermost transaction on this state registers the state
+      // that the rest of the transaction shares, and is the one that
+      // removes it again, so that a writer the caller runs after us
+      // still finds it. The `state` should already be validated above,
+      // so we can just store it here.
+      nestedInOngoingTransaction =
+        ongoingTransactionStateKey(context) in ongoingTransactionStates;
+      if (nestedInOngoingTransaction) {
+        {% if options.proto.zod %}
+        state = structuredClone(ongoingTransactionStates[ongoingTransactionStateKey(context)]);
+        {% else %}
+        state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+        {% endif %}
+      } else {
+        ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
+      }
       {% endif %}
 
       const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
@@ -654,6 +675,17 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       // callback API that we invoke only after a writer completes
       // that lets us update the state _reference_ then.
       if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
+        {% if options.proto.zod %}
+        Object.assign(ongoingTransactionStates[ongoingTransactionStateKey(context)], state);
+        {% else %}
+        ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+        {% endif %}
+      }
+      {% elif method.options.proto.kind == 'transaction' %}
+      // We have returned successfully, so hand what we wrote to the
+      // transaction we are nested within, which is still holding the
+      // state we copied ours from.
+      if (nestedInOngoingTransaction) {
         {% if options.proto.zod %}
         Object.assign(ongoingTransactionStates[ongoingTransactionStateKey(context)], state);
         {% else %}
@@ -706,7 +738,9 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       throw error;
     } finally {
       {% if method.options.proto.kind == 'transaction' %}
-      delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+      if (!nestedInOngoingTransaction) {
+        delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+      }
       {% endif %}
 
       {% if method.options.proto.constructor %}
