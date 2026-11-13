@@ -592,7 +592,9 @@ also do what your front end adds to it: the table in
     scenario fails for a reason that looks like it is inside the
     framework, check `python/references/patterns-idempotency.md` and
     `patterns-common-gotchas.md` before reading `site-packages`.
-    Run `uv run pytest` and fix anything that fails.
+    Run `uv run pytest` and fix anything that fails; a web app's
+    runs take no browser pacing until the last, paced one
+    (`frontend/references/testing-web-app.md`, "Running").
     Then type-check: run `uv run mypy backend/ tests/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
@@ -649,8 +651,9 @@ adds to it, as the table in [What Each Front End Adds](#what-each-front-end-adds
 6. Update React components.
 7. Update the scenarios. Re-verify the backend: run
    `uv run mypy backend/ tests/` from the project root and
-   `uv run pytest`; fix every error and failure before handing
-   back, and ask before removing `@wip`.
+   `uv run pytest` (without browser pacing until the last run, as
+   `frontend/references/testing-web-app.md` "Running" says); fix
+   every error and failure before handing back, and ask before removing `@wip`.
 8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no

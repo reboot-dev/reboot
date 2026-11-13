@@ -142,7 +142,8 @@ run it. Concretely:
   worth formal verification; when a scenario shows what an
   operation does and nothing more, leave it at the top level.
 - **Run the suite** (`uv run pytest`, or `-m wip` for
-  what is in progress) and `uv run mypy backend/ tests/`; fix what fails.
+  what is in progress; a web app's runs without browser pacing
+  until the last, paced one, as `testing-web-app.md` "Running" says) and `uv run mypy backend/ tests/`; fix what fails.
 - **Suggest reviewing in the dashboard** after each round: the
   feature's card, its rules, the methods it uses and the ones no
   feature uses, and the recordings.
