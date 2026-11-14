@@ -684,6 +684,34 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_call_has_a_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { call { description: "Open" inline {} } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["in an `entry` of state 'PENDING': the `call` has no `method`"],
+        )
+
+    def test_a_call_that_says_nothing_of_how_has_no_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            exit { call { description: "Close" } }
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["in an `exit` of the statechart: the `call` has no `method`"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """

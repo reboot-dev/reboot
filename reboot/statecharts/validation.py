@@ -7,11 +7,15 @@ from typing import Optional, overload
 
 
 def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
-    """Returns every problem with `call`: it has a description."""
+    """Returns every problem with `call`: it has a description, and it
+    names a method."""
     problems: list[str] = []
 
     if not call.description.strip():
         problems.append("the `call` has no `description`")
+
+    if not call.inline.method:
+        problems.append("the `call` has no `method`")
 
     return problems
 
