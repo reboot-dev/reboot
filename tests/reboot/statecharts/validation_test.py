@@ -789,6 +789,40 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_schedule_has_a_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPING"
+            states {
+              name: "SHIPPING"
+              entry { schedule { inline {} } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state 'SHIPPING': the `schedule` has no "
+                "`method`"
+            ],
+        )
+
+    def test_a_schedule_that_says_nothing_of_how_has_no_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPING"
+            entry { schedule {} }
+            states { name: "SHIPPING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of the statechart: the `schedule` has no "
+                "`method`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """

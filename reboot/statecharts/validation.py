@@ -30,6 +30,18 @@ def _check_inject(inject: statechart_pb2.Statechart.Inject) -> list[str]:
     return problems
 
 
+def _check_schedule(
+    schedule: statechart_pb2.Statechart.Schedule,
+) -> list[str]:
+    """Returns every problem with `schedule`: it names a method."""
+    problems: list[str] = []
+
+    if not schedule.inline.method:
+        problems.append("the `schedule` has no `method`")
+
+    return problems
+
+
 @overload
 def _check_initial(*, statechart: statechart_pb2.Statechart) -> list[str]:
     ...
@@ -294,7 +306,10 @@ def _check_entries(
             case "inject":
                 for problem in _check_inject(entry.inject):
                     problems.append(f"in an `entry` of {subject}: {problem}")
-            case "schedule" | "timer":
+            case "schedule":
+                for problem in _check_schedule(entry.schedule):
+                    problems.append(f"in an `entry` of {subject}: {problem}")
+            case "timer":
                 pass
             case _:
                 problems.append(
