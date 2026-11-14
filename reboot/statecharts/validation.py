@@ -129,7 +129,7 @@ def _check_transitions(
 ) -> list[str]:
     """Returns every problem with the transitions of `statechart`, or
     of `state`, and of every state within it: each transition is an
-    `on` or a `when`."""
+    `on` or a `when`, and an `on` names an event."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
@@ -144,10 +144,19 @@ def _check_transitions(
     problems: list[str] = []
 
     for transition in transitions:
-        if transition.WhichOneof("transition") is None:
-            problems.append(
-                f"a transition of {subject} is neither an `on` nor a `when`"
-            )
+        match transition.WhichOneof("transition"):
+            case "on":
+                if not transition.on.event:
+                    problems.append(
+                        f"an `on` transition of {subject} has no `event`"
+                    )
+            case "when":
+                pass
+            case _:
+                problems.append(
+                    f"a transition of {subject} is neither an `on` nor a "
+                    "`when`"
+                )
 
     for substate in substates:
         problems.extend(_check_transitions(state=substate))

@@ -227,6 +227,36 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_an_on_of_a_statechart_has_an_event(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions { on { to: "CANCELLED" } }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["an `on` transition of the statechart has no `event`"],
+        )
+
+    def test_an_on_of_a_state_has_an_event(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { to: "SHIPPED" } }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["an `on` transition of state 'PENDING' has no `event`"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
