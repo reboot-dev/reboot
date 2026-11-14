@@ -135,6 +135,15 @@ failure_test(
 )
 
 failure_test(
+    name = "statechart_without_initial",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/statechart_without_initial.proto':
+        The statechart of 'tests.reboot.protoc.Echo' has 1 problem:
+        - the statechart has states but no `initial`
+    """,
+)
+
+failure_test(
     name = "statechart_without_state_annotation",
     expected_error = """
         Error processing

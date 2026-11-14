@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  option (rbt.v1alpha1.statechart) = {
+    // TESTS: a statechart with states must say which one it is entered
+    //        at.
+    states { name: "QUIET" }
+    states { name: "LOUD" }
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
