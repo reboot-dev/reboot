@@ -13,6 +13,8 @@ from google.protobuf.descriptor_pb2 import (
     ServiceOptions,
 )
 from rbt.v1alpha1 import options_pb2
+from rbt.v1alpha1.statecharts import statechart_pb2
+from typing import Optional
 
 
 def get_state_options(state: Descriptor) -> options_pb2.StateOptions:
@@ -37,6 +39,20 @@ def is_reboot_state(message: Descriptor) -> bool:
     """
     options: MessageOptions = message.GetOptions()
     return options_pb2.state in options.Extensions
+
+
+def get_statechart_options(
+    message: Descriptor
+) -> Optional[statechart_pb2.Statechart]:
+    """
+    Takes a proto descriptor for a message, and extracts the statechart
+    that the message declares with the `rbt.v1alpha1.statechart` option,
+    or `None` if it declares none.
+    """
+    options: MessageOptions = message.GetOptions()
+    if options_pb2.statechart not in options.Extensions:
+        return None
+    return options.Extensions[options_pb2.statechart]
 
 
 def get_method_options(method: MethodDescriptor) -> options_pb2.MethodOptions:

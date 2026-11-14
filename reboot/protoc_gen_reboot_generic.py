@@ -28,6 +28,7 @@ from reboot.options import (
     get_method_options,
     get_service_options,
     get_state_options,
+    get_statechart_options,
     has_method_options,
     has_service_options,
     is_reboot_state,
@@ -36,6 +37,7 @@ from reboot.settings import (
     AUTO_CONSTRUCT_PROTO_METHOD,
     SET_CLAIMS_PROTO_METHOD,
 )
+from reboot.statecharts.validation import check_statechart
 from reboot.version import REBOOT_VERSION
 from typing import Any, Literal, Optional, Sequence
 
@@ -488,6 +490,35 @@ class RebootProtocPlugin(ProtocPlugin):
             reboot=reboot_services,
             legacy_grpc=legacy_grpc_services,
         )
+
+    def _check_statecharts(self, file: FileDescriptor) -> None:
+        """Checks every statechart that a message of `file` declares."""
+
+        def check_message(message: Descriptor) -> None:
+            statechart = get_statechart_options(message)
+            if statechart is not None:
+                if not is_reboot_state(message):
+                    raise UserProtoError(
+                        f"Message '{message.full_name}' has a statechart "
+                        "but is not annotated as a Reboot state; the "
+                        "'rbt.v1alpha1.statechart' annotation is only for "
+                        "a message that also has the 'rbt.v1alpha1.state' "
+                        "annotation."
+                    )
+                problems = check_statechart(statechart)
+                if len(problems) > 0:
+                    lines = "\n".join(f"  - {problem}" for problem in problems)
+                    raise UserProtoError(
+                        f"The statechart of '{message.full_name}' has "
+                        f"{len(problems)} "
+                        f"problem{'s' if len(problems) != 1 else ''}:\n"
+                        f"{lines}"
+                    )
+            for nested in message.nested_types:
+                check_message(nested)
+
+        for message in file.message_types_by_name.values():
+            check_message(message)
 
     def _check_states(
         self, proto_file: ProtoFile, proto_states: list[ProtoState]
@@ -1133,6 +1164,8 @@ class RebootProtocPlugin(ProtocPlugin):
         file_proto: FileDescriptorProto,
     ) -> BaseFile:
         checked_services = self._check_services(file)
+
+        self._check_statecharts(file)
 
         proto_file = self._proto_file(file, file_proto)
 

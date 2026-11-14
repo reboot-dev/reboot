@@ -293,7 +293,9 @@ def reboot_libraries_for_proto(
             # the `proto_libraries` here.
             "//tests/reboot/protoc:shared_proto",
             "//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1/statecharts:statechart_proto",
             "@com_google_protobuf//:descriptor_proto",
+            "@com_google_protobuf//:struct_proto",
         ] + proto_deps,
         visibility = ["//visibility:public"],
     )

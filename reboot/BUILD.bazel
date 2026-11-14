@@ -73,6 +73,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
         requirement("protobuf"),
     ],
 )
@@ -135,6 +136,7 @@ py_library(
         ":options_py",
         ":settings_py",
         ":version_py",
+        "//reboot/statecharts:validation_py",
         "@com_github_reboot_dev_pyprotoc_plugin//pyprotoc_plugin",
         "@googleapis//google/api:annotations_py_proto",
         requirement("jinja2-strcase"),

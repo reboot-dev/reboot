@@ -1,0 +1,206 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.statecharts;
+
+import "google/protobuf/struct.proto";
+
+// A statechart: the lifecycle of a state type, declared as data.
+//
+// Everything in it refers to what runs by name:
+//
+//   * An event is a message, named by its full name
+//     ("shop.v1.ServiceDue"). Every event the statechart mentions
+//     is listed in `events`.
+//   * A condition, guard, action or activity is a method that the
+//     state type's implementation provides, named the way an rpc is
+//     ("LampGreen").
+//
+// The statechart is itself a composite state: `initial` names the
+// state it is entered at, and its `transitions` are inherited by
+// every state.
+message Statechart {
+  // What a `When` waits on: a fact about the state.
+  message Condition {
+    // A function of the state, returning whether the condition holds,
+    // that the state type's implementation provides.
+    message Inline {
+      string method = 1;
+    }
+
+    oneof condition {
+      Inline inline = 1;
+    }
+  }
+
+  // What an `On` is guarded by: a fact about the state and the event.
+  message Guard {
+    // A function of the state and the event, returning whether the
+    // transition may fire, that the state type's implementation
+    // provides.
+    message Inline {
+      string method = 1;
+    }
+
+    oneof guard {
+      Inline inline = 1;
+    }
+  }
+
+  // An action: runs inside the transition's commit.
+  message Call {
+    // A function of the state and the event that triggered the
+    // transition, which may change the state, that the state type's
+    // implementation provides.
+    message Inline {
+      string method = 1;
+      // Every event the function may inject, which it does by
+      // returning it. Left out, it injects nothing.
+      repeated string injects = 2;
+    }
+
+    // What the action does. Required.
+    string description = 1;
+    oneof call {
+      Inline inline = 2;
+    }
+  }
+
+  // An action: injects a fixed event. An injected event is handled
+  // next, ahead of every event that is waiting, so that a trigger and
+  // all that it causes are handled before the next trigger is.
+  message Inject {
+    // The event.
+    string event = 1;
+    // The event's fields, in the form of the schema the event is
+    // declared in. Left out for an event without any.
+    optional google.protobuf.Struct value = 2;
+  }
+
+  // What a `Timer` does at its deadline: enqueues a fixed event. An
+  // enqueued event waits its turn, behind every event already
+  // waiting.
+  message Enqueue {
+    // The event.
+    string event = 1;
+    // The event's fields, in the form of the schema the event is
+    // declared in. Left out for an event without any.
+    optional google.protobuf.Struct value = 2;
+  }
+
+  // An activity: runs while the state is active. The statechart
+  // waits for it to finish before leaving the state.
+  message Schedule {
+    // A function, given what a `workflow` is given, that the state
+    // type's implementation provides.
+    message Inline {
+      string method = 1;
+      // Every event the function may enqueue when it finishes, which
+      // it does by returning it. Left out, it enqueues nothing.
+      repeated string enqueues = 2;
+    }
+
+    oneof schedule {
+      Inline inline = 1;
+    }
+  }
+
+  // An activity: enqueues its event after the delay, the sum of
+  // whichever of the fields below are given, unless the state is left
+  // first.
+  message Timer {
+    optional double seconds = 1;
+    optional double minutes = 2;
+    optional double hours = 3;
+    optional double days = 4;
+    Enqueue enqueue = 5;
+  }
+
+  // What a state does when it is entered: an action, or an activity
+  // that runs while the state is active.
+  message Entry {
+    oneof entry {
+      Call call = 1;
+      Inject inject = 2;
+      Schedule schedule = 3;
+      Timer timer = 4;
+    }
+  }
+
+  // What a state does when it is left: an action.
+  message Exit {
+    oneof exit {
+      Call call = 1;
+      Inject inject = 2;
+    }
+  }
+
+  // What a transition does when it fires.
+  message Action {
+    oneof action {
+      Call call = 1;
+      Inject inject = 2;
+    }
+  }
+
+  // A transition that fires when an event is handled by the state
+  // that carries it and the guard, if any, returns true.
+  message On {
+    // The event.
+    string event = 1;
+    optional Guard guard = 2;
+    // The state to go to, by its hierarchical state name: the names
+    // of the states it is within, outermost first, and then its own
+    // name, separated by `/` ("SERVICE/WAITING"). A state of the
+    // statechart itself is just its own name. Left out, the
+    // transition runs its actions and stays.
+    optional string to = 3;
+    repeated Action actions = 4;
+    // Enter a composite target at the state it last occupied, at
+    // every level, instead of at `initial`.
+    bool resume = 5;
+  }
+
+  // A transition that fires when a condition holds.
+  message When {
+    // Labels the arrow. Required.
+    string description = 1;
+    Condition condition = 2;
+    // The state to go to, as for an `On`.
+    optional string to = 3;
+    repeated Action actions = 4;
+    // As for an `On`.
+    bool resume = 5;
+  }
+
+  message Transition {
+    oneof transition {
+      On on = 1;
+      When when = 2;
+    }
+  }
+
+  message State {
+    // Unique among its siblings.
+    string name = 1;
+    // The state this one is entered at. Required of a state that has
+    // `states`.
+    optional string initial = 2;
+    repeated State states = 3;
+    repeated Entry entry = 4;
+    repeated Exit exit = 5;
+    repeated Transition transitions = 6;
+    // A final state has no activities and no transitions, and
+    // inherits none.
+    bool final = 7;
+    optional string description = 8;
+  }
+
+  string initial = 1;
+  repeated State states = 2;
+  repeated Transition transitions = 3;
+  repeated Entry entry = 4;
+  repeated Exit exit = 5;
+  // Every event the statechart mentions, which is also every event
+  // that one of the state type's own methods may enqueue.
+  repeated string events = 6;
+}
