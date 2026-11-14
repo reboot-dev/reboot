@@ -524,6 +524,83 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_actions_that_say_what_they_do_have_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+                actions { inject { event: "shop.v1.Refunded" } }
+              }
+            }
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  to: "CANCELLED"
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline { method: "RecordPayment" }
+                    }
+                  }
+                }
+              }
+            }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_action_of_an_on_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on { event: "shop.v1.Paid" to: "SHIPPED" actions {} }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an action of an `on` transition of state 'PENDING' is "
+                "neither a `call` nor an `inject`"
+            ],
+        )
+
+    def test_an_action_of_a_when_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+                actions {}
+              }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an action of a `when` transition of the statechart is "
+                "neither a `call` nor an `inject`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """

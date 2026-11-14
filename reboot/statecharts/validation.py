@@ -130,8 +130,9 @@ def _check_transitions(
     """Returns every problem with the transitions of `statechart`, or
     of `state`, and of every state within it: each transition is an
     `on` or a `when`, an `on` has an event and its guard, if it has
-    one, names a method, and a `when` has a description and a condition
-    that names a method."""
+    one, names a method, a `when` has a description and a condition
+    that names a method, and each action of either is a `call` or an
+    `inject`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
@@ -160,6 +161,12 @@ def _check_transitions(
                         f"the `guard` of an `on` transition of {subject} "
                         "has no `method`"
                     )
+                for action in transition.on.actions:
+                    if action.WhichOneof("action") is None:
+                        problems.append(
+                            f"an action of an `on` transition of {subject} "
+                            "is neither a `call` nor an `inject`"
+                        )
             case "when":
                 if not transition.when.description.strip():
                     problems.append(
@@ -177,6 +184,12 @@ def _check_transitions(
                         problems.append(
                             f"a `when` transition of {subject} has no "
                             "`condition`"
+                        )
+                for action in transition.when.actions:
+                    if action.WhichOneof("action") is None:
+                        problems.append(
+                            f"an action of a `when` transition of {subject} "
+                            "is neither a `call` nor an `inject`"
                         )
             case _:
                 problems.append(
