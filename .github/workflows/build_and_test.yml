@@ -106,6 +106,47 @@ jobs:
         # care of by the workflow in `devcontainer.yml`.
         ./submodules/dev-tools/check-style.sh --full
 
+  # When a branch changes the plugin or its eval cases, its author runs
+  # the evals with `tests/reboot/plugin/evals/compare.sh` and commits
+  # the result, `RESULT.md`. This job runs no evals: it fails when
+  # `RESULT.md` is missing or is from a different change.
+  check-plugin-evals-result:
+    name: Check Plugin Evals Result
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # As in `devcontainer.yml`: the PR head, or the queued merge
+          # commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          allow-unsafe-pr-checkout: true
+          # The check diffs the branch against where it left its base.
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Check that RESULT.md is for this change
+        env:
+          BASE_REF: origin/${{ github.event.pull_request.base.ref || 'main' }}
+        # This job runs for every open PR once it is on `main`, and a
+        # branch that left `main` before the script was added has no
+        # script to run.
+        run: |
+          if [ ! -x tests/reboot/plugin/evals/compare.sh ]; then
+            echo "This branch predates the plugin evals result check."
+            exit 0
+          fi
+          tests/reboot/plugin/evals/compare.sh --check
+
   build-reboot-linux-x86_x64-public:
     name: Build public repo for Linux x86_64
     # Runs only after `approve-fork-pr` clears (or is skipped for a

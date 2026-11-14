@@ -1,0 +1,2 @@
+dev run --application-name=tasks
+generate api/ --python=backend/api/

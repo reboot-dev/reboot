@@ -32,3 +32,7 @@ tests/reboot/general_servicer.golden.ts
 
 # Don't check our generated `pnpm-lock.yaml` files.
 pnpm-lock.yaml
+
+# Don't check the plugin evals' result: `compare.sh` generates it, and
+# its table is not padded the way prettier wants.
+tests/reboot/plugin/evals/RESULT.md
