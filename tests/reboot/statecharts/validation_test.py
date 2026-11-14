@@ -357,6 +357,71 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_an_on_with_a_guard_that_has_a_method_has_no_problems(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "PaidInFull" } }
+                  to: "SHIPPED"
+                }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_the_guard_of_an_on_has_a_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline {} }
+                  to: "SHIPPED"
+                }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the `guard` of an `on` transition of state 'PENDING' has no "
+                "`method`"
+            ],
+        )
+
+    def test_a_guard_that_is_empty_has_no_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              on { event: "shop.v1.Cancelled" guard {} to: "CANCELLED" }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the `guard` of an `on` transition of the statechart has no "
+                "`method`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
