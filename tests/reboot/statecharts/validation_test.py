@@ -1168,6 +1168,56 @@ class ValidationTest(unittest.TestCase):
             ["state `FOO/WAITING` has states but no `initial`"],
         )
 
+    def test_the_name_of_a_state_of_a_statechart_has_no_separator(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            initial: "FOO/WAITING"
+            states { name: "FOO/WAITING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart has a state named 'FOO/WAITING', but a "
+                "state's name cannot contain `/`"
+            ],
+        )
+
+    def test_the_name_of_a_substate_has_no_separator(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "FOO"
+            states {
+              name: "FOO"
+              initial: "NOT/YET"
+              states { name: "NOT/YET" }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `FOO` has a state named 'NOT/YET', but a state's name "
+                "cannot contain `/`"
+            ],
+        )
+
+    def test_states_without_a_name_are_one_problem(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states {}
+            states {}
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["the statechart has a state without a `name`"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """

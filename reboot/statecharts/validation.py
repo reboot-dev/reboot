@@ -177,8 +177,9 @@ def _check_state_names(
 ) -> list[str]:
     """Returns every problem with the names of the substates of
     `statechart`, or of `state`, and of every state within it: each
-    substate has a name, and no two substates of one state have the
-    same name. `hierarchical_state_name` is that of `state`."""
+    substate has a name, which does not contain `/`, and no two
+    substates of one state have the same name.
+    `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
@@ -198,8 +199,18 @@ def _check_state_names(
 
     for name, count in count_by_name.items():
         if name == "":
+            # However many substates have no name, that is one problem,
+            # and the checks of a name below do not apply.
             problems.append(f"{subject} has a state without a `name`")
-        elif count > 1:
+            continue
+        if _HIERARCHICAL_STATE_NAME_SEPARATOR in name:
+            # Otherwise the state `B` within the state `A` and a state
+            # named "A/B" would have the same hierarchical state name.
+            problems.append(
+                f"{subject} has a state named '{name}', but a state's "
+                f"name cannot contain `{_HIERARCHICAL_STATE_NAME_SEPARATOR}`"
+            )
+        if count > 1:
             problems.append(
                 f"{subject} has more than one state named '{name}'"
             )
