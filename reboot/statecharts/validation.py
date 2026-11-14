@@ -1,9 +1,36 @@
 """Checks a `rbt.v1alpha1.statecharts.Statechart` message against the
-rules that the message alone can break, without running anything."""
+rules that the message alone can break, without running anything.
+
+A state is identified by its hierarchical state name: the names of the
+states it is within, outermost first, and then its own name, separated
+by `/`. The state `WAITING` within the state `FOO` is `FOO/WAITING`,
+and a state of the statechart itself is just its own name.
+"""
 from __future__ import annotations
 
 from rbt.v1alpha1.statecharts import statechart_pb2
 from typing import Optional, overload
+
+# What separates the names in a hierarchical state name, as in
+# "FOO/WAITING".
+_HIERARCHICAL_STATE_NAME_SEPARATOR = "/"
+
+
+def _hierarchical_state_name(
+    state_name: str,
+    *,
+    hierarchical_superstate_name: Optional[str],
+) -> str:
+    """Returns the hierarchical state name of the state named
+    `state_name`. `hierarchical_superstate_name` is the hierarchical
+    state name of the state that it is a substate of, or `None` if it
+    is a state of the statechart itself."""
+    if hierarchical_superstate_name is None:
+        return state_name
+    return (
+        f"{hierarchical_superstate_name}"
+        f"{_HIERARCHICAL_STATE_NAME_SEPARATOR}{state_name}"
+    )
 
 
 def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
@@ -70,7 +97,11 @@ def _check_initial(*, statechart: statechart_pb2.Statechart) -> list[str]:
 
 
 @overload
-def _check_initial(*, state: statechart_pb2.Statechart.State) -> list[str]:
+def _check_initial(
+    *,
+    state: statechart_pb2.Statechart.State,
+    hierarchical_state_name: str,
+) -> list[str]:
     ...
 
 
@@ -78,18 +109,20 @@ def _check_initial(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
+    hierarchical_state_name: Optional[str] = None,
 ) -> list[str]:
     """Returns every problem with where `statechart`, or `state`, and
     every state within it, is entered: one that has substates has an
-    `initial` that names one of them, and one without has none."""
+    `initial` that names one of them, and one without has none.
+    `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
         initial = statechart.initial
         substates = statechart.states
     else:
-        assert state is not None
-        subject = f"state '{state.name}'"
+        assert state is not None and hierarchical_state_name is not None
+        subject = f"state `{hierarchical_state_name}`"
         initial = state.initial
         substates = state.states
 
@@ -109,7 +142,15 @@ def _check_initial(
         )
 
     for substate in substates:
-        problems.extend(_check_initial(state=substate))
+        problems.extend(
+            _check_initial(
+                state=substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
@@ -123,6 +164,7 @@ def _check_state_names(*, statechart: statechart_pb2.Statechart) -> list[str]:
 def _check_state_names(
     *,
     state: statechart_pb2.Statechart.State,
+    hierarchical_state_name: str,
 ) -> list[str]:
     ...
 
@@ -131,18 +173,19 @@ def _check_state_names(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
+    hierarchical_state_name: Optional[str] = None,
 ) -> list[str]:
     """Returns every problem with the names of the substates of
     `statechart`, or of `state`, and of every state within it: each
     substate has a name, and no two substates of one state have the
-    same name."""
+    same name. `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
         substates = statechart.states
     else:
-        assert state is not None
-        subject = f"state '{state.name}'"
+        assert state is not None and hierarchical_state_name is not None
+        subject = f"state `{hierarchical_state_name}`"
         substates = state.states
 
     problems: list[str] = []
@@ -162,7 +205,15 @@ def _check_state_names(
             )
 
     for substate in substates:
-        problems.extend(_check_state_names(state=substate))
+        problems.extend(
+            _check_state_names(
+                state=substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
@@ -176,6 +227,7 @@ def _check_transitions(*, statechart: statechart_pb2.Statechart) -> list[str]:
 def _check_transitions(
     *,
     state: statechart_pb2.Statechart.State,
+    hierarchical_state_name: str,
 ) -> list[str]:
     ...
 
@@ -184,21 +236,22 @@ def _check_transitions(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
+    hierarchical_state_name: Optional[str] = None,
 ) -> list[str]:
     """Returns every problem with the transitions of `statechart`, or
     of `state`, and of every state within it: each transition is an
     `on` or a `when`, an `on` has an event and its guard, if it has
     one, names a method, a `when` has a description and a condition
     that names a method, and each action of either is a `call` or an
-    `inject`."""
+    `inject`. `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
         transitions = statechart.transitions
         substates = statechart.states
     else:
-        assert state is not None
-        subject = f"state '{state.name}'"
+        assert state is not None and hierarchical_state_name is not None
+        subject = f"state `{hierarchical_state_name}`"
         transitions = state.transitions
         substates = state.states
 
@@ -284,7 +337,15 @@ def _check_transitions(
                 )
 
     for substate in substates:
-        problems.extend(_check_transitions(state=substate))
+        problems.extend(
+            _check_transitions(
+                state=substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
@@ -295,7 +356,11 @@ def _check_entries(*, statechart: statechart_pb2.Statechart) -> list[str]:
 
 
 @overload
-def _check_entries(*, state: statechart_pb2.Statechart.State) -> list[str]:
+def _check_entries(
+    *,
+    state: statechart_pb2.Statechart.State,
+    hierarchical_state_name: str,
+) -> list[str]:
     ...
 
 
@@ -303,18 +368,20 @@ def _check_entries(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
+    hierarchical_state_name: Optional[str] = None,
 ) -> list[str]:
     """Returns every problem with the entries of `statechart`, or of
     `state`, and of every state within it: each entry is a `call`, an
-    `inject`, a `schedule` or a `timer`."""
+    `inject`, a `schedule` or a `timer`. `hierarchical_state_name` is
+    that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
         entries = statechart.entry
         substates = statechart.states
     else:
-        assert state is not None
-        subject = f"state '{state.name}'"
+        assert state is not None and hierarchical_state_name is not None
+        subject = f"state `{hierarchical_state_name}`"
         entries = state.entry
         substates = state.states
 
@@ -341,7 +408,15 @@ def _check_entries(
                 )
 
     for substate in substates:
-        problems.extend(_check_entries(state=substate))
+        problems.extend(
+            _check_entries(
+                state=substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
@@ -352,7 +427,11 @@ def _check_exits(*, statechart: statechart_pb2.Statechart) -> list[str]:
 
 
 @overload
-def _check_exits(*, state: statechart_pb2.Statechart.State) -> list[str]:
+def _check_exits(
+    *,
+    state: statechart_pb2.Statechart.State,
+    hierarchical_state_name: str,
+) -> list[str]:
     ...
 
 
@@ -360,18 +439,19 @@ def _check_exits(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
+    hierarchical_state_name: Optional[str] = None,
 ) -> list[str]:
     """Returns every problem with the exits of `statechart`, or of
     `state`, and of every state within it: each exit is a `call` or an
-    `inject`."""
+    `inject`. `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
         exits = statechart.exit
         substates = statechart.states
     else:
-        assert state is not None
-        subject = f"state '{state.name}'"
+        assert state is not None and hierarchical_state_name is not None
+        subject = f"state `{hierarchical_state_name}`"
         exits = state.exit
         substates = state.states
 
@@ -392,15 +472,28 @@ def _check_exits(
                 )
 
     for substate in substates:
-        problems.extend(_check_exits(state=substate))
+        problems.extend(
+            _check_exits(
+                state=substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
 
-def _check_final(state: statechart_pb2.Statechart.State) -> list[str]:
+def _check_final(
+    state: statechart_pb2.Statechart.State,
+    *,
+    hierarchical_state_name: str,
+) -> list[str]:
     """Returns every problem with `state`, and with every state within
     it, being final: a final state has no `schedule`, no `timer`, no
-    transitions and no substates."""
+    transitions and no substates. `hierarchical_state_name` is that of
+    `state`."""
     problems: list[str] = []
 
     if state.final:
@@ -409,20 +502,30 @@ def _check_final(state: statechart_pb2.Statechart.State) -> list[str]:
             for entry in state.entry
         ):
             problems.append(
-                f"state '{state.name}' is final and cannot have a "
+                f"state `{hierarchical_state_name}` is final and cannot have a "
                 "`schedule` or a `timer`"
             )
         if len(state.transitions) > 0:
             problems.append(
-                f"state '{state.name}' is final and cannot have transitions"
+                f"state `{hierarchical_state_name}` is final and cannot have "
+                "transitions"
             )
         if len(state.states) > 0:
             problems.append(
-                f"state '{state.name}' is final and cannot have states"
+                f"state `{hierarchical_state_name}` is final and cannot "
+                "have states"
             )
 
     for substate in state.states:
-        problems.extend(_check_final(substate))
+        problems.extend(
+            _check_final(
+                substate,
+                hierarchical_state_name=_hierarchical_state_name(
+                    substate.name,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        )
 
     return problems
 
@@ -537,7 +640,15 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     problems.extend(_check_exits(statechart=statechart))
     problems.extend(_check_transitions(statechart=statechart))
     for state in statechart.states:
-        problems.extend(_check_final(state))
+        problems.extend(
+            _check_final(
+                state,
+                hierarchical_state_name=_hierarchical_state_name(
+                    state.name,
+                    hierarchical_superstate_name=None,
+                ),
+            )
+        )
     problems.extend(_check_events(statechart))
 
     return problems

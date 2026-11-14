@@ -56,7 +56,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["state 'OPEN' has states but no `initial`"],
+            ["state `OPEN` has states but no `initial`"],
         )
 
     def test_an_initial_is_one_of_the_states(self) -> None:
@@ -89,7 +89,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "`initial: \"SHIPPED\"` of state 'OPEN' is not one of its "
+                "`initial: \"SHIPPED\"` of state `OPEN` is not one of its "
                 "states"
             ],
         )
@@ -103,7 +103,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ['state \'PENDING\' has `initial: "NEW"` but no states'],
+            ['state `PENDING` has `initial: "NEW"` but no states'],
         )
 
     def test_a_state_has_a_name(self) -> None:
@@ -147,7 +147,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["state 'OPEN' has more than one state named 'PENDING'"],
+            ["state `OPEN` has more than one state named 'PENDING'"],
         )
 
     def test_states_that_are_not_siblings_can_share_a_name(self) -> None:
@@ -224,7 +224,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "a transition of state 'PENDING' is neither an `on` nor a "
+                "a transition of state `PENDING` is neither an `on` nor a "
                 "`when`"
             ],
         )
@@ -256,7 +256,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["an `on` transition of state 'PENDING' has no `event`"],
+            ["an `on` transition of state `PENDING` has no `event`"],
         )
 
     def test_a_when_of_a_statechart_has_a_description(self) -> None:
@@ -297,7 +297,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["a `when` transition of state 'PENDING' has no `description`"],
+            ["a `when` transition of state `PENDING` has no `description`"],
         )
 
     def test_a_when_of_a_statechart_has_a_condition(self) -> None:
@@ -331,7 +331,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["a `when` transition of state 'PENDING' has no `condition`"],
+            ["a `when` transition of state `PENDING` has no `condition`"],
         )
 
     def test_the_condition_of_a_when_has_a_method(self) -> None:
@@ -354,7 +354,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "the `condition` of a `when` transition of state 'PENDING' "
+                "the `condition` of a `when` transition of state `PENDING` "
                 "has no `method`"
             ],
         )
@@ -402,7 +402,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "the `guard` of an `on` transition of state 'PENDING' has no "
+                "the `guard` of an `on` transition of state `PENDING` has no "
                 "`method`"
             ],
         )
@@ -477,7 +477,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "an `entry` of state 'PENDING' is neither a `call`, an "
+                "an `entry` of state `PENDING` is neither a `call`, an "
                 "`inject`, a `schedule` nor a `timer`"
             ],
         )
@@ -527,7 +527,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "an `exit` of state 'PENDING' is neither a `call` nor an "
+                "an `exit` of state `PENDING` is neither a `call` nor an "
                 "`inject`"
             ],
         )
@@ -583,7 +583,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "an action of an `on` transition of state 'PENDING' is "
+                "an action of an `on` transition of state `PENDING` is "
                 "neither a `call` nor an `inject`"
             ],
         )
@@ -625,7 +625,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `entry` of state 'PENDING': the `call` has no "
+                "in an `entry` of state `PENDING`: the `call` has no "
                 "`description`"
             ],
         )
@@ -667,7 +667,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `on` transition of state 'PENDING': the `call` has no "
+                "in an `on` transition of state `PENDING`: the `call` has no "
                 "`description`"
             ],
         )
@@ -708,7 +708,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["in an `entry` of state 'PENDING': the `call` has no `method`"],
+            ["in an `entry` of state `PENDING`: the `call` has no `method`"],
         )
 
     def test_a_call_that_says_nothing_of_how_has_no_method(self) -> None:
@@ -736,7 +736,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["in an `entry` of state 'PENDING': the `inject` has no `event`"],
+            ["in an `entry` of state `PENDING`: the `inject` has no `event`"],
         )
 
     def test_an_inject_in_an_exit_has_an_event(self) -> None:
@@ -773,7 +773,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `on` transition of state 'PENDING': the `inject` has "
+                "in an `on` transition of state `PENDING`: the `inject` has "
                 "no `event`"
             ],
         )
@@ -815,7 +815,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `entry` of state 'SHIPPING': the `schedule` has no "
+                "in an `entry` of state `SHIPPING`: the `schedule` has no "
                 "`method`"
             ],
         )
@@ -849,7 +849,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `entry` of state 'PENDING': the `timer` has no event "
+                "in an `entry` of state `PENDING`: the `timer` has no event "
                 "to `enqueue`"
             ],
         )
@@ -884,7 +884,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `entry` of state 'PENDING': the `timer` has no delay: "
+                "in an `entry` of state `PENDING`: the `timer` has no delay: "
                 "its `seconds`, `minutes`, `hours` and `days` must add up to "
                 "more than zero"
             ],
@@ -925,7 +925,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "in an `entry` of state 'PENDING': the `timer` has no delay: "
+                "in an `entry` of state `PENDING`: the `timer` has no delay: "
                 "its `seconds`, `minutes`, `hours` and `days` must add up to "
                 "more than zero"
             ],
@@ -961,7 +961,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["state 'CANCELLED' is final and cannot have transitions"],
+            ["state `CANCELLED` is final and cannot have transitions"],
         )
 
     def test_a_final_state_has_no_schedule_or_timer(self) -> None:
@@ -981,7 +981,7 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "state 'CANCELLED' is final and cannot have a `schedule` or "
+                "state `CANCELLED` is final and cannot have a `schedule` or "
                 "a `timer`"
             ],
         )
@@ -1004,7 +1004,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["state 'CLOSED' is final and cannot have states"],
+            ["state `OPEN/CLOSED` is final and cannot have states"],
         )
 
     def test_an_event_of_an_on_is_one_of_the_events(self) -> None:
@@ -1141,6 +1141,33 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_state_is_called_by_its_hierarchical_state_name(self) -> None:
+        # Two states are named `WAITING`. The one with the problem is
+        # the one within `FOO`.
+        statechart = make_statechart(
+            """
+            initial: "FOO"
+            states {
+              name: "FOO"
+              initial: "CREATING"
+              states { name: "CREATING" }
+              states {
+                name: "WAITING"
+                states { name: "PATIENTLY" }
+              }
+            }
+            states {
+              name: "BAR"
+              initial: "WAITING"
+              states { name: "WAITING" }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `FOO/WAITING` has states but no `initial`"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
@@ -1154,7 +1181,7 @@ class ValidationTest(unittest.TestCase):
             check_statechart(statechart),
             [
                 "the statechart has states but no `initial`",
-                "state 'OPEN' has states but no `initial`",
+                "state `OPEN` has states but no `initial`",
             ],
         )
 
