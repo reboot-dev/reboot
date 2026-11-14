@@ -298,6 +298,65 @@ class ValidationTest(unittest.TestCase):
             ["a `when` transition of state 'PENDING' has no `description`"],
         )
 
+    def test_a_when_of_a_statechart_has_a_condition(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions { when { description: "Cancelled" to: "CANCELLED" } }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["a `when` transition of the statechart has no `condition`"],
+        )
+
+    def test_a_when_of_a_state_has_a_condition(self) -> None:
+        # A `condition` that does not say how it is evaluated is no
+        # condition.
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                when { description: "Paid" condition {} to: "SHIPPED" }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["a `when` transition of state 'PENDING' has no `condition`"],
+        )
+
+    def test_the_condition_of_a_when_has_a_method(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                when {
+                  description: "Paid"
+                  condition { inline {} }
+                  to: "SHIPPED"
+                }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the `condition` of a `when` transition of state 'PENDING' "
+                "has no `method`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
