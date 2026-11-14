@@ -9,7 +9,7 @@ and a state of the statechart itself is just its own name.
 from __future__ import annotations
 
 from rbt.v1alpha1.statecharts import statechart_pb2
-from typing import Optional, overload
+from typing import Iterable, Optional, overload
 
 # What separates the names in a hierarchical state name, as in
 # "FOO/WAITING".
@@ -31,6 +31,34 @@ def _hierarchical_state_name(
         f"{hierarchical_superstate_name}"
         f"{_HIERARCHICAL_STATE_NAME_SEPARATOR}{state_name}"
     )
+
+
+def _hierarchical_state_names(
+    states: Iterable[statechart_pb2.Statechart.State],
+    *,
+    hierarchical_superstate_name: Optional[str],
+) -> list[str]:
+    """Returns the hierarchical state name of each of `states`, and of
+    every state within them. `hierarchical_superstate_name` is the
+    hierarchical state name of the state that `states` are the
+    substates of, or `None` if they are the states of the statechart
+    itself."""
+    hierarchical_state_names: list[str] = []
+
+    for state in states:
+        hierarchical_state_name = _hierarchical_state_name(
+            state.name,
+            hierarchical_superstate_name=hierarchical_superstate_name,
+        )
+        hierarchical_state_names.append(hierarchical_state_name)
+        hierarchical_state_names.extend(
+            _hierarchical_state_names(
+                state.states,
+                hierarchical_superstate_name=hierarchical_state_name,
+            )
+        )
+
+    return hierarchical_state_names
 
 
 def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
@@ -230,7 +258,11 @@ def _check_state_names(
 
 
 @overload
-def _check_transitions(*, statechart: statechart_pb2.Statechart) -> list[str]:
+def _check_transitions(
+    *,
+    statechart: statechart_pb2.Statechart,
+    all_hierarchical_state_names: frozenset[str],
+) -> list[str]:
     ...
 
 
@@ -239,6 +271,7 @@ def _check_transitions(
     *,
     state: statechart_pb2.Statechart.State,
     hierarchical_state_name: str,
+    all_hierarchical_state_names: frozenset[str],
 ) -> list[str]:
     ...
 
@@ -248,13 +281,17 @@ def _check_transitions(
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
     hierarchical_state_name: Optional[str] = None,
+    all_hierarchical_state_names: frozenset[str],
 ) -> list[str]:
     """Returns every problem with the transitions of `statechart`, or
     of `state`, and of every state within it: each transition is an
     `on` or a `when`, an `on` has an event and its guard, if it has
     one, names a method, a `when` has a description and a condition
-    that names a method, and each action of either is a `call` or an
-    `inject`. `hierarchical_state_name` is that of `state`."""
+    that names a method, each action of either is a `call` or an
+    `inject`, and the `to` of either, if it has one, is the
+    hierarchical state name of a state. `hierarchical_state_name` is
+    that of `state`, and `all_hierarchical_state_names` are those of
+    every state of the statechart."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
@@ -282,6 +319,15 @@ def _check_transitions(
                     problems.append(
                         f"the `guard` of an `on` transition of {subject} "
                         "has no `method`"
+                    )
+                if (
+                    transition.on.HasField("to") and
+                    transition.on.to not in all_hierarchical_state_names
+                ):
+                    problems.append(
+                        f"`to: \"{transition.on.to}\"` of an `on` "
+                        f"transition of {subject} is not the hierarchical "
+                        "state name of a state"
                     )
                 for action in transition.on.actions:
                     match action.WhichOneof("action"):
@@ -321,6 +367,15 @@ def _check_transitions(
                             f"a `when` transition of {subject} has no "
                             "`condition`"
                         )
+                if (
+                    transition.when.HasField("to") and
+                    transition.when.to not in all_hierarchical_state_names
+                ):
+                    problems.append(
+                        f"`to: \"{transition.when.to}\"` of a `when` "
+                        f"transition of {subject} is not the hierarchical "
+                        "state name of a state"
+                    )
                 for action in transition.when.actions:
                     match action.WhichOneof("action"):
                         case "call":
@@ -355,6 +410,7 @@ def _check_transitions(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
+                all_hierarchical_state_names=all_hierarchical_state_names,
             )
         )
 
@@ -649,7 +705,17 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     problems.extend(_check_initial(statechart=statechart))
     problems.extend(_check_entries(statechart=statechart))
     problems.extend(_check_exits(statechart=statechart))
-    problems.extend(_check_transitions(statechart=statechart))
+    problems.extend(
+        _check_transitions(
+            statechart=statechart,
+            all_hierarchical_state_names=frozenset(
+                _hierarchical_state_names(
+                    statechart.states,
+                    hierarchical_superstate_name=None,
+                )
+            ),
+        )
+    )
     for state in statechart.states:
         problems.extend(
             _check_final(

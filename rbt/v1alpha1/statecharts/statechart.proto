@@ -148,11 +148,11 @@ message Statechart {
     // The event.
     string event = 1;
     optional Guard guard = 2;
-    // The state to go to: a state's name, which is a sibling of the
-    // state carrying the transition first and otherwise the only
-    // state of that name in the statechart, or a path of names
-    // separated by `/` ("SERVICE/WAITING"). Left out, the transition
-    // runs its actions and stays.
+    // The state to go to, by its hierarchical state name: the names
+    // of the states it is within, outermost first, and then its own
+    // name, separated by `/` ("SERVICE/WAITING"). A state of the
+    // statechart itself is just its own name. Left out, the
+    // transition runs its actions and stays.
     optional string to = 3;
     repeated Action actions = 4;
     // Enter a composite target at the state it last occupied, at

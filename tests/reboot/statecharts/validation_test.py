@@ -1218,6 +1218,115 @@ class ValidationTest(unittest.TestCase):
             ["the statechart has a state without a `name`"],
         )
 
+    def test_a_to_that_is_a_hierarchical_state_name_has_no_problems(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Created"
+            events: "shop.v1.Finished"
+            initial: "FOO"
+            states {
+              name: "FOO"
+              initial: "CREATING"
+              states {
+                name: "CREATING"
+                transitions {
+                  on { event: "shop.v1.Created" to: "FOO/WAITING" }
+                }
+              }
+              states {
+                name: "WAITING"
+                transitions { on { event: "shop.v1.Finished" to: "BAR" } }
+              }
+            }
+            states { name: "BAR" }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_to_is_not_just_the_name_of_a_substate(self) -> None:
+        # `WAITING` is within `FOO`, so it is `FOO/WAITING`, also for a
+        # transition of another state within `FOO`.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Created"
+            initial: "FOO"
+            states {
+              name: "FOO"
+              initial: "CREATING"
+              states {
+                name: "CREATING"
+                transitions { on { event: "shop.v1.Created" to: "WAITING" } }
+              }
+              states { name: "WAITING" }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "`to: \"WAITING\"` of an `on` transition of state "
+                "`FOO/CREATING` is not the hierarchical state name of a state"
+            ],
+        )
+
+    def test_a_to_of_an_on_is_a_state(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" to: "SHIPING" } }
+            }
+            states { name: "SHIPPING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "`to: \"SHIPING\"` of an `on` transition of state `PENDING` "
+                "is not the hierarchical state name of a state"
+            ],
+        )
+
+    def test_a_to_of_a_when_is_a_state(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELED"
+              }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "`to: \"CANCELED\"` of a `when` transition of the "
+                "statechart is not the hierarchical state name of a state"
+            ],
+        )
+
+    def test_a_transition_without_a_to_has_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
