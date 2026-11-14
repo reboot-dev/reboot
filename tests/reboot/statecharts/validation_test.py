@@ -173,6 +173,7 @@ class ValidationTest(unittest.TestCase):
     ) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             transitions {
               when {
@@ -210,6 +211,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_transition_of_a_state_is_an_on_or_a_when(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -362,6 +364,7 @@ class ValidationTest(unittest.TestCase):
     ) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -381,6 +384,7 @@ class ValidationTest(unittest.TestCase):
     def test_the_guard_of_an_on_has_a_method(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -406,6 +410,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_guard_that_is_empty_has_no_method(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Cancelled"
             initial: "PENDING"
             transitions {
               on { event: "shop.v1.Cancelled" guard {} to: "CANCELLED" }
@@ -425,6 +430,8 @@ class ValidationTest(unittest.TestCase):
     def test_entries_that_say_what_they_do_have_no_problems(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Opened"
+            events: "shop.v1.TimedOut"
             initial: "PENDING"
             entry {
               call { description: "Open" inline { method: "Open" } }
@@ -478,6 +485,7 @@ class ValidationTest(unittest.TestCase):
     def test_exits_that_say_what_they_do_have_no_problems(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Left"
             initial: "PENDING"
             exit {
               call { description: "Close" inline { method: "Close" } }
@@ -527,6 +535,8 @@ class ValidationTest(unittest.TestCase):
     def test_actions_that_say_what_they_do_have_no_problems(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Refunded"
+            events: "shop.v1.Paid"
             initial: "PENDING"
             transitions {
               when {
@@ -559,6 +569,7 @@ class ValidationTest(unittest.TestCase):
     def test_an_action_of_an_on_says_what_it_does(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -638,6 +649,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_call_in_an_on_has_a_description(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -743,6 +755,7 @@ class ValidationTest(unittest.TestCase):
     def test_an_inject_in_an_on_has_an_event(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -860,6 +873,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_timer_has_a_delay(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.TimedOut"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -879,6 +893,7 @@ class ValidationTest(unittest.TestCase):
     def test_the_delay_of_a_timer_is_a_sum(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.TimedOut"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -897,6 +912,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_delay_of_zero_is_no_delay(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.TimedOut"
             initial: "PENDING"
             states {
               name: "PENDING"
@@ -933,6 +949,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_final_state_has_no_transitions(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Reopened"
             initial: "PENDING"
             states { name: "PENDING" }
             states {
@@ -950,6 +967,7 @@ class ValidationTest(unittest.TestCase):
     def test_a_final_state_has_no_schedule_or_timer(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.TimedOut"
             initial: "CANCELLED"
             states {
               name: "CANCELLED"
@@ -987,6 +1005,140 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             ["state 'CLOSED' is final and cannot have states"],
+        )
+
+    def test_an_event_of_an_on_is_one_of_the_events(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Shipped"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" to: "SHIPPED" } }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.Paid`, which is "
+                "not one of its `events`"
+            ],
+        )
+
+    def test_an_event_of_an_inject_is_one_of_the_events(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.Left`, which is "
+                "not one of its `events`"
+            ],
+        )
+
+    def test_an_event_of_a_timer_is_one_of_the_events(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.TimedOut`, which "
+                "is not one of its `events`"
+            ],
+        )
+
+    def test_an_event_a_call_may_inject_is_one_of_the_events(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline {
+                        method: "RecordPayment"
+                        injects: "shop.v1.PaidInFull"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.PaidInFull`, "
+                "which is not one of its `events`"
+            ],
+        )
+
+    def test_an_event_a_schedule_may_enqueue_is_one_of_the_events(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPING"
+            states {
+              name: "SHIPPING"
+              entry {
+                schedule {
+                  inline { method: "Ship" enqueues: "shop.v1.Shipped" }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.Shipped`, which "
+                "is not one of its `events`"
+            ],
+        )
+
+    def test_an_event_that_is_not_listed_is_a_problem_once(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions { on { event: "shop.v1.Cancelled" to: "CANCELLED" } }
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Cancelled" to: "CANCELLED" } }
+            }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart mentions the event `shop.v1.Cancelled`, "
+                "which is not one of its `events`"
+            ],
         )
 
     def test_every_problem_is_returned(self) -> None:

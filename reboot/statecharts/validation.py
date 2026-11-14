@@ -427,6 +427,104 @@ def _check_final(state: statechart_pb2.Statechart.State) -> list[str]:
     return problems
 
 
+@overload
+def _mentioned_events(*, statechart: statechart_pb2.Statechart) -> list[str]:
+    ...
+
+
+@overload
+def _mentioned_events(*, state: statechart_pb2.Statechart.State) -> list[str]:
+    ...
+
+
+def _mentioned_events(
+    *,
+    statechart: Optional[statechart_pb2.Statechart] = None,
+    state: Optional[statechart_pb2.Statechart.State] = None,
+) -> list[str]:
+    """Returns every event that `statechart`, or `state`, and every
+    state within it, mentions: the event of an `on`, of an `inject`
+    and of a `timer`, and the events that a `call` may inject and a
+    `schedule` may enqueue. An event is returned once for each time it
+    is mentioned. An `on`, an `inject` or a `timer` that has no event
+    mentions none."""
+    if statechart is not None:
+        entries = statechart.entry
+        exits = statechart.exit
+        transitions = statechart.transitions
+        substates = statechart.states
+    else:
+        assert state is not None
+        entries = state.entry
+        exits = state.exit
+        transitions = state.transitions
+        substates = state.states
+
+    events: list[str] = []
+
+    for entry in entries:
+        match entry.WhichOneof("entry"):
+            case "call":
+                events.extend(entry.call.inline.injects)
+            case "inject":
+                events.append(entry.inject.event)
+            case "schedule":
+                events.extend(entry.schedule.inline.enqueues)
+            case "timer":
+                events.append(entry.timer.enqueue.event)
+
+    for exit in exits:
+        match exit.WhichOneof("exit"):
+            case "call":
+                events.extend(exit.call.inline.injects)
+            case "inject":
+                events.append(exit.inject.event)
+
+    for transition in transitions:
+        match transition.WhichOneof("transition"):
+            case "on":
+                events.append(transition.on.event)
+                actions = transition.on.actions
+            case "when":
+                actions = transition.when.actions
+            case _:
+                continue
+        for action in actions:
+            match action.WhichOneof("action"):
+                case "call":
+                    events.extend(action.call.inline.injects)
+                case "inject":
+                    events.append(action.inject.event)
+
+    for substate in substates:
+        events.extend(_mentioned_events(state=substate))
+
+    # An `on`, an `inject` or a `timer` that has no event has an empty
+    # `event` field, which was collected above as the empty string.
+    # That is not an event, so it is left out.
+    return [event for event in events if event != ""]
+
+
+def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
+    """Returns every problem with the events of `statechart`: each
+    event that it mentions is one of its `events`."""
+    problems: list[str] = []
+
+    # An event that is mentioned more than once is a problem once.
+    unlisted: list[str] = []
+    for event in _mentioned_events(statechart=statechart):
+        if event not in statechart.events and event not in unlisted:
+            unlisted.append(event)
+
+    for event in unlisted:
+        problems.append(
+            f"the statechart mentions the event `{event}`, which is not "
+            "one of its `events`"
+        )
+
+    return problems
+
+
 def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with `statechart`, each as a message for
     the statechart's author. A statechart without problems returns
@@ -440,5 +538,6 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     problems.extend(_check_transitions(statechart=statechart))
     for state in statechart.states:
         problems.extend(_check_final(state))
+    problems.extend(_check_events(statechart))
 
     return problems
