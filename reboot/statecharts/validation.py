@@ -20,6 +20,16 @@ def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
     return problems
 
 
+def _check_inject(inject: statechart_pb2.Statechart.Inject) -> list[str]:
+    """Returns every problem with `inject`: it has an event."""
+    problems: list[str] = []
+
+    if not inject.event:
+        problems.append("the `inject` has no `event`")
+
+    return problems
+
+
 @overload
 def _check_initial(*, statechart: statechart_pb2.Statechart) -> list[str]:
     ...
@@ -184,7 +194,11 @@ def _check_transitions(
                                     f"{problem}"
                                 )
                         case "inject":
-                            pass
+                            for problem in _check_inject(action.inject):
+                                problems.append(
+                                    f"in an `on` transition of {subject}: "
+                                    f"{problem}"
+                                )
                         case _:
                             problems.append(
                                 "an action of an `on` transition of "
@@ -218,7 +232,11 @@ def _check_transitions(
                                     f"{problem}"
                                 )
                         case "inject":
-                            pass
+                            for problem in _check_inject(action.inject):
+                                problems.append(
+                                    f"in a `when` transition of {subject}: "
+                                    f"{problem}"
+                                )
                         case _:
                             problems.append(
                                 "an action of a `when` transition of "
@@ -273,7 +291,10 @@ def _check_entries(
             case "call":
                 for problem in _check_call(entry.call):
                     problems.append(f"in an `entry` of {subject}: {problem}")
-            case "inject" | "schedule" | "timer":
+            case "inject":
+                for problem in _check_inject(entry.inject):
+                    problems.append(f"in an `entry` of {subject}: {problem}")
+            case "schedule" | "timer":
                 pass
             case _:
                 problems.append(
@@ -324,7 +345,8 @@ def _check_exits(
                 for problem in _check_call(exit.call):
                     problems.append(f"in an `exit` of {subject}: {problem}")
             case "inject":
-                pass
+                for problem in _check_inject(exit.inject):
+                    problems.append(f"in an `exit` of {subject}: {problem}")
             case _:
                 problems.append(
                     f"an `exit` of {subject} is neither a `call` nor an "
