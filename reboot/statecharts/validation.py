@@ -397,6 +397,36 @@ def _check_exits(
     return problems
 
 
+def _check_final(state: statechart_pb2.Statechart.State) -> list[str]:
+    """Returns every problem with `state`, and with every state within
+    it, being final: a final state has no `schedule`, no `timer`, no
+    transitions and no substates."""
+    problems: list[str] = []
+
+    if state.final:
+        if any(
+            entry.WhichOneof("entry") in ("schedule", "timer")
+            for entry in state.entry
+        ):
+            problems.append(
+                f"state '{state.name}' is final and cannot have a "
+                "`schedule` or a `timer`"
+            )
+        if len(state.transitions) > 0:
+            problems.append(
+                f"state '{state.name}' is final and cannot have transitions"
+            )
+        if len(state.states) > 0:
+            problems.append(
+                f"state '{state.name}' is final and cannot have states"
+            )
+
+    for substate in state.states:
+        problems.extend(_check_final(substate))
+
+    return problems
+
+
 def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with `statechart`, each as a message for
     the statechart's author. A statechart without problems returns
@@ -408,5 +438,7 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     problems.extend(_check_entries(statechart=statechart))
     problems.extend(_check_exits(statechart=statechart))
     problems.extend(_check_transitions(statechart=statechart))
+    for state in statechart.states:
+        problems.extend(_check_final(state))
 
     return problems

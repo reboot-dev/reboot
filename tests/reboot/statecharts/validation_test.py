@@ -915,6 +915,80 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_final_state_that_only_acts_has_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPED"
+            states {
+              name: "SHIPPED"
+              final: true
+              entry {
+                call { description: "Thank" inline { method: "Thank" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_final_state_has_no_transitions(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states {
+              name: "CANCELLED"
+              final: true
+              transitions { on { event: "shop.v1.Reopened" to: "PENDING" } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state 'CANCELLED' is final and cannot have transitions"],
+        )
+
+    def test_a_final_state_has_no_schedule_or_timer(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "CANCELLED"
+            states {
+              name: "CANCELLED"
+              final: true
+              entry {
+                timer { days: 1 enqueue { event: "shop.v1.TimedOut" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state 'CANCELLED' is final and cannot have a `schedule` or "
+                "a `timer`"
+            ],
+        )
+
+    def test_a_final_state_has_no_states(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "OPEN"
+            states {
+              name: "OPEN"
+              initial: "CLOSED"
+              states {
+                name: "CLOSED"
+                final: true
+                initial: "GONE"
+                states { name: "GONE" }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state 'CLOSED' is final and cannot have states"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
