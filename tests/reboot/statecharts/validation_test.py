@@ -257,6 +257,47 @@ class ValidationTest(unittest.TestCase):
             ["an `on` transition of state 'PENDING' has no `event`"],
         )
 
+    def test_a_when_of_a_statechart_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+              }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["a `when` transition of the statechart has no `description`"],
+        )
+
+    def test_a_when_of_a_state_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                when {
+                  description: "  "
+                  condition { inline { method: "IsPaid" } }
+                  to: "SHIPPED"
+                }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["a `when` transition of state 'PENDING' has no `description`"],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
