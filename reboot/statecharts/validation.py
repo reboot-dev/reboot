@@ -6,6 +6,16 @@ from rbt.v1alpha1.statecharts import statechart_pb2
 from typing import Optional, overload
 
 
+def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
+    """Returns every problem with `call`: it has a description."""
+    problems: list[str] = []
+
+    if not call.description.strip():
+        problems.append("the `call` has no `description`")
+
+    return problems
+
+
 @overload
 def _check_initial(*, statechart: statechart_pb2.Statechart) -> list[str]:
     ...
@@ -162,11 +172,21 @@ def _check_transitions(
                         "has no `method`"
                     )
                 for action in transition.on.actions:
-                    if action.WhichOneof("action") is None:
-                        problems.append(
-                            f"an action of an `on` transition of {subject} "
-                            "is neither a `call` nor an `inject`"
-                        )
+                    match action.WhichOneof("action"):
+                        case "call":
+                            for problem in _check_call(action.call):
+                                problems.append(
+                                    f"in an `on` transition of {subject}: "
+                                    f"{problem}"
+                                )
+                        case "inject":
+                            pass
+                        case _:
+                            problems.append(
+                                "an action of an `on` transition of "
+                                f"{subject} is neither a `call` nor an "
+                                "`inject`"
+                            )
             case "when":
                 if not transition.when.description.strip():
                     problems.append(
@@ -186,11 +206,21 @@ def _check_transitions(
                             "`condition`"
                         )
                 for action in transition.when.actions:
-                    if action.WhichOneof("action") is None:
-                        problems.append(
-                            f"an action of a `when` transition of {subject} "
-                            "is neither a `call` nor an `inject`"
-                        )
+                    match action.WhichOneof("action"):
+                        case "call":
+                            for problem in _check_call(action.call):
+                                problems.append(
+                                    f"in a `when` transition of {subject}: "
+                                    f"{problem}"
+                                )
+                        case "inject":
+                            pass
+                        case _:
+                            problems.append(
+                                "an action of a `when` transition of "
+                                f"{subject} is neither a `call` nor an "
+                                "`inject`"
+                            )
             case _:
                 problems.append(
                     f"a transition of {subject} is neither an `on` nor a "
@@ -235,11 +265,17 @@ def _check_entries(
     problems: list[str] = []
 
     for entry in entries:
-        if entry.WhichOneof("entry") is None:
-            problems.append(
-                f"an `entry` of {subject} is neither a `call`, an `inject`, "
-                "a `schedule` nor a `timer`"
-            )
+        match entry.WhichOneof("entry"):
+            case "call":
+                for problem in _check_call(entry.call):
+                    problems.append(f"in an `entry` of {subject}: {problem}")
+            case "inject" | "schedule" | "timer":
+                pass
+            case _:
+                problems.append(
+                    f"an `entry` of {subject} is neither a `call`, an "
+                    "`inject`, a `schedule` nor a `timer`"
+                )
 
     for substate in substates:
         problems.extend(_check_entries(state=substate))
@@ -279,10 +315,17 @@ def _check_exits(
     problems: list[str] = []
 
     for exit in exits:
-        if exit.WhichOneof("exit") is None:
-            problems.append(
-                f"an `exit` of {subject} is neither a `call` nor an `inject`"
-            )
+        match exit.WhichOneof("exit"):
+            case "call":
+                for problem in _check_call(exit.call):
+                    problems.append(f"in an `exit` of {subject}: {problem}")
+            case "inject":
+                pass
+            case _:
+                problems.append(
+                    f"an `exit` of {subject} is neither a `call` nor an "
+                    "`inject`"
+                )
 
     for substate in substates:
         problems.extend(_check_exits(state=substate))

@@ -601,6 +601,89 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_call_in_an_entry_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { call { inline { method: "Open" } } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state 'PENDING': the `call` has no "
+                "`description`"
+            ],
+        )
+
+    def test_a_call_in_an_exit_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            exit { call { description: " " inline { method: "Close" } } }
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `exit` of the statechart: the `call` has no "
+                "`description`"
+            ],
+        )
+
+    def test_a_call_in_an_on_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  to: "SHIPPED"
+                  actions { call { inline { method: "RecordPayment" } } }
+                }
+              }
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `on` transition of state 'PENDING': the `call` has no "
+                "`description`"
+            ],
+        )
+
+    def test_a_call_in_a_when_has_a_description(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+                actions { call { inline { method: "Refund" } } }
+              }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in a `when` transition of the statechart: the `call` has no "
+                "`description`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
