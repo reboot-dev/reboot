@@ -857,6 +857,64 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_timer_has_a_delay(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { timer { enqueue { event: "shop.v1.TimedOut" } } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state 'PENDING': the `timer` has no delay: "
+                "its `seconds`, `minutes`, `hours` and `days` must add up to "
+                "more than zero"
+            ],
+        )
+
+    def test_the_delay_of_a_timer_is_a_sum(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                timer {
+                  hours: 1
+                  minutes: 30
+                  enqueue { event: "shop.v1.TimedOut" }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_delay_of_zero_is_no_delay(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                timer { seconds: 0 enqueue { event: "shop.v1.TimedOut" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state 'PENDING': the `timer` has no delay: "
+                "its `seconds`, `minutes`, `hours` and `days` must add up to "
+                "more than zero"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
