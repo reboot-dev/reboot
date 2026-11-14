@@ -190,6 +190,50 @@ def _check_transitions(
     return problems
 
 
+@overload
+def _check_entries(*, statechart: statechart_pb2.Statechart) -> list[str]:
+    ...
+
+
+@overload
+def _check_entries(*, state: statechart_pb2.Statechart.State) -> list[str]:
+    ...
+
+
+def _check_entries(
+    *,
+    statechart: Optional[statechart_pb2.Statechart] = None,
+    state: Optional[statechart_pb2.Statechart.State] = None,
+) -> list[str]:
+    """Returns every problem with the entries of `statechart`, or of
+    `state`, and of every state within it: each entry is a `call`, an
+    `inject`, a `schedule` or a `timer`."""
+    # `subject` is what a message calls the statechart or the state.
+    if statechart is not None:
+        subject = "the statechart"
+        entries = statechart.entry
+        substates = statechart.states
+    else:
+        assert state is not None
+        subject = f"state '{state.name}'"
+        entries = state.entry
+        substates = state.states
+
+    problems: list[str] = []
+
+    for entry in entries:
+        if entry.WhichOneof("entry") is None:
+            problems.append(
+                f"an `entry` of {subject} is neither a `call`, an `inject`, "
+                "a `schedule` nor a `timer`"
+            )
+
+    for substate in substates:
+        problems.extend(_check_entries(state=substate))
+
+    return problems
+
+
 def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with `statechart`, each as a message for
     the statechart's author. A statechart without problems returns
@@ -198,6 +242,7 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
 
     problems.extend(_check_state_names(statechart=statechart))
     problems.extend(_check_initial(statechart=statechart))
+    problems.extend(_check_entries(statechart=statechart))
     problems.extend(_check_transitions(statechart=statechart))
 
     return problems

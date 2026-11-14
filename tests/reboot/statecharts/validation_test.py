@@ -422,6 +422,59 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_entries_that_say_what_they_do_have_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            entry {
+              call { description: "Open" inline { method: "Open" } }
+            }
+            states {
+              name: "PENDING"
+              entry { inject { event: "shop.v1.Opened" } }
+              entry {
+                timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
+              }
+              entry { schedule { inline { method: "Remind" } } }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_entry_of_a_statechart_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            entry {}
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an `entry` of the statechart is neither a `call`, an "
+                "`inject`, a `schedule` nor a `timer`"
+            ],
+        )
+
+    def test_an_entry_of_a_state_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {}
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an `entry` of state 'PENDING' is neither a `call`, an "
+                "`inject`, a `schedule` nor a `timer`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
