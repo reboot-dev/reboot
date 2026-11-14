@@ -5,7 +5,7 @@
 #
 #   tests/reboot/plugin/evals/run.sh [--plugin DIR] [claude plugin eval flags...]
 #   e.g. tests/reboot/plugin/evals/run.sh -j 3
-#        tests/reboot/plugin/evals/run.sh --case route-mcp --runs 1 --ablation none
+#        tests/reboot/plugin/evals/run.sh --case private-profile --runs 1 --ablation none
 #        tests/reboot/plugin/evals/run.sh --plugin ../other/reboot/plugin --ablation none
 #
 # `claude plugin eval` wants the cases inside the plugin, and a run must
@@ -43,7 +43,7 @@ rev="$(git -C "$PLUGIN" rev-parse --short HEAD)$(git -C "$PLUGIN" diff --quiet -
 cat > "$WRAP/.claude-plugin/plugin.json" <<JSON
 {"name": "reboot", "version": "0.0.0-$rev", "description": "Eval wrapper for $PLUGIN at $rev."}
 JSON
-rsync -a --exclude results --exclude run.sh --exclude README.md --exclude .gitignore "$HERE/" "$WRAP/evals/"
+rsync -a --exclude results --exclude run.sh --exclude /compare.sh --exclude README.md --exclude /RESULT.md --exclude .gitignore "$HERE/" "$WRAP/evals/"
 echo "plugin: $PLUGIN at $rev"
 
 status=0

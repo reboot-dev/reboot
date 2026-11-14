@@ -1,0 +1,2 @@
+dev run --application-name=profiles
+generate api/ --python=backend/api/

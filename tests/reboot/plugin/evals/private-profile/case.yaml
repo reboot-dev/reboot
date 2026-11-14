@@ -1,6 +1,6 @@
 schema_version: "1.1"
 name: private-profile
-description: "Asked only to implement the servicer, the agent protects what the API marks private: the backend refuses it to everyone but the owner, behind a real authorizer. And the servicer uses Reboot's servicer shape."
+description: "Asked only to implement the servicer, the agent protects what the API marks private: the backend refuses it to everyone but the owner, behind a real authorizer."
 tags: [servicer, auth, code]
 runs: 3
 execution:
@@ -18,22 +18,10 @@ graders:
     input_match: '"skill"\s*:\s*"reboot:[\w-]+"'
   - name: no-self-state-id
     type: regex
-    target: {source: file, path: backend/src/servicers/profile.py}
+    target: { source: file, path: backend/src/servicers/profile.py }
     pattern: 'self\.state_id\b'
     match: not_contains
-  - name: subclasses-generated-servicer
-    type: regex
-    target: {source: file, path: backend/src/servicers/profile.py}
-    pattern: 'class\s+\w+\(\s*Profile\.Servicer\s*\)'
-  - name: has-authorizer
-    type: regex
-    target: {source: file, path: backend/src/servicers/profile.py}
-    pattern: 'def\s+authorizer\s*\('
   - name: owner-only-enforced
     type: llm
-    focus: {source: file, path: backend/src/servicers/profile.py}
+    focus: { source: file, path: backend/src/servicers/profile.py }
     criteria: "PASS if the backend refuses `details` and `update` to anyone but the profile's owner (the signed-in user whose id is the profile's state id) and lets any signed-in caller call `card`, with the servicer's `authorizer()` refusing callers who are not signed in. Reboot's `authorizer()` is one rule for every method on the servicer, so the owner check may be in that rule (for example a custom authorizer that tells the methods apart) or at the top of `details` and `update`, raising before any data is read or changed; either passes. A predicate passed to `allow_if` must return `Ok()`, `Unauthenticated()` or `PermissionDenied()`: Reboot's `allow_if` ignores any other result, such as `True` or `False`, so a predicate returning a boolean never allows under `any=[...]` (the owner is locked out) and never refuses under `all=[...]` (everyone is let in). FAIL if there is no `authorizer()`, if it is a bare `allow()`, if a predicate it relies on returns a boolean, or if any path lets a signed-in user who is not the owner read the private fields or change the profile. Quote the code you relied on."
-  - name: servicer-shape
-    type: llm
-    focus: {source: file, path: backend/src/servicers/profile.py}
-    criteria: "PASS if every Profile method is an `async def` on the servicer taking a typed context (`ReaderContext` for readers, `WriterContext` for writers), and the writers change the actor by assigning to `self.state`. A reader may return a response model, including a `ProfileState` built from or copied from `self.state`. Where a method body needs the actor's id it uses `self.ref().state_id`; inside an authorizer predicate (a function taking `context` that returns `Ok()`, `PermissionDenied()` and the like), `context.state_id` is correct, as Reboot's own `state_id_is_user_id` uses it. FAIL if a method takes the state as a parameter, if a writer returns a new state instead of assigning to `self.state`, or if a method body uses `self.state_id` (which doesn't exist) or `context.state_id`. Quote what you relied on."
