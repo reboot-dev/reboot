@@ -106,6 +106,68 @@ class ValidationTest(unittest.TestCase):
             ['state \'PENDING\' has `initial: "NEW"` but no states'],
         )
 
+    def test_a_state_has_a_name(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states {}
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["the statechart has a state without a `name`"],
+        )
+
+    def test_the_states_of_a_statechart_have_different_names(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states { name: "PENDING" }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["the statechart has more than one state named 'PENDING'"],
+        )
+
+    def test_the_substates_of_a_state_have_different_names(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "OPEN"
+            states {
+              name: "OPEN"
+              initial: "PENDING"
+              states { name: "PENDING" }
+              states { name: "PENDING" }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state 'OPEN' has more than one state named 'PENDING'"],
+        )
+
+    def test_states_that_are_not_siblings_can_share_a_name(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "OPEN"
+            states {
+              name: "OPEN"
+              initial: "WAITING"
+              states { name: "WAITING" }
+            }
+            states {
+              name: "CLOSED"
+              initial: "WAITING"
+              states { name: "WAITING" }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
