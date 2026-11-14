@@ -17,6 +17,8 @@ filegroup(
     srcs = [
         "options.proto",
         "tasks.proto",
+        # `options.proto` imports it.
+        "//rbt/v1alpha1/statecharts:statechart.proto",
     ],
     visibility = ["//visibility:public"],
 )
@@ -26,6 +28,7 @@ proto_library(
     srcs = [":options.proto"],
     visibility = ["//visibility:public"],
     deps = [
+        "//rbt/v1alpha1/statecharts:statechart_proto",
         "@com_google_protobuf//:descriptor_proto",
     ],
 )

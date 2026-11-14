@@ -336,6 +336,7 @@ def js_reboot_react_library_from_pydantic(
             ":" + name + "_zod_proto",
             "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
             "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+            "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_proto",
             "@com_google_protobuf//:any_proto",
             "@com_google_protobuf//:descriptor_proto",
             "@com_google_protobuf//:empty_proto",
