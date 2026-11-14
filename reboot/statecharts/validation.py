@@ -42,6 +42,17 @@ def _check_schedule(
     return problems
 
 
+def _check_timer(timer: statechart_pb2.Statechart.Timer) -> list[str]:
+    """Returns every problem with `timer`: it has an event to
+    enqueue."""
+    problems: list[str] = []
+
+    if not timer.enqueue.event:
+        problems.append("the `timer` has no event to `enqueue`")
+
+    return problems
+
+
 @overload
 def _check_initial(*, statechart: statechart_pb2.Statechart) -> list[str]:
     ...
@@ -310,7 +321,8 @@ def _check_entries(
                 for problem in _check_schedule(entry.schedule):
                     problems.append(f"in an `entry` of {subject}: {problem}")
             case "timer":
-                pass
+                for problem in _check_timer(entry.timer):
+                    problems.append(f"in an `entry` of {subject}: {problem}")
             case _:
                 problems.append(
                     f"an `entry` of {subject} is neither a `call`, an "

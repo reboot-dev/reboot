@@ -823,6 +823,40 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_timer_has_an_event_to_enqueue(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { timer { minutes: 30 } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state 'PENDING': the `timer` has no event "
+                "to `enqueue`"
+            ],
+        )
+
+    def test_an_enqueue_without_an_event_is_no_event(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            entry { timer { minutes: 30 enqueue {} } }
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of the statechart: the `timer` has no event "
+                "to `enqueue`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
