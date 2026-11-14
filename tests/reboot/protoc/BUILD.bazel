@@ -135,6 +135,18 @@ failure_test(
 )
 
 failure_test(
+    name = "statechart_without_state_annotation",
+    expected_error = """
+        Error processing
+        'tests/reboot/protoc/statechart_without_state_annotation.proto':
+        Message 'tests.reboot.protoc.Note' has a statechart but is not
+        annotated as a Reboot state; the 'rbt.v1alpha1.statechart' annotation
+        is only for a message that also has the 'rbt.v1alpha1.state'
+        annotation.
+    """,
+)
+
+failure_test(
     name = "missing_state_annotation",
     expected_error = """
         Error processing 'tests/reboot/protoc/missing_state_annotation.proto':

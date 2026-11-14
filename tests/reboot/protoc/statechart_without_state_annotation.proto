@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  Text last_message = 1;
+}
+
+message Note {
+  // TESTS: only a Reboot state can have a statechart.
+  option (rbt.v1alpha1.statechart) = {
+    initial: "DRAFT"
+    states { name: "DRAFT" }
+  };
+  Text text = 1;
+}
+
+service EchoMethods {
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
