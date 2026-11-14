@@ -168,6 +168,65 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(check_statechart(statechart), [])
 
+    def test_transitions_that_are_an_on_or_a_when_have_no_problems(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+              }
+            }
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" to: "SHIPPED" } }
+            }
+            states { name: "SHIPPED" }
+            states { name: "CANCELLED" }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_transition_of_a_statechart_is_an_on_or_a_when(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {}
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "a transition of the statechart is neither an `on` nor a "
+                "`when`"
+            ],
+        )
+
+    def test_a_transition_of_a_state_is_an_on_or_a_when(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" to: "SHIPPED" } }
+              transitions {}
+            }
+            states { name: "SHIPPED" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "a transition of state 'PENDING' is neither an `on` nor a "
+                "`when`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
