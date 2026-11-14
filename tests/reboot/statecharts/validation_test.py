@@ -475,6 +475,55 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_exits_that_say_what_they_do_have_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            exit {
+              call { description: "Close" inline { method: "Close" } }
+            }
+            states {
+              name: "PENDING"
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_exit_of_a_statechart_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            exit {}
+            states { name: "PENDING" }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an `exit` of the statechart is neither a `call` nor an "
+                "`inject`"
+            ],
+        )
+
+    def test_an_exit_of_a_state_says_what_it_does(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              exit {}
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an `exit` of state 'PENDING' is neither a `call` nor an "
+                "`inject`"
+            ],
+        )
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
