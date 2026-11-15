@@ -433,6 +433,8 @@ class ValidationTest(unittest.TestCase):
             events: "shop.v1.Opened"
             events: "shop.v1.TimedOut"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.Opened" } }
+            transitions { on { event: "shop.v1.TimedOut" } }
             entry {
               call { description: "Open" inline { method: "Open" } }
             }
@@ -487,6 +489,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.Left"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.Left" } }
             exit {
               call { description: "Close" inline { method: "Close" } }
             }
@@ -538,6 +541,7 @@ class ValidationTest(unittest.TestCase):
             events: "shop.v1.Refunded"
             events: "shop.v1.Paid"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.Refunded" } }
             transitions {
               when {
                 description: "Cancelled"
@@ -875,6 +879,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.TimedOut"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
             states {
               name: "PENDING"
               entry { timer { enqueue { event: "shop.v1.TimedOut" } } }
@@ -895,6 +900,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.TimedOut"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
             states {
               name: "PENDING"
               entry {
@@ -914,6 +920,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.TimedOut"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
             states {
               name: "PENDING"
               entry {
@@ -969,6 +976,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.TimedOut"
             initial: "CANCELLED"
+            transitions { on { event: "shop.v1.TimedOut" } }
             states {
               name: "CANCELLED"
               final: true
@@ -1031,6 +1039,7 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             initial: "PENDING"
+            transitions { on { event: "shop.v1.Left" } }
             states {
               name: "PENDING"
               exit { inject { event: "shop.v1.Left" } }
@@ -1049,6 +1058,7 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
             states {
               name: "PENDING"
               entry {
@@ -1070,6 +1080,7 @@ class ValidationTest(unittest.TestCase):
             """
             events: "shop.v1.Paid"
             initial: "PENDING"
+            transitions { on { event: "shop.v1.PaidInFull" } }
             states {
               name: "PENDING"
               transitions {
@@ -1103,6 +1114,7 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             initial: "SHIPPING"
+            transitions { on { event: "shop.v1.Shipped" } }
             states {
               name: "SHIPPING"
               entry {
@@ -1326,6 +1338,150 @@ class ValidationTest(unittest.TestCase):
             """
         )
         self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_injected_event_has_an_on(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Left"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart injects or enqueues the event "
+                "`shop.v1.Left`, but has no `on` transition for it"
+            ],
+        )
+
+    def test_an_event_a_timer_enqueues_has_an_on(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart injects or enqueues the event "
+                "`shop.v1.TimedOut`, but has no `on` transition for it"
+            ],
+        )
+
+    def test_an_event_a_call_may_inject_has_an_on(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            events: "shop.v1.PaidInFull"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline {
+                        method: "RecordPayment"
+                        injects: "shop.v1.PaidInFull"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart injects or enqueues the event "
+                "`shop.v1.PaidInFull`, but has no `on` transition for it"
+            ],
+        )
+
+    def test_an_event_a_schedule_may_enqueue_has_an_on(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Shipped"
+            initial: "SHIPPING"
+            states {
+              name: "SHIPPING"
+              entry {
+                schedule {
+                  inline { method: "Ship" enqueues: "shop.v1.Shipped" }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart injects or enqueues the event "
+                "`shop.v1.Shipped`, but has no `on` transition for it"
+            ],
+        )
+
+    def test_an_on_of_any_state_is_an_on_for_an_event(self) -> None:
+        # `PENDING` enqueues `shop.v1.TimedOut` and `EXPIRING`, a state
+        # within another state, has the `on` transition for it.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
+              }
+            }
+            states {
+              name: "CLOSING"
+              initial: "EXPIRING"
+              states {
+                name: "EXPIRING"
+                transitions { on { event: "shop.v1.TimedOut" } }
+              }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_event_without_an_on_is_a_problem_once(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Left"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            states {
+              name: "SHIPPING"
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart injects or enqueues the event "
+                "`shop.v1.Left`, but has no `on` transition for it"
+            ],
+        )
 
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(

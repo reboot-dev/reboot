@@ -598,26 +598,76 @@ def _check_final(
 
 
 @overload
-def _mentioned_events(*, statechart: statechart_pb2.Statechart) -> list[str]:
+def _events_of_on_transitions(
+    *, statechart: statechart_pb2.Statechart
+) -> list[str]:
     ...
 
 
 @overload
-def _mentioned_events(*, state: statechart_pb2.Statechart.State) -> list[str]:
+def _events_of_on_transitions(
+    *, state: statechart_pb2.Statechart.State
+) -> list[str]:
     ...
 
 
-def _mentioned_events(
+def _events_of_on_transitions(
+    *,
+    statechart: Optional[statechart_pb2.Statechart] = None,
+    state: Optional[statechart_pb2.Statechart.State] = None,
+) -> list[str]:
+    """Returns the event of every `on` transition of `statechart`, or
+    of `state`, and of every state within it. An event is returned
+    once for each `on` transition it is the event of. An `on` that has
+    no event has none."""
+    if statechart is not None:
+        transitions = statechart.transitions
+        substates = statechart.states
+    else:
+        assert state is not None
+        transitions = state.transitions
+        substates = state.states
+
+    events: list[str] = []
+
+    for transition in transitions:
+        if transition.WhichOneof("transition") == "on":
+            events.append(transition.on.event)
+
+    for substate in substates:
+        events.extend(_events_of_on_transitions(state=substate))
+
+    # An `on` that has no event has an empty `event` field, which was
+    # collected above as the empty string. That is not an event, so it
+    # is left out.
+    return [event for event in events if event != ""]
+
+
+@overload
+def _injected_and_enqueued_events(
+    *, statechart: statechart_pb2.Statechart
+) -> list[str]:
+    ...
+
+
+@overload
+def _injected_and_enqueued_events(
+    *, state: statechart_pb2.Statechart.State
+) -> list[str]:
+    ...
+
+
+def _injected_and_enqueued_events(
     *,
     statechart: Optional[statechart_pb2.Statechart] = None,
     state: Optional[statechart_pb2.Statechart.State] = None,
 ) -> list[str]:
     """Returns every event that `statechart`, or `state`, and every
-    state within it, mentions: the event of an `on`, of an `inject`
-    and of a `timer`, and the events that a `call` may inject and a
+    state within it, injects or enqueues: the event of an `inject` and
+    of a `timer`, and the events that a `call` may inject and a
     `schedule` may enqueue. An event is returned once for each time it
-    is mentioned. An `on`, an `inject` or a `timer` that has no event
-    mentions none."""
+    is injected or enqueued. An `inject` or a `timer` that has no
+    event injects or enqueues none."""
     if statechart is not None:
         entries = statechart.entry
         exits = statechart.exit
@@ -653,7 +703,6 @@ def _mentioned_events(
     for transition in transitions:
         match transition.WhichOneof("transition"):
             case "on":
-                events.append(transition.on.event)
                 actions = transition.on.actions
             case "when":
                 actions = transition.when.actions
@@ -667,29 +716,53 @@ def _mentioned_events(
                     events.append(action.inject.event)
 
     for substate in substates:
-        events.extend(_mentioned_events(state=substate))
+        events.extend(_injected_and_enqueued_events(state=substate))
 
-    # An `on`, an `inject` or a `timer` that has no event has an empty
-    # `event` field, which was collected above as the empty string.
-    # That is not an event, so it is left out.
+    # An `inject` or a `timer` that has no event has an empty `event`
+    # field, which was collected above as the empty string. That is
+    # not an event, so it is left out.
     return [event for event in events if event != ""]
 
 
 def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with the events of `statechart`: each
-    event that it mentions is one of its `events`."""
+    event that it mentions, as the event of an `on` transition or as
+    one that it injects or enqueues, is one of its `events`, and each
+    event that it injects or enqueues is the event of an `on`
+    transition."""
     problems: list[str] = []
 
-    # An event that is mentioned more than once is a problem once.
-    unlisted: list[str] = []
-    for event in _mentioned_events(statechart=statechart):
-        if event not in statechart.events and event not in unlisted:
-            unlisted.append(event)
+    events_of_on_transitions = _events_of_on_transitions(statechart=statechart)
+    injected_and_enqueued_events = _injected_and_enqueued_events(
+        statechart=statechart
+    )
 
-    for event in unlisted:
+    # An event that is mentioned more than once is a problem once.
+    unlisted_events: list[str] = []
+    for event in events_of_on_transitions + injected_and_enqueued_events:
+        if event not in statechart.events and event not in unlisted_events:
+            unlisted_events.append(event)
+
+    for event in unlisted_events:
         problems.append(
             f"the statechart mentions the event `{event}`, which is not "
             "one of its `events`"
+        )
+
+    # An event that is injected or enqueued more than once is a problem
+    # once.
+    events_without_on_transition: list[str] = []
+    for event in injected_and_enqueued_events:
+        if (
+            event not in events_of_on_transitions and
+            event not in events_without_on_transition
+        ):
+            events_without_on_transition.append(event)
+
+    for event in events_without_on_transition:
+        problems.append(
+            f"the statechart injects or enqueues the event `{event}`, but "
+            "has no `on` transition for it"
         )
 
     return problems
