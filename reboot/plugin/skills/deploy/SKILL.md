@@ -90,7 +90,7 @@ Checks that commonly bite on first deploy:
 - **No sample data.** An app built with sample data calls `seed`
   only when `RBT_DEV` is `true`, which `rbt dev run` sets and Reboot
   Cloud never does, so production starts empty. An `initialize` that
-  calls `seed` without that check is fixed before deploying
+  calls `seed` without that check needs to be fixed before deploying
   (`python/references/lifecycle-sample-data.md`).
 
 ## Step 3 — The container serves the frontend
