@@ -474,7 +474,6 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // Migrate from previous persistence versions to the current version,
   // if necessary.
   expected<void> MaybeMigratePersistence(const RecoverRequest& request);
-  expected<void> MigratePersistence2To3(const RecoverRequest& request);
   expected<void> MigratePersistence3To4(const RecoverRequest& request);
 
   // Lookup a rocksdb column family handle for the specified state type,
@@ -4060,50 +4059,6 @@ grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
 
 ////////////////////////////////////////////////////////////////////////
 
-// This migration deletes Tasks which did not have `Any` response values
-// (i.e. from before #2580).
-expected<void> DatabaseService::MigratePersistence2To3(
-    const RecoverRequest& request) {
-  std::shared_lock lock(column_family_handles_mutex_);
-
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
-
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
-
-    while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
-      Task task;
-      CHECK(task.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
-      if (task.has_response()
-          && task.response().type_url().find("type.googleapis.com") != 0) {
-        rocksdb::Status status = db_->Delete(
-            DefaultWriteOptions(),
-            column_family_handle,
-            iterator->key());
-        if (!status.ok()) {
-          return make_unexpected(
-              fmt::format(
-                  "Failed to delete stale task: {}",
-                  status.ToString()));
-        }
-      }
-
-      iterator->Next();
-    }
-  }
-
-  // Finally, update the persistence version.
-  return WritePersistenceVersion(db_.get(), 3);
-}
-
 // This migration:
 //
 // 1. Renames the idempotent mutation keys so that they
@@ -4353,18 +4308,14 @@ expected<void> DatabaseService::MaybeMigratePersistence(
             status.ToString()));
   }
 
-  // Expecting at least persistence version >= 2.
-  CHECK(2 <= version && version < CURRENT_PERSISTENCE_VERSION)
+  // Expecting at least persistence version >= 3.
+  CHECK(3 <= version && version < CURRENT_PERSISTENCE_VERSION)
       << "Persistence version " << version << " is no longer supported";
 
   for (; version < CURRENT_PERSISTENCE_VERSION; version++) {
     REBOOT_DATABASE_LOG(1) << "Migrating persistence from version " << version;
     expected<void> migrate;
     switch (version) {
-      case 2:
-        migrate = MigratePersistence2To3(request);
-        REBOOT_DATABASE_LOG(1) << "Migrated persistence to version " << version;
-        break;
       case 3: migrate = MigratePersistence3To4(request); break;
       default: LOG(FATAL) << "Unreachable";
     }
