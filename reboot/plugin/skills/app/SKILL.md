@@ -262,7 +262,7 @@ wrong means regenerating everything across 12+ files.
      in the question or the options:
      - **a transaction across states**: one action that changes two
        things or neither (moving stock between two warehouses takes
-       it from one and adds it to the other, or does neither);
+       it from one and adds it to the other atomically);
      - **live updates**: a change one person makes shows at once on
        another's open page, no reload (proved by a browser scenario
        with two users, as `frontend/references/testing-web-app.md`
