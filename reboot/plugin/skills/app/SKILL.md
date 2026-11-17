@@ -267,8 +267,8 @@ wrong means regenerating everything across 12+ files.
      same way after the two.
    - **The recommended start is two features, three or four scenarios
      each**, picked from the list (or cut down from one) to show what
-     Reboot does that other stacks make hard. Which feature shows
-     which is said in the message above the question, in a line, never
+     Reboot does that other stacks make hard. State which feature
+     shows which in one line of the message above the question, never
      in the question or the options:
      - **a transaction across states**: one action that changes two
        things or neither (moving stock between two warehouses takes
