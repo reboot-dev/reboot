@@ -17,25 +17,25 @@ state, used in a browser through a web app and in an AI chat client
 (Claude, ChatGPT) through an MCP App, added there as a connector. An
 app has one or both front ends:
 
-- **Both** (the default) — one backend with one `Application(oauth=...)`
+- **On the web and in AI chat** (the default) — one backend with one `Application(oauth=...)`
   and one `User` per upstream identity, a web app and an MCP App: its
   tools, and a `UI()` where the chat client shows the person a view.
-- **Web** — the web app alone.
-- **MCP** — the MCP App alone.
+- **On the web** — the web app alone.
+- **In AI chat** — the MCP App alone.
 
 ## Settle the front end
 
-**Both is the default**: Ask once, unless the
+**On the web and in AI chat is the default**: ask once, unless the
 prompt already settles it:
 
-- **Web alone**, no question: "just a website", "only a web app",
+- **On the web**, no question: "just a website", "only a web app",
   "only on the web", "no MCP", "no AI", or the prompt's own answer
   naming only the web.
-- **MCP alone**, no question: "just an MCP server", "only for Claude",
+- **In AI chat**, no question: "just an MCP server", "only for Claude",
   "only in AI chat",
   "no web app", "no website", or the prompt's own answer naming only
   MCP.
-- **Both**, no question: the prompt's own answer naming both, or a
+- **On the web and in AI chat**, no question: the prompt's own answer naming both, or a
   conjunction ("a website and an MCP server").
 
 Naming one frontend is not asking for it alone: "a website for my
@@ -68,10 +68,6 @@ Options:
     its tools and views. No website.
 ```
 
-"On the web and in AI chat" is both front ends, a web app and an MCP
-App; "On the web" is the web app alone; "In AI chat" is the MCP App
-alone.
-
 **Mark one "(Recommended)" only when the description leans to it**,
 and add why to its description in a few words, from the prompt's own:
 
@@ -103,9 +99,9 @@ skill, following it from "When to Use".
 | "a CRM for my relationships" | ask, none marked, On the web and in AI chat first | nothing leans either way |
 | "a dashboard served at metrics.example.com" | ask, On the web recommended and first | a URL names the web app, not the web alone; a dashboard is looked at |
 | "a tool I can use from Claude to track my reading" | ask, In AI chat recommended and first | Claude named, not "only"; a log kept by talking |
-| "a website and an MCP server for our CRM" | Both | a conjunction |
-| "just a website for my bakery, no AI" | Web | "just", "no AI" |
-| "only an MCP server for our CRM, no web app" | MCP | "only", "no web app" |
+| "a website and an MCP server for our CRM" | On the web and in AI chat | a conjunction |
+| "just a website for my bakery, no AI" | On the web | "just", "no AI" |
+| "only an MCP server for our CRM, no web app" | In AI chat | "only", "no web app" |
 
 ## How a Web App Differs From an MCP App
 
