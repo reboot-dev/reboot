@@ -743,29 +743,58 @@ def when_transitions(
             yield transition.when
 
 
+def _entry_calls(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Call]:
+    """Yields every `call` of `statechart` and of every state within
+    it that is an `entry`."""
+    for entry in _entries(statechart):
+        if entry.WhichOneof("entry") == "call":
+            yield entry.call
+
+
+def _exit_calls(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Call]:
+    """Yields every `call` of `statechart` and of every state within
+    it that is an `exit`."""
+    for exit in _exits(statechart):
+        if exit.WhichOneof("exit") == "call":
+            yield exit.call
+
+
+def _on_calls(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Call]:
+    """Yields every `call` of `statechart` and of every state within
+    it that is an action of an `on` transition."""
+    for on in on_transitions(statechart):
+        for action in on.actions:
+            if action.WhichOneof("action") == "call":
+                yield action.call
+
+
+def _when_calls(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Call]:
+    """Yields every `call` of `statechart` and of every state within
+    it that is an action of a `when` transition."""
+    for when in when_transitions(statechart):
+        for action in when.actions:
+            if action.WhichOneof("action") == "call":
+                yield action.call
+
+
 def calls(
     statechart: statechart_pb2.Statechart,
 ) -> Iterator[statechart_pb2.Statechart.Call]:
     """Yields every `call` of `statechart` and of every state within
     it: each one that is an `entry`, an `exit`, or an action of an
     `on` or a `when` transition."""
-    for entry in _entries(statechart):
-        if entry.WhichOneof("entry") == "call":
-            yield entry.call
-
-    for exit in _exits(statechart):
-        if exit.WhichOneof("exit") == "call":
-            yield exit.call
-
-    for on in on_transitions(statechart):
-        for action in on.actions:
-            if action.WhichOneof("action") == "call":
-                yield action.call
-
-    for when in when_transitions(statechart):
-        for action in when.actions:
-            if action.WhichOneof("action") == "call":
-                yield action.call
+    yield from _entry_calls(statechart)
+    yield from _exit_calls(statechart)
+    yield from _on_calls(statechart)
+    yield from _when_calls(statechart)
 
 
 def schedules(
@@ -865,7 +894,8 @@ def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
 def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with the methods of `statechart`: no
     method is named by two of a `condition`, a `guard`, a `call` and a
-    `schedule`."""
+    `schedule`, and no method is named both by a `call` that is given
+    an event and by one that is given none."""
     problems: list[str] = []
 
     condition_methods = {
@@ -899,6 +929,29 @@ def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
         for method in sorted(methods[one] & methods[other]):
             problems.append(
                 f"the method `{method}` is both a `{one}` and a `{other}`",
+            )
+
+    # A `call` that is an action of an `on` transition is given the
+    # event of the transition, and every other `call` is given no
+    # event. A method takes an event or it does not, so every `call`
+    # that names it must agree on whether it is given one.
+    methods_given_event = {
+        call.inline.method for call in _on_calls(statechart)
+    }
+    methods_given_no_event = {
+        call.inline.method for call in itertools.chain(
+            _entry_calls(statechart),
+            _exit_calls(statechart),
+            _when_calls(statechart),
+        )
+    }
+    for method in sorted(methods_given_event & methods_given_no_event):
+        # As above, a `call` that has no method is left out.
+        if method != "":
+            problems.append(
+                f"the method `{method}` is a `call` of an `on` transition, "
+                "which is given the event, and a `call` of an `entry`, an "
+                "`exit` or a `when` transition, which is given no event",
             )
 
     return problems

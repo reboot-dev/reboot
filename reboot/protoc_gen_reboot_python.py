@@ -32,7 +32,11 @@ from reboot.protoc_gen_reboot_generic import (
     RebootProtocPlugin,
     UserProtoError,
 )
-from reboot.statecharts.validation import on_transitions, when_transitions
+from reboot.statecharts.validation import (
+    calls,
+    on_transitions,
+    when_transitions,
+)
 from typing import Optional, Sequence
 
 PythonType = str
@@ -93,6 +97,15 @@ class PythonService(BaseService):
 
 
 @dataclass
+class PythonStatechartCall:
+    # The type of every event that an `on` transition with the call as
+    # an action is on. Empty for a call that is given no event.
+    event_types: list[PythonType]
+    # The type of every event that the call may inject.
+    inject_types: list[PythonType]
+
+
+@dataclass
 class PythonState(BaseState):
     services: Sequence[PythonService]
     pb2_name: str
@@ -109,6 +122,9 @@ class PythonState(BaseState):
     # For a state with a statechart, each method that a condition of
     # the statechart names.
     statechart_conditions: list[str]
+    # For a state with a statechart, each method that a call of the
+    # statechart names.
+    statechart_calls: dict[str, PythonStatechartCall]
 
 
 @dataclass
@@ -191,6 +207,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
         statechart_guards: dict[str, list[PythonType]] = {}
         statechart_conditions: list[str] = []
+        statechart_calls: dict[str, PythonStatechartCall] = {}
 
         statechart = get_statechart_options(
             file.proto._descriptor.message_types_by_name[state.proto.name],
@@ -213,6 +230,29 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 if when.condition.inline.method not in statechart_conditions:
                     statechart_conditions.append(when.condition.inline.method)
 
+            for call in calls(statechart):
+                statechart_call = statechart_calls.setdefault(
+                    call.inline.method,
+                    PythonStatechartCall(event_types=[], inject_types=[]),
+                )
+                for inject in call.inline.injects:
+                    inject_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(inject),
+                    )
+                    if inject_type not in statechart_call.inject_types:
+                        statechart_call.inject_types.append(inject_type)
+
+            for on in on_transitions(statechart):
+                event_type = self._python_type_from_proto_type(
+                    self.pool.FindMessageTypeByName(on.event),
+                )
+                for action in on.actions:
+                    if action.WhichOneof("action") == "call":
+                        statechart_call = statechart_calls[
+                            action.call.inline.method]
+                        if event_type not in statechart_call.event_types:
+                            statechart_call.event_types.append(event_type)
+
         return PythonState(
             proto=state.proto,
             services=[
@@ -229,6 +269,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             },
             statechart_guards=statechart_guards,
             statechart_conditions=statechart_conditions,
+            statechart_calls=statechart_calls,
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

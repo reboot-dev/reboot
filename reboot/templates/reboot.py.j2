@@ -3928,6 +3928,29 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         raise NotImplementedError
 
     {% endfor %}
+    {% for method, call in state.statechart_calls.items() %}
+    # A call of the statechart, which may change the state.
+    {% if call.event_types %}
+    # It is given the event of the transition that it is an action of.
+    {% endif %}
+    {% if call.inject_types %}
+    # An event that it returns is injected.
+    {% endif %}
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+        {% if call.event_types %}
+        event: {{ call.event_types | join(' | ') }},
+        {% endif %}
+    {% if call.inject_types %}
+    ) -> IMPORT_typing.Optional[{{ call.inject_types | join(' | ') }}]:
+    {% else %}
+    ) -> None:
+    {% endif %}
+        raise NotImplementedError
+
+    {% endfor %}
 
 
 class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer):

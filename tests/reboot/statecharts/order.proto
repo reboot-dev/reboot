@@ -13,15 +13,41 @@ message Refunded {
   uint32 cents = 1;
 }
 
+message Settled {}
+
 message Order {
   option (rbt.v1alpha1.state) = {
   };
   option (rbt.v1alpha1.statechart) = {
     events: "tests.reboot.statecharts.Paid"
     events: "tests.reboot.statecharts.Refunded"
+    events: "tests.reboot.statecharts.Settled"
     initial: "OPEN"
     states {
       name: "OPEN"
+      exit {
+        call {
+          description: "Stop the reminders"
+          inline { method: "stop_reminders" }
+        }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Paid"
+          actions {
+            call {
+              description: "Record the payment"
+              inline {
+                method: "record_payment"
+                injects: "tests.reboot.statecharts.Settled"
+              }
+            }
+          }
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Settled" to: "CLOSED" }
+      }
       transitions {
         on {
           event: "tests.reboot.statecharts.Paid"
@@ -40,14 +66,29 @@ message Order {
         when {
           description: "cancelled"
           condition { inline { method: "is_cancelled" } }
+          actions {
+            call {
+              description: "Void the order"
+              inline { method: "void" }
+            }
+          }
           to: "CLOSED"
         }
       }
     }
-    states { name: "CLOSED" }
+    states {
+      name: "CLOSED"
+      entry {
+        call {
+          description: "Send the receipt"
+          inline { method: "send_receipt" }
+        }
+      }
+    }
   };
   uint32 owed_cents = 1;
   bool cancelled = 2;
+  bool receipt_sent = 3;
 }
 
 service OrderMethods {

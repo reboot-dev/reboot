@@ -48,9 +48,9 @@ message Statechart {
 
   // An action: runs inside the transition's commit.
   message Call {
-    // A function of the state and the event that triggered the
-    // transition, which may change the state, that the state type's
-    // implementation provides.
+    // A function of the state, which may change the state, that the
+    // state type's implementation provides. As an action of an `On`
+    // it is also given the event of that `On`.
     message Inline {
       string method = 1;
       // Every event the function may inject, which it does by

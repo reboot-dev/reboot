@@ -1738,6 +1738,65 @@ class ValidationTest(unittest.TestCase):
             ["the method `pay` is both a `guard` and a `call`"],
         )
 
+    def test_a_call_is_not_both_given_the_event_and_given_no_event(
+        self,
+    ) -> None:
+        # `record` is an action of an `on`, which is given the event,
+        # and an `entry`, which is given no event. `close` is an
+        # `entry`, an `exit` and an action of a `when`, none of which
+        # is given an event.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              exit {
+                call { description: "Close" inline { method: "close" } }
+              }
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline { method: "record" }
+                    }
+                  }
+                  to: "PAID"
+                }
+              }
+              transitions {
+                when {
+                  description: "Cancelled"
+                  condition { inline { method: "is_cancelled" } }
+                  actions {
+                    call { description: "Close" inline { method: "close" } }
+                  }
+                  to: "PAID"
+                }
+              }
+            }
+            states {
+              name: "PAID"
+              entry {
+                call { description: "Record" inline { method: "record" } }
+              }
+              entry {
+                call { description: "Close" inline { method: "close" } }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the method `record` is a `call` of an `on` transition, "
+                "which is given the event, and a `call` of an `entry`, an "
+                "`exit` or a `when` transition, which is given no event",
+            ],
+        )
+
     def test_a_method_is_not_both_a_condition_and_a_schedule(self) -> None:
         # The `condition` is of the statechart and the `schedule` is of
         # a state within a state.
@@ -1803,20 +1862,14 @@ class ValidationTest(unittest.TestCase):
     def test_a_method_named_by_two_calls_has_no_problems(self) -> None:
         statechart = make_statechart(
             """
-            events: "shop.v1.Paid"
             initial: "PENDING"
             states {
               name: "PENDING"
               entry {
                 call { description: "Notify" inline { method: "notify" } }
               }
-              transitions {
-                on {
-                  event: "shop.v1.Paid"
-                  actions {
-                    call { description: "Notify" inline { method: "notify" } }
-                  }
-                }
+              exit {
+                call { description: "Notify" inline { method: "notify" } }
               }
             }
             """,
