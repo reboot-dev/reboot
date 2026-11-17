@@ -473,8 +473,8 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   // Migrate from previous persistence versions to the current version,
   // if necessary.
-  expected<void> MaybeMigratePersistence(const RecoverRequest& request);
-  expected<void> MigratePersistence3To4(const RecoverRequest& request);
+  expected<void> MaybeMigratePersistence();
+  expected<void> MigratePersistence3To4();
 
   // Lookup a rocksdb column family handle for the specified state type,
   // or fail if no such column family exists for the state type.
@@ -1789,12 +1789,26 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
   // debugging when starting a sidecar, i.e., it will give a sense of
   // what is stored.
 
-  return std::unique_ptr<grpc::Service>(new DatabaseService(
+  std::unique_ptr<DatabaseService> service(new DatabaseService(
       state_directory,
       statistics,
       std::move(column_family_handles),
       std::unique_ptr<rocksdb::TransactionDB>(txn_db),
       server_info));
+
+  // Migrate to the current persistence version, if necessary. Nothing
+  // is served from the database yet, so nothing else is reading or
+  // writing it while we migrate.
+  expected<void> maybe_migrate = service->MaybeMigratePersistence();
+  if (!maybe_migrate.has_value()) {
+    return make_unexpected(
+        fmt::format(
+            "Failed to migrate persistence of '{}': {}",
+            state_directory.string(),
+            maybe_migrate.error()));
+  }
+
+  return std::unique_ptr<grpc::Service>(std::move(service));
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -4065,8 +4079,7 @@ grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
 //    are easier to recover per state ref.
 //
 // 2. Renames task keys so we can just recover pending tasks.
-expected<void> DatabaseService::MigratePersistence3To4(
-    const RecoverRequest& request) {
+expected<void> DatabaseService::MigratePersistence3To4() {
   std::shared_lock lock(column_family_handles_mutex_);
 
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
@@ -4272,8 +4285,7 @@ expected<void> DatabaseService::MigratePersistence3To4(
   return WritePersistenceVersion(db_.get(), 4);
 }
 
-expected<void> DatabaseService::MaybeMigratePersistence(
-    const RecoverRequest& request) {
+expected<void> DatabaseService::MaybeMigratePersistence() {
   // Read the persistence version from the default column family.
   std::string serialized_pv_get;
   rocksdb::Status status = db_->Get(
@@ -4316,7 +4328,7 @@ expected<void> DatabaseService::MaybeMigratePersistence(
     REBOOT_DATABASE_LOG(1) << "Migrating persistence from version " << version;
     expected<void> migrate;
     switch (version) {
-      case 3: migrate = MigratePersistence3To4(request); break;
+      case 3: migrate = MigratePersistence3To4(); break;
       default: LOG(FATAL) << "Unreachable";
     }
     if (!migrate.has_value()) {
@@ -4452,12 +4464,6 @@ grpc::Status DatabaseService::Recover(
     return grpc::Status(
         grpc::INVALID_ARGUMENT,
         "shard_ids are required for Recover request");
-  }
-
-  // Migrate to the current persistence version, if necessary.
-  expected<void> maybe_migrate = MaybeMigratePersistence(*request);
-  if (!maybe_migrate.has_value()) {
-    return grpc::Status(grpc::UNKNOWN, maybe_migrate.error());
   }
 
   // TODO: recover tasks, idempotent mutations (as long as we continue
