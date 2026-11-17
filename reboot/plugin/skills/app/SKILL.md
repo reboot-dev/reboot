@@ -620,7 +620,8 @@ also do what your front end adds to it: the table in
     [Required final hand-over: the connector](../dashboard/SKILL.md#step-6--required-final-hand-over-the-connector).
     What to hand over for each front end is the run skill's
     [Hand off](../run/SKILL.md#step-6--hand-off).
-    Offer the features the build plan left for later, to pick the next build from.
+    Offer the features the build plan left for later, so the user
+    can pick the next build.
     With sample data, name in one line what was added, that it is
     test data that never reaches production, and where to
     see it.
