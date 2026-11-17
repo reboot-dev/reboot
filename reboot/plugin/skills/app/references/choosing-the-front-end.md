@@ -27,8 +27,7 @@ connector. The front ends are only what sits on top:
 
 ## Settle the front end
 
-**Both is the default**: the MCP App costs little on top of the web
-app, since its tools are the backend's methods. Ask once, unless the
+**Both is the default**: Ask once, unless the
 prompt already settles it:
 
 - **Web alone**, no question: "just a website", "only a web app",
