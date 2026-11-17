@@ -99,7 +99,7 @@ dialog was not delivered) takes the recommended option, or "On the
 web and in AI chat" when none is marked: say so in one line. The answer goes
 into `AGENTS.md`'s Decisions when it is written.
 
-Then say the plan in one sentence ("Building this with both front ends,
+Then state the plan in one sentence ("Building this with both front ends,
 a web app and an MCP App for AI chat clients.") and go back to the app
 skill, following it from "When to Use".
 
