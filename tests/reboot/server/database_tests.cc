@@ -781,6 +781,59 @@ TEST_F(TwoShardDatabaseTest, StoreRestartLoad) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(TwoShardDatabaseTest, StoreRestartLoadStatechartStatus) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  // Loads the actor as it is stored.
+  auto load_actor = [&]() {
+    v1alpha1::LoadRequest request;
+
+    v1alpha1::Actor* actor = request.add_actors();
+    actor->set_state_type(state_type);
+    actor->set_state_ref(state_ref);
+
+    v1alpha1::LoadResponse response;
+    grpc::ClientContext context;
+
+    grpc::Status status = stub->Load(&context, request, &response);
+
+    EXPECT_TRUE(status.ok());
+    CHECK_EQ(1, response.actors().size());
+
+    return response.actors(0);
+  };
+
+  v1alpha1::Actor actor;
+  actor.set_state_type(state_type);
+  actor.set_state_ref(state_ref);
+  actor.set_state("hello world");
+
+  v1alpha1::statecharts::Status* statechart_status =
+      actor.mutable_statechart_status();
+  statechart_status->set_active("OPEN/SHIPPING");
+  (*statechart_status->mutable_history())["OPEN"] = "OPEN/SHIPPING";
+  statechart_status->add_queue()->set_event("shop.v1.Cancelled");
+
+  store({actor}, {});
+
+  restart_server();
+
+  EXPECT_TRUE(
+      google::protobuf::util::MessageDifferencer::Equals(actor, load_actor()));
+
+  // What is stored for an actor is replaced, so storing the actor
+  // without a statechart status removes the one that was stored.
+  actor.clear_statechart_status();
+
+  store({actor}, {});
+
+  EXPECT_EQ("hello world", load_actor().state());
+  EXPECT_FALSE(load_actor().has_statechart_status());
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, StoreLoadTask) {
   v1alpha1::Task task = MakeTask(
       "Greeter",

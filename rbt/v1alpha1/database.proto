@@ -6,6 +6,7 @@ import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
 import "rbt/v1alpha1/application_metadata.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
 import "rbt/v1alpha1/tasks.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -36,6 +37,11 @@ message Actor {
   // by that tuple.
   //
   optional bytes state = 3;
+
+  // Where the actor's statechart is, if its state type has one and it
+  // has started. It is stored with 'state', which replaces what was
+  // stored for the actor: storing an actor without it removes it.
+  optional rbt.v1alpha1.statecharts.Status statechart_status = 4;
 }
 
 ////////////////////////////////////////////////////////////////////////

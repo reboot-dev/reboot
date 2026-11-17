@@ -155,6 +155,7 @@ proto_library(
     deps = [
         ":application_metadata_proto",
         ":tasks_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
