@@ -96,7 +96,7 @@ and at the tests step:
 > `frontend/mcp/<name>/` bundles an MCP host loads. The MCP App
 > equivalents are `react-mcp-scaffolding.md` and `react-app-tsx.md`.
 
-> **Never read the MCP App pages for a web app**
+> **Never read the MCP App references for a web app**
 > (`react-mcp-scaffolding.md`, `react-app-tsx.md`, `gotchas-mcp-app.md`,
 > `pop-out-to-web-app.md`). They cover the MCP frontend — `UI()`
 > artifacts, the MCPJam inspector, `mcp/<name>/index.html` entries,
