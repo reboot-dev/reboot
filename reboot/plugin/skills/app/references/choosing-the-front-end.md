@@ -19,10 +19,9 @@ connector. The front ends are only what sits on top:
 
 - **Both** (the default) — one backend, one sign-in, a web app and an
   MCP App: its tools, and a `UI()` where the chat client shows the
-  person an MCP App. A user who signs in on one front end is
-  signed in on both: the OAuth server's `/authorize` short-circuits when
-  the browser already carries a session cookie, and `/callback` sets
-  that cookie on every flow.
+  person a view. A person signs in once: signing in on either front
+  end signs them in on the other. Reboot's OAuth server does this;
+  build one sign-in, not one per front end.
 - **Web** — the web app alone.
 - **MCP** — the MCP App alone.
 
