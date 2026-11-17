@@ -204,3 +204,27 @@ message Statechart {
   // that one of the state type's own methods may enqueue.
   repeated string events = 6;
 }
+
+// Where a statechart is: what is kept of it between events.
+message Status {
+  // An event that is waiting to be handled.
+  message Event {
+    // The event, by the full name of its message.
+    string event = 1;
+    // The event's fields, in the form of the schema the event is
+    // declared in. Left out for an event without any.
+    optional google.protobuf.Struct value = 2;
+  }
+
+  // The hierarchical state name of the innermost active state. Left
+  // out for a statechart that has not started.
+  optional string active = 1;
+
+  // By the hierarchical state name of a state, that of the substate
+  // it was last in.
+  map<string, string> history = 2;
+
+  // The events waiting to be handled, the next one first. An enqueued
+  // event is added at the end, and an injected one at the front.
+  repeated Event queue = 3;
+}
