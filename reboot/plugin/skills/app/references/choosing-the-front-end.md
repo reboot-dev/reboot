@@ -19,7 +19,7 @@ connector. The front ends are only what sits on top:
 
 - **Both** (the default) — one backend, one sign-in, a web app and an
   MCP App: its tools, and a `UI()` where the chat client shows the
-  person something. A user who signs in on one front end is
+  person an MCP App. A user who signs in on one front end is
   signed in on both: the OAuth server's `/authorize` short-circuits when
   the browser already carries a session cookie, and `/callback` sets
   that cookie on every flow.
