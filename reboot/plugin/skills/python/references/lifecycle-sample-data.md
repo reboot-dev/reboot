@@ -1,5 +1,5 @@
 ---
-title: Sample Data — Chosen With the Design, Seeded Through the Real Methods
+title: Seed Sample Data With Aliases, Only Under rbt dev run
 impact: MEDIUM
 impactDescription: A new app's pages are empty until someone adds data, so the design question offers sample data. It is test data, seeded through the real methods with fixed aliases, only under rbt dev run: it fills every page and state the app shows, survives a restart, and never reaches a scenario or production.
 tags: sample-data, seed, initialize, design
