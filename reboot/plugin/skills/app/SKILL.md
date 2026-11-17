@@ -55,12 +55,12 @@ lives in the `python` skill or the `frontend` skill. The table lists,
 for each step, which section to read for each front end. An app with
 both front ends reads both columns.
 
-| Step | MCP App | Web app |
-| --- | --- | --- |
-| Design | [Designing an MCP App](../python/references/mcp-app-concepts.md#designing-an-mcp-app) in `python/references/mcp-app-concepts.md` | [Designing a web app](../frontend/SKILL.md#designing-a-web-app) in the `frontend` skill, and [Who Signs In](../python/references/auth-web-apps.md#who-signs-in) in `python/references/auth-web-apps.md` |
-| Project files, API, servicers, `main.py`, authorizers, scenarios, updates | [Building an MCP App](../python/SKILL.md#building-an-mcp-app) in the `python` skill | [Building a web app](../python/SKILL.md#building-a-web-app) in the `python` skill |
-| Frontend scaffold and build, browser scenarios, updates | [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis) in the `frontend` skill | [Building a web app](../frontend/SKILL.md#building-a-web-app) in the `frontend` skill |
-| Both front ends in one `frontend/` | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill | |
+| Step                                                                      | MCP App                                                                                                                          | Web app                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Design                                                                    | [Designing an MCP App](../python/references/mcp-app-concepts.md#designing-an-mcp-app) in `python/references/mcp-app-concepts.md` | [Designing a web app](../frontend/SKILL.md#designing-a-web-app) in the `frontend` skill, and [Who Signs In](../python/references/auth-web-apps.md#who-signs-in) in `python/references/auth-web-apps.md` |
+| Project files, API, servicers, `main.py`, authorizers, scenarios, updates | [Building an MCP App](../python/SKILL.md#building-an-mcp-app) in the `python` skill                                              | [Building a web app](../python/SKILL.md#building-a-web-app) in the `python` skill                                                                                                                       |
+| Frontend scaffold and build, browser scenarios, updates                   | [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis) in the `frontend` skill                                        | [Building a web app](../frontend/SKILL.md#building-a-web-app) in the `frontend` skill                                                                                                                   |
+| Both front ends in one `frontend/`                                        | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill                                                      |                                                                                                                                                                                                         |
 
 ## Which References to Read, and When
 

@@ -166,28 +166,28 @@ chat-y", **ask**.
 
 ### Worked examples
 
-| Prompt fragment                                                          | Decision    | Why                                                          |
-| ------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------ |
-| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**     | CRM is a domain word, not a front-door. No verbatim trigger. |
-| "a todo list app"                                                        | **ASK**     | "app" alone is not a trigger.                                |
-| "a dashboard for our team's metrics, served at metrics.example.com"      | Web App     | Explicit URL.                                                |
-| "a tool I can use from Claude to track my reading list"                  | MCP App     | "from Claude" names the runtime; "tool" + LLM context.       |
-| "a website where users can sign up and create journals"                  | Web App     | "website" is a verbatim trigger.                             |
-| "a kanban board with login"                                              | **ASK**     | "login" alone is not enough — MCP Apps also have auth.       |
-| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both        | Explicit conjunction; dual-frontend app.                     |
+| Prompt fragment                                                          | Decision | Why                                                          |
+| ------------------------------------------------------------------------ | -------- | ------------------------------------------------------------ |
+| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**  | CRM is a domain word, not a front-door. No verbatim trigger. |
+| "a todo list app"                                                        | **ASK**  | "app" alone is not a trigger.                                |
+| "a dashboard for our team's metrics, served at metrics.example.com"      | Web App  | Explicit URL.                                                |
+| "a tool I can use from Claude to track my reading list"                  | MCP App  | "from Claude" names the runtime; "tool" + LLM context.       |
+| "a website where users can sign up and create journals"                  | Web App  | "website" is a verbatim trigger.                             |
+| "a kanban board with login"                                              | **ASK**  | "login" alone is not enough — MCP Apps also have auth.       |
+| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both     | Explicit conjunction; dual-frontend app.                     |
 
 ## How a Web App Differs From an MCP App
 
 The Reboot backend is identical. The deltas are all on the frontend:
 
-| Concern      | MCP App                                                                                          | Web App                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                         | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.      |
-| API exposure | `mcp=Tool()` on writer/transaction methods.                                                      | Methods exposed only through the generated React client.                                    |
-| UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                  |
-| Vite config  | The MCP App scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy.   | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.              |
-| Test surface | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`frontend/references/testing-web-app.md`). |
-| `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                           |
+| Concern      | MCP App                                                                                        | Web App                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                       | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.      |
+| API exposure | `mcp=Tool()` on writer/transaction methods.                                                    | Methods exposed only through the generated React client.                                    |
+| UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                           | An SPA at `frontend/web/` opened at a URL.                                                  |
+| Vite config  | The MCP App scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.              |
+| Test surface | MCPJam inspector.                                                                              | Scenarios that drive the app through Playwright (`frontend/references/testing-web-app.md`). |
+| `User` type  | Required — the MCP entry point.                                                                | Optional — only if your app needs per-user state.                                           |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are

@@ -118,7 +118,7 @@ rather than `/src/main.tsx`, so the dev server can serve it at `/`.
 `npm run build` is `tsc -b && vite build`: with one UI declared, the
 web app, the plugin needs no build target and the stock command
 builds it into `dist/web/`. (A frontend with MCP Apps as well builds
-every UI through `build()` from `@reboot-dev/reboot-react/vite`; 
+every UI through `build()` from `@reboot-dev/reboot-react/vite`;
 `react-mcp-scaffolding.md` has that.) `vite-plugin-singlefile` sits in
 `devDependencies` beside `vite` and `@vitejs/plugin-react` because
 the plugin imports them from the project.
