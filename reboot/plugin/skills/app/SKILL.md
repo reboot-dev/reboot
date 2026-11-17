@@ -23,8 +23,8 @@ skills, read at the step that needs them:
 
 ## Asking the User
 
-Every question in this skill is one dialog, and two rules hold for
-all of them:
+Every question in this skill is one dialog, and three rules hold
+for all of them:
 
 - **The recommended option goes first.** The dialog pre-selects the
   first option, so what a person gets by pressing Enter is what the
@@ -33,6 +33,11 @@ all of them:
 - **A question that comes back with no choice** (nobody there, or the
   dialog was not delivered) takes the first option: say so in one
   line and go on.
+- **A question the prompt already answers is not asked.** Take its
+  answer in whatever words it comes ("two features now", "just a
+  website", "with sample data"). A prompt that says to build what you
+  propose without asking ("build it as you propose") takes the first
+  option of every question it leaves unanswered.
 
 ## Step 0 — Settle the Front End
 
@@ -257,12 +262,7 @@ wrong means regenerating everything across 12+ files.
    app's.
 
    - **Keep the options in this order**: "Two features now" first,
-     then "One feature at a time", then "All at once". An answer
-     already in the prompt ("Answers to
-     your questions: two features now", "... one feature at a time",
-     "... all at once") settles it with no question, and so does an
-     answer to the design question ("build the design as proposed"):
-     it takes the recommended two.
+     then "One feature at a time", then "All at once".
    - **"One feature at a time"** builds the first feature, then the
      handoff offers the remaining features, one to pick as the next
      build. **"Two features now, the rest after"** offers the rest the
@@ -322,9 +322,7 @@ wrong means regenerating everything across 12+ files.
    something" asks what to change, in plain text; the change is made
    and the design shown again with the same question. An alternative
    the design weighed goes in the design's text, not in the options.
-   An answer already given answers it: "build the design as proposed,
-   with sample data" or "... empty"; "build the design as proposed"
-   alone takes sample data. Send the design and go on.
+   Send the design and go on.
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read

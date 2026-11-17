@@ -31,13 +31,13 @@ connector. The front ends are only what sits on top:
 prompt already settles it:
 
 - **Web alone**, no question: "just a website", "only a web app",
-  "only on the web", "no MCP", "no AI", or an answer already in the prompt that names only
-  the web ("Answers to your questions: a web app").
+  "only on the web", "no MCP", "no AI", or the prompt's own answer
+  naming only the web.
 - **MCP alone**, no question: "just an MCP server", "only for Claude",
   "only in AI chat",
-  "no web app", "no website", or an answer in the prompt that names
-  only MCP.
-- **Both**, no question: an answer in the prompt that names both, or a
+  "no web app", "no website", or the prompt's own answer naming only
+  MCP.
+- **Both**, no question: the prompt's own answer naming both, or a
   conjunction ("a website and an MCP server").
 
 Naming one frontend is not asking for it alone: "a website for my
