@@ -165,8 +165,8 @@ for a web app):
 
 **Before writing the frontend:** the [`frontend` skill](../frontend/SKILL.md).
 Its [Which page to read](../frontend/SKILL.md#which-page-to-read)
-section names the page every app reads, the generated client, and then
-the pages a web app or MCP App UIs add.
+section names the reference every app reads, the generated client,
+and then the references a web app or MCP App UIs add.
 
 **Before writing the tests:** `python/references/testing-project-setup.md`
 and `python/references/testing-features.md` (the built-in steps'
