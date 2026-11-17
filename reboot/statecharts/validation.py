@@ -8,8 +8,9 @@ and a state of the statechart itself is just its own name.
 """
 from __future__ import annotations
 
+import itertools
 from rbt.v1alpha1.statecharts import statechart_pb2
-from typing import Iterable, Optional, overload
+from typing import Iterable, Iterator, Optional, overload
 
 # What separates the names in a hierarchical state name, as in
 # "FOO/WAITING".
@@ -597,6 +598,100 @@ def _check_final(
     return problems
 
 
+def _states_and_substates(
+    states: Iterable[statechart_pb2.Statechart.State],
+) -> Iterator[statechart_pb2.Statechart.State]:
+    """Yields each of `states`, and every state within them."""
+    for state in states:
+        yield state
+        yield from _states_and_substates(state.states)
+
+
+def _entries(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Entry]:
+    """Yields every `entry` of `statechart` and of every state within
+    it."""
+    yield from statechart.entry
+    for state in _states_and_substates(statechart.states):
+        yield from state.entry
+
+
+def _exits(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Exit]:
+    """Yields every `exit` of `statechart` and of every state within
+    it."""
+    yield from statechart.exit
+    for state in _states_and_substates(statechart.states):
+        yield from state.exit
+
+
+def _transitions(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Transition]:
+    """Yields every transition of `statechart` and of every state
+    within it."""
+    yield from statechart.transitions
+    for state in _states_and_substates(statechart.states):
+        yield from state.transitions
+
+
+def _on_transitions(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.On]:
+    """Yields every `on` transition of `statechart` and of every state
+    within it."""
+    for transition in _transitions(statechart):
+        if transition.WhichOneof("transition") == "on":
+            yield transition.on
+
+
+def _when_transitions(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.When]:
+    """Yields every `when` transition of `statechart` and of every
+    state within it."""
+    for transition in _transitions(statechart):
+        if transition.WhichOneof("transition") == "when":
+            yield transition.when
+
+
+def _calls(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Call]:
+    """Yields every `call` of `statechart` and of every state within
+    it: each one that is an `entry`, an `exit`, or an action of an
+    `on` or a `when` transition."""
+    for entry in _entries(statechart):
+        if entry.WhichOneof("entry") == "call":
+            yield entry.call
+
+    for exit in _exits(statechart):
+        if exit.WhichOneof("exit") == "call":
+            yield exit.call
+
+    for on in _on_transitions(statechart):
+        for action in on.actions:
+            if action.WhichOneof("action") == "call":
+                yield action.call
+
+    for when in _when_transitions(statechart):
+        for action in when.actions:
+            if action.WhichOneof("action") == "call":
+                yield action.call
+
+
+def _schedules(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Schedule]:
+    """Yields every `schedule` of `statechart` and of every state
+    within it."""
+    for entry in _entries(statechart):
+        if entry.WhichOneof("entry") == "schedule":
+            yield entry.schedule
+
+
 @overload
 def _events_of_on_transitions(
     *, statechart: statechart_pb2.Statechart
@@ -768,6 +863,48 @@ def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
     return problems
 
 
+def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
+    """Returns every problem with the methods of `statechart`: no
+    method is named by two of a `condition`, a `guard`, a `call` and a
+    `schedule`."""
+    problems: list[str] = []
+
+    condition_methods = {
+        when.condition.inline.method for when in _when_transitions(statechart)
+    }
+    guard_methods = {
+        on.guard.inline.method for on in _on_transitions(statechart)
+    }
+    call_methods = {call.inline.method for call in _calls(statechart)}
+    schedule_methods = {
+        schedule.inline.method for schedule in _schedules(statechart)
+    }
+
+    # The methods that the statechart names, by what names them.
+    methods = {
+        "condition": condition_methods,
+        "guard": guard_methods,
+        "call": call_methods,
+        "schedule": schedule_methods,
+    }
+
+    # A `condition`, a `guard`, a `call` or a `schedule` that has no
+    # method, and an `on` that has no `guard`, has an empty `method`
+    # field, which was collected above as the empty string. That is
+    # not a method, so it is left out.
+    for methods_named_the_same_way in methods.values():
+        methods_named_the_same_way.discard("")
+
+    # Each two of "condition", "guard", "call" and "schedule", once.
+    for one, other in itertools.combinations(methods, 2):
+        for method in sorted(methods[one] & methods[other]):
+            problems.append(
+                f"the method `{method}` is both a `{one}` and a `{other}`",
+            )
+
+    return problems
+
+
 def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with `statechart`, each as a message for
     the statechart's author. A statechart without problems returns
@@ -800,5 +937,6 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
             )
         )
     problems.extend(_check_events(statechart))
+    problems.extend(_check_methods(statechart))
 
     return problems

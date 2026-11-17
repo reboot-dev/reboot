@@ -1483,6 +1483,143 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_method_is_not_both_a_guard_and_a_call(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "Pay" } }
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline { method: "Pay" }
+                    }
+                  }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["the method `Pay` is both a `guard` and a `call`"],
+        )
+
+    def test_a_method_is_not_both_a_condition_and_a_schedule(self) -> None:
+        # The `condition` is of the statechart and the `schedule` is of
+        # a state within a state.
+        statechart = make_statechart(
+            """
+            initial: "OPEN"
+            transitions {
+              when {
+                description: "Shipped"
+                condition { inline { method: "Ship" } }
+              }
+            }
+            states {
+              name: "OPEN"
+              initial: "SHIPPING"
+              states {
+                name: "SHIPPING"
+                entry { schedule { inline { method: "Ship" } } }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["the method `Ship` is both a `condition` and a `schedule`"],
+        )
+
+    def test_a_method_named_in_three_ways_is_a_problem_for_each_two(
+        self
+    ) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { call { description: "Check" inline { method: "Check" } } }
+              exit { call { description: "Check" inline { method: "Check" } } }
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "Check" } }
+                }
+              }
+              transitions {
+                when {
+                  description: "Checked"
+                  condition { inline { method: "Check" } }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the method `Check` is both a `condition` and a `guard`",
+                "the method `Check` is both a `condition` and a `call`",
+                "the method `Check` is both a `guard` and a `call`",
+            ],
+        )
+
+    def test_a_method_named_by_two_calls_has_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                call { description: "Notify" inline { method: "Notify" } }
+              }
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  actions {
+                    call { description: "Notify" inline { method: "Notify" } }
+                  }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_method_named_by_two_guards_has_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            events: "shop.v1.Refunded"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "IsOpen" } }
+                }
+              }
+              transitions {
+                on {
+                  event: "shop.v1.Refunded"
+                  guard { inline { method: "IsOpen" } }
+                }
+              }
+            }
+            """
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(
             """
