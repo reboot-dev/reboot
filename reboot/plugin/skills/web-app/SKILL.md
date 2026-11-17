@@ -51,14 +51,14 @@ backend behind a standalone React frontend served at a normal URL.
 
 The Reboot backend is identical. The deltas are all on the frontend:
 
-| Concern      | MCP App (`mcp-app`)                                                                              | Web App (this skill)                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                         | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.    |
-| API exposure | `mcp=Tool()` on writer/transaction methods.                                                      | Methods exposed only through the generated React client.                                  |
-| UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                |
-| Vite config  | The `mcp-app` scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.            |
+| Concern      | MCP App (`mcp-app`)                                                                              | Web App (this skill)                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                         | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.      |
+| API exposure | `mcp=Tool()` on writer/transaction methods.                                                      | Methods exposed only through the generated React client.                                    |
+| UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                             | An SPA at `frontend/web/` opened at a URL.                                                  |
+| Vite config  | The `mcp-app` scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.              |
 | Tested with  | MCPJam inspector.                                                                                | Scenarios that drive the app through Playwright (`frontend/references/testing-web-app.md`). |
-| `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                         |
+| `User` type  | Required — the MCP entry point.                                                                  | Optional — only if your app needs per-user state.                                           |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are

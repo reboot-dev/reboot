@@ -215,4 +215,3 @@ They live in `backend/src/example_prompts.py` and are passed to
 a worked set are in
 [`python/references/lifecycle-mcp-app-project-files.md`](lifecycle-mcp-app-project-files.md); the
 `mcp-app-counter` example is the canonical reference.
-
