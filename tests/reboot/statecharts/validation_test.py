@@ -19,12 +19,20 @@ class ValidationTest(unittest.TestCase):
     def test_states_that_each_have_an_initial_have_no_problems(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Paid"
+            events: "shop.v1.Shipped"
             initial: "OPEN"
             states {
               name: "OPEN"
               initial: "PENDING"
-              states { name: "PENDING" }
+              states {
+                name: "PENDING"
+                transitions {
+                  on { event: "shop.v1.Paid" to: "OPEN/SHIPPING" }
+                }
+              }
               states { name: "SHIPPING" }
+              transitions { on { event: "shop.v1.Shipped" to: "SHIPPED" } }
             }
             states { name: "SHIPPED" }
             """,
@@ -153,11 +161,13 @@ class ValidationTest(unittest.TestCase):
     def test_states_that_are_not_siblings_can_share_a_name(self) -> None:
         statechart = make_statechart(
             """
+            events: "shop.v1.Closed"
             initial: "OPEN"
             states {
               name: "OPEN"
               initial: "WAITING"
               states { name: "WAITING" }
+              transitions { on { event: "shop.v1.Closed" to: "CLOSED" } }
             }
             states {
               name: "CLOSED"
@@ -1657,12 +1667,14 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             events: "shop.v1.TimedOut"
+            events: "shop.v1.Closed"
             initial: "PENDING"
             states {
               name: "PENDING"
               entry {
                 timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
               }
+              transitions { on { event: "shop.v1.Closed" to: "CLOSING" } }
             }
             states {
               name: "CLOSING"
@@ -1835,6 +1847,198 @@ class ValidationTest(unittest.TestCase):
             """,
         )
         self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_state_that_nothing_leads_to_is_unreachable(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            events: "shop.v1.Packed"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" to: "SHIPPED" } }
+            }
+            states {
+              name: "PACKING"
+              transitions { on { event: "shop.v1.Packed" to: "SHIPPED" } }
+            }
+            states { name: "SHIPPED" final: true }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `PACKING` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+            ],
+        )
+
+    def test_a_state_is_reachable_through_each_initial(self) -> None:
+        # `OPEN` is the `initial` of the statechart, `OPEN/PAYING` that
+        # of `OPEN`, and `OPEN/PAYING/WAITING` that of `OPEN/PAYING`.
+        statechart = make_statechart(
+            """
+            initial: "OPEN"
+            states {
+              name: "OPEN"
+              initial: "PAYING"
+              states {
+                name: "PAYING"
+                initial: "WAITING"
+                states { name: "WAITING" }
+              }
+            }
+            """,
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_going_to_a_state_reaches_those_it_is_within(self) -> None:
+        # Going to `CLOSED/REFUNDING` reaches `CLOSED`, but never
+        # `CLOSED/ARCHIVING`, the `initial` of `CLOSED`.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Cancelled"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on { event: "shop.v1.Cancelled" to: "CLOSED/REFUNDING" }
+              }
+            }
+            states {
+              name: "CLOSED"
+              initial: "ARCHIVING"
+              states { name: "ARCHIVING" }
+              states { name: "REFUNDING" }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `CLOSED/ARCHIVING` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+            ],
+        )
+
+    def test_a_transition_of_an_unreachable_state_leads_nowhere(
+        self,
+    ) -> None:
+        # Only `PACKING` goes to `SHIPPED`, and nothing leads to
+        # `PACKING`.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Packed"
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states {
+              name: "PACKING"
+              transitions { on { event: "shop.v1.Packed" to: "SHIPPED" } }
+            }
+            states { name: "SHIPPED" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `PACKING` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+                "state `SHIPPED` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+            ],
+        )
+
+    def test_a_state_within_an_unreachable_state_is_unreachable(
+        self,
+    ) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states { name: "PENDING" }
+            states {
+              name: "CLOSED"
+              initial: "ARCHIVING"
+              states { name: "ARCHIVING" }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `CLOSED` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+                "state `CLOSED/ARCHIVING` is unreachable: no `initial` and "
+                "no transition that can fire leads to it",
+            ],
+        )
+
+    def test_a_transition_of_the_statechart_leads_to_a_state(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+              }
+            }
+            states { name: "PENDING" }
+            states { name: "CANCELLED" final: true }
+            """,
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_a_final_state_inherits_no_transition_of_the_statechart(
+        self,
+    ) -> None:
+        # The statechart is only ever in `DONE`, which is final, so its
+        # `when` transition never fires.
+        statechart = make_statechart(
+            """
+            initial: "DONE"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "IsCancelled" } }
+                to: "CANCELLED"
+              }
+            }
+            states { name: "DONE" final: true }
+            states { name: "CANCELLED" final: true }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `CANCELLED` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+            ],
+        )
+
+    def test_a_final_state_inherits_no_transition_of_a_state(self) -> None:
+        # `CLOSED` is only ever in `CLOSED/ARCHIVED`, which is final,
+        # so the `on` transition of `CLOSED` never fires.
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Reopened"
+            initial: "CLOSED"
+            states {
+              name: "CLOSED"
+              initial: "ARCHIVED"
+              states { name: "ARCHIVED" final: true }
+              transitions { on { event: "shop.v1.Reopened" to: "OPEN" } }
+            }
+            states { name: "OPEN" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "state `OPEN` is unreachable: no `initial` and no "
+                "transition that can fire leads to it",
+            ],
+        )
 
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(

@@ -850,6 +850,119 @@ def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
     return problems
 
 
+def _check_states_are_reachable(
+    statechart: statechart_pb2.Statechart,
+) -> list[str]:
+    """Returns every problem with reaching the states of `statechart`:
+    each state is reachable. A state is reachable by being the
+    `initial` of the statechart or of a state that a transition goes
+    to, by being the `to` of a transition that can fire, or by having
+    a reachable state within it. A transition can fire once a state
+    that has it, or inherits it, is reachable: one that has no states
+    within it and is not final. Whether a `guard` or a `condition`
+    ever holds is not considered."""
+    problems: list[str] = []
+
+    # `_hierarchical_state_names` and `_states_and_substates` both go
+    # through the states in the order they are written, each state
+    # before the states within it, so the two line up.
+    states_by_hierarchical_state_name = dict(
+        zip(
+            _hierarchical_state_names(
+                statechart.states,
+                hierarchical_superstate_name=None,
+            ),
+            _states_and_substates(statechart.states),
+        ),
+    )
+
+    # The hierarchical state names that an `initial` or a `to` leads
+    # to: those that have been followed, and those still to follow.
+    followed: set[str] = set()
+    to_follow: list[str] = []
+    # A statechart without states has no `initial` to follow.
+    if len(statechart.states) > 0:
+        to_follow.append(statechart.initial)
+
+    while len(to_follow) > 0:
+        hierarchical_state_name = to_follow.pop()
+        if hierarchical_state_name in followed:
+            continue
+        followed.add(hierarchical_state_name)
+
+        state = states_by_hierarchical_state_name[hierarchical_state_name]
+
+        if len(state.states) > 0:
+            # A state that has states within it is entered at its
+            # `initial`.
+            to_follow.append(
+                _hierarchical_state_name(
+                    state.initial,
+                    hierarchical_superstate_name=hierarchical_state_name,
+                ),
+            )
+        elif not state.final:
+            # The hierarchical state name of each state that this one
+            # is within, outermost first: "FOO" and "FOO/BAR" for
+            # "FOO/BAR/BAZ".
+            hierarchical_superstate_names: list[str] = []
+            state_names = hierarchical_state_name.split(
+                _HIERARCHICAL_STATE_NAME_SEPARATOR,
+            )
+            for superstate_name in state_names[:-1]:
+                hierarchical_superstate_names.append(
+                    _hierarchical_state_name(
+                        superstate_name,
+                        hierarchical_superstate_name=(
+                            hierarchical_superstate_names[-1]
+                            if len(hierarchical_superstate_names) > 0 else None
+                        ),
+                    ),
+                )
+
+            # A state that is not final has its own transitions and
+            # inherits those of every state it is within, and of the
+            # statechart, so each of them can fire.
+            transitions = list(statechart.transitions)
+            transitions.extend(state.transitions)
+            for hierarchical_superstate_name in hierarchical_superstate_names:
+                transitions.extend(
+                    states_by_hierarchical_state_name[
+                        hierarchical_superstate_name].transitions,
+                )
+
+            for transition in transitions:
+                match transition.WhichOneof("transition"):
+                    case "on":
+                        if transition.on.HasField("to"):
+                            to_follow.append(transition.on.to)
+                    case "when":
+                        if transition.when.HasField("to"):
+                            to_follow.append(transition.when.to)
+
+    # A state is reachable if an `initial` or a `to` led to it or to a
+    # state within it.
+    reachable = {
+        hierarchical_state_name
+        for hierarchical_state_name in states_by_hierarchical_state_name
+        if any(
+            followed_hierarchical_state_name == hierarchical_state_name or
+            followed_hierarchical_state_name.startswith(
+                hierarchical_state_name + _HIERARCHICAL_STATE_NAME_SEPARATOR,
+            ) for followed_hierarchical_state_name in followed
+        )
+    }
+
+    for hierarchical_state_name in states_by_hierarchical_state_name:
+        if hierarchical_state_name not in reachable:
+            problems.append(
+                f"state `{hierarchical_state_name}` is unreachable: no "
+                "`initial` and no transition that can fire leads to it",
+            )
+
+    return problems
+
+
 def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
     """Returns every problem with `statechart`, each as a message for
     the statechart's author. A statechart without problems returns
@@ -883,5 +996,10 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
         )
     problems.extend(_check_events(statechart))
     problems.extend(_check_methods(statechart))
+    # Which states are reachable follows from every `initial` and
+    # every `to`, so it is only worked out for a statechart that has
+    # no other problem.
+    if len(problems) == 0:
+        problems.extend(_check_states_are_reachable(statechart))
 
     return problems
