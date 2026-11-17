@@ -10,6 +10,7 @@ from rbt.v1alpha1.admin.export_import_pb2 import (
     ListServersRequest,
     ListServersResponse,
 )
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.admin.export_import_converters import ExportImportItemConverters
 from reboot.aio.auth.admin_auth import (
     AdminAuthMixin,
@@ -162,7 +163,20 @@ class ExportImportServicer(
                         yield ExportImportItem(
                             state_type=state_type_name,
                             state_ref=item.actor.state_ref,
-                            state=state,
+                            actor=ExportImportItem.Actor(
+                                state=state,
+                                statechart_status=(
+                                    json_format.ParseDict(
+                                        json_format.MessageToDict(
+                                            item.actor.statechart_status,
+                                            preserving_proto_field_name=True,
+                                        ),
+                                        struct_pb2.Struct(),
+                                    ) if
+                                    item.actor.HasField('statechart_status')
+                                    else None
+                                ),
+                            ),
                         )
                 elif active_field_name == "task":
                     yield ExportImportItem(
@@ -196,7 +210,28 @@ class ExportImportServicer(
         state_ref = StateRef(item.state_ref)
 
         active_field_name = item.WhichOneof("item")
-        if active_field_name == "state":
+        if active_field_name == "actor":
+            await self._state_manager.import_actor(
+                state_type_name,
+                state_ref,
+                self._serializers.state_from_struct(
+                    item.actor.state,
+                    state_type_name,
+                ),
+                statechart_status=(
+                    _maybe_parse_if_backwards_compatible(
+                        item.actor.statechart_status,
+                        statechart_pb2.Status(),
+                    ) if item.actor.HasField('statechart_status') else None
+                ),
+                # While importing it is safe to allow concurrent writes
+                # without additional DB synchronization, in case of
+                # error, the import should be re-run.
+                sync=False,
+            )
+        elif active_field_name == "state":
+            # An actor that was exported before `actor` was, which was
+            # before there was a statechart status, so it has none.
             await self._state_manager.import_actor(
                 state_type_name,
                 state_ref,

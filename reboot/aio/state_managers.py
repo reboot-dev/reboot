@@ -1434,9 +1434,11 @@ class StateManager(ABC):
         state_ref: StateRef,
         state: Message,
         *,
+        statechart_status: Optional[statechart_pb2.Status] = None,
         sync: bool = True,
     ) -> None:
-        """Imports state for an actor, overwriting on collision."""
+        """Imports state for an actor, and where its statechart is if
+        it is given, overwriting on collision."""
         raise NotImplementedError
 
     @abstractmethod
@@ -3288,13 +3290,23 @@ class SidecarStateManager(
         state_ref: StateRef,
         state: Message,
         *,
+        statechart_status: Optional[statechart_pb2.Status] = None,
         sync: bool = True,
     ) -> None:
         async with self._locks[state_type][state_ref].exclusive(deadline=None):
+            if statechart_status is None:
+                # Importing overwrites, so an actor that is imported
+                # without a statechart status has none, whatever it
+                # had. Effects without one would leave it as it was.
+                self._statechart_statuses[state_type].pop(state_ref, None)
+
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
-                effects=Effects(state=state),
+                effects=Effects(
+                    state=state,
+                    statechart_status=statechart_status,
+                ),
                 sync=sync,
             )
 

@@ -524,6 +524,61 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
                 statechart_pb2.Status(active="CLOSED"),
             )
 
+    async def test_import_actor_imports_statechart_status(self) -> None:
+        """Test that importing an actor with a statechart status gives
+        the actor that statechart status, and that importing it without
+        one leaves it with none, since importing overwrites.
+        """
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = StateRef.from_id(state_type, "test-1234")
+        context = self.create_test_context(
+            WriterContext, MyGreeterServicer, "test-1234"
+        )
+
+        await self.state_manager.import_actor(
+            state_type,
+            state_ref,
+            greeter_rbt.Greeter.State(name='Jonathan'),
+            statechart_status=statechart_pb2.Status(active="OPEN"),
+        )
+
+        self.assertEqual(
+            self.state_manager.statechart_status(context),
+            statechart_pb2.Status(active="OPEN"),
+        )
+
+        await self.state_manager.import_actor(
+            state_type,
+            state_ref,
+            greeter_rbt.Greeter.State(name='Jonathan'),
+        )
+
+        self.assertIsNone(self.state_manager.statechart_status(context))
+
+    async def test_export_items_exports_statechart_status(self) -> None:
+        """Test that an actor is exported with its statechart status."""
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = StateRef.from_id(state_type, "test-1234")
+
+        await self.state_manager.import_actor(
+            state_type,
+            state_ref,
+            greeter_rbt.Greeter.State(name='Jonathan'),
+            statechart_status=statechart_pb2.Status(active="OPEN"),
+        )
+
+        actors = [
+            item.actor
+            async for item in self.state_manager.export_items(state_type) if
+            item.WhichOneof("item") == "actor"
+        ]
+
+        self.assertEqual(len(actors), 1)
+        self.assertEqual(
+            actors[0].statechart_status,
+            statechart_pb2.Status(active="OPEN"),
+        )
+
     async def test_statechart_status_is_a_copy(self) -> None:
         """Test that changing the statechart status that the state
         manager returns does not change the one that it holds.
