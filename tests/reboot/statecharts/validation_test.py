@@ -27,7 +27,7 @@ class ValidationTest(unittest.TestCase):
               states { name: "SHIPPING" }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -36,7 +36,7 @@ class ValidationTest(unittest.TestCase):
             """
             states { name: "PENDING" }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -52,7 +52,7 @@ class ValidationTest(unittest.TestCase):
               states { name: "PENDING" }
               states { name: "SHIPPING" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -65,7 +65,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDNG"
             states { name: "PENDING" }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -84,7 +84,7 @@ class ValidationTest(unittest.TestCase):
               states { name: "PENDING" }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -99,7 +99,7 @@ class ValidationTest(unittest.TestCase):
             """
             initial: "PENDING"
             states { name: "PENDING" initial: "NEW" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -112,7 +112,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             states { name: "PENDING" }
             states {}
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -126,7 +126,7 @@ class ValidationTest(unittest.TestCase):
             states { name: "PENDING" }
             states { name: "PENDING" }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -143,7 +143,7 @@ class ValidationTest(unittest.TestCase):
               states { name: "PENDING" }
               states { name: "PENDING" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -164,12 +164,12 @@ class ValidationTest(unittest.TestCase):
               initial: "WAITING"
               states { name: "WAITING" }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
     def test_transitions_that_are_an_on_or_a_when_have_no_problems(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
@@ -188,7 +188,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "SHIPPED" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -198,7 +198,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             transitions {}
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -219,7 +219,7 @@ class ValidationTest(unittest.TestCase):
               transitions {}
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -236,7 +236,7 @@ class ValidationTest(unittest.TestCase):
             transitions { on { to: "CANCELLED" } }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -252,7 +252,7 @@ class ValidationTest(unittest.TestCase):
               transitions { on { to: "SHIPPED" } }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -271,7 +271,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -293,7 +293,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -307,7 +307,7 @@ class ValidationTest(unittest.TestCase):
             transitions { when { description: "Cancelled" to: "CANCELLED" } }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -327,7 +327,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -349,7 +349,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -360,7 +360,7 @@ class ValidationTest(unittest.TestCase):
         )
 
     def test_an_on_with_a_guard_that_has_a_method_has_no_problems(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
@@ -377,7 +377,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -397,7 +397,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -417,7 +417,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -446,7 +446,7 @@ class ValidationTest(unittest.TestCase):
               }
               entry { schedule { inline { method: "Remind" } } }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -456,7 +456,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             entry {}
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -474,7 +474,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry {}
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -497,7 +497,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               exit { inject { event: "shop.v1.Left" } }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -507,7 +507,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             exit {}
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -525,7 +525,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               exit {}
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -566,7 +566,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -582,7 +582,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -606,7 +606,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -624,7 +624,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry { call { inline { method: "Open" } } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -640,7 +640,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             exit { call { description: " " inline { method: "Close" } } }
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -666,7 +666,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -690,7 +690,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -708,7 +708,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry { call { description: "Open" inline {} } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -721,7 +721,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             exit { call { description: "Close" } }
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -736,7 +736,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry { inject {} }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -749,7 +749,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             exit { inject {} }
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -772,7 +772,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -796,7 +796,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -814,7 +814,7 @@ class ValidationTest(unittest.TestCase):
               name: "SHIPPING"
               entry { schedule { inline {} } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -830,7 +830,7 @@ class ValidationTest(unittest.TestCase):
             initial: "SHIPPING"
             entry { schedule {} }
             states { name: "SHIPPING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -848,7 +848,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry { timer { minutes: 30 } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -864,7 +864,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             entry { timer { minutes: 30 enqueue {} } }
             states { name: "PENDING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -884,7 +884,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               entry { timer { enqueue { event: "shop.v1.TimedOut" } } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -911,7 +911,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -927,7 +927,7 @@ class ValidationTest(unittest.TestCase):
                 timer { seconds: 0 enqueue { event: "shop.v1.TimedOut" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -949,7 +949,7 @@ class ValidationTest(unittest.TestCase):
                 call { description: "Thank" inline { method: "Thank" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -964,7 +964,7 @@ class ValidationTest(unittest.TestCase):
               final: true
               transitions { on { event: "shop.v1.Reopened" to: "PENDING" } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -984,7 +984,7 @@ class ValidationTest(unittest.TestCase):
                 timer { days: 1 enqueue { event: "shop.v1.TimedOut" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1008,7 +1008,7 @@ class ValidationTest(unittest.TestCase):
                 states { name: "GONE" }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1025,7 +1025,7 @@ class ValidationTest(unittest.TestCase):
               transitions { on { event: "shop.v1.Paid" to: "SHIPPED" } }
             }
             states { name: "SHIPPED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1044,7 +1044,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               exit { inject { event: "shop.v1.Left" } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1065,7 +1065,7 @@ class ValidationTest(unittest.TestCase):
                 timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1098,7 +1098,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1109,7 +1109,7 @@ class ValidationTest(unittest.TestCase):
         )
 
     def test_an_event_a_schedule_may_enqueue_is_one_of_the_events(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
@@ -1123,7 +1123,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1143,7 +1143,7 @@ class ValidationTest(unittest.TestCase):
               transitions { on { event: "shop.v1.Cancelled" to: "CANCELLED" } }
             }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1173,7 +1173,7 @@ class ValidationTest(unittest.TestCase):
               initial: "WAITING"
               states { name: "WAITING" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1181,13 +1181,13 @@ class ValidationTest(unittest.TestCase):
         )
 
     def test_the_name_of_a_state_of_a_statechart_has_no_separator(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
             initial: "FOO/WAITING"
             states { name: "FOO/WAITING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1206,7 +1206,7 @@ class ValidationTest(unittest.TestCase):
               initial: "NOT/YET"
               states { name: "NOT/YET" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1223,7 +1223,7 @@ class ValidationTest(unittest.TestCase):
             states { name: "PENDING" }
             states {}
             states {}
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1231,7 +1231,7 @@ class ValidationTest(unittest.TestCase):
         )
 
     def test_a_to_that_is_a_hierarchical_state_name_has_no_problems(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
@@ -1253,7 +1253,7 @@ class ValidationTest(unittest.TestCase):
               }
             }
             states { name: "BAR" }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -1273,7 +1273,7 @@ class ValidationTest(unittest.TestCase):
               }
               states { name: "WAITING" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1293,7 +1293,7 @@ class ValidationTest(unittest.TestCase):
               transitions { on { event: "shop.v1.Paid" to: "SHIPING" } }
             }
             states { name: "SHIPPING" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1316,7 +1316,7 @@ class ValidationTest(unittest.TestCase):
             }
             states { name: "PENDING" }
             states { name: "CANCELLED" }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1335,7 +1335,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               transitions { on { event: "shop.v1.Paid" } }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -1348,7 +1348,7 @@ class ValidationTest(unittest.TestCase):
               name: "PENDING"
               exit { inject { event: "shop.v1.Left" } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1369,7 +1369,7 @@ class ValidationTest(unittest.TestCase):
                 timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1402,7 +1402,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1425,7 +1425,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1456,7 +1456,7 @@ class ValidationTest(unittest.TestCase):
                 transitions { on { event: "shop.v1.TimedOut" } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -1473,7 +1473,7 @@ class ValidationTest(unittest.TestCase):
               name: "SHIPPING"
               exit { inject { event: "shop.v1.Left" } }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1503,7 +1503,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1530,7 +1530,7 @@ class ValidationTest(unittest.TestCase):
                 entry { schedule { inline { method: "Ship" } } }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1538,7 +1538,7 @@ class ValidationTest(unittest.TestCase):
         )
 
     def test_a_method_named_in_three_ways_is_a_problem_for_each_two(
-        self
+        self,
     ) -> None:
         statechart = make_statechart(
             """
@@ -1561,7 +1561,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),
@@ -1591,7 +1591,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -1616,7 +1616,7 @@ class ValidationTest(unittest.TestCase):
                 }
               }
             }
-            """
+            """,
         )
         self.assertEqual(check_statechart(statechart), [])
 
@@ -1627,7 +1627,7 @@ class ValidationTest(unittest.TestCase):
               name: "OPEN"
               states { name: "PENDING" }
             }
-            """
+            """,
         )
         self.assertEqual(
             check_statechart(statechart),

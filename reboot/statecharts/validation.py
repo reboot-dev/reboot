@@ -56,7 +56,7 @@ def _hierarchical_state_names(
             _hierarchical_state_names(
                 state.states,
                 hierarchical_superstate_name=hierarchical_state_name,
-            )
+            ),
         )
 
     return hierarchical_state_names
@@ -114,7 +114,7 @@ def _check_timer(timer: statechart_pb2.Statechart.Timer) -> list[str]:
     if delay_seconds <= 0:
         problems.append(
             "the `timer` has no delay: its `seconds`, `minutes`, `hours` "
-            "and `days` must add up to more than zero"
+            "and `days` must add up to more than zero",
         )
 
     return problems
@@ -161,13 +161,13 @@ def _check_initial(
     if len(substate_names) == 0:
         if initial:
             problems.append(
-                f"{subject} has `initial: \"{initial}\"` but no states"
+                f"{subject} has `initial: \"{initial}\"` but no states",
             )
     elif not initial:
         problems.append(f"{subject} has states but no `initial`")
     elif initial not in substate_names:
         problems.append(
-            f"`initial: \"{initial}\"` of {subject} is not one of its states"
+            f"`initial: \"{initial}\"` of {subject} is not one of its states",
         )
 
     for substate in substates:
@@ -178,7 +178,7 @@ def _check_initial(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
-            )
+            ),
         )
 
     return problems
@@ -237,11 +237,11 @@ def _check_state_names(
             # named "A/B" would have the same hierarchical state name.
             problems.append(
                 f"{subject} has a state named '{name}', but a state's "
-                f"name cannot contain `{_HIERARCHICAL_STATE_NAME_SEPARATOR}`"
+                f"name cannot contain `{_HIERARCHICAL_STATE_NAME_SEPARATOR}`",
             )
         if count > 1:
             problems.append(
-                f"{subject} has more than one state named '{name}'"
+                f"{subject} has more than one state named '{name}'",
             )
 
     for substate in substates:
@@ -252,7 +252,7 @@ def _check_state_names(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
-            )
+            ),
         )
 
     return problems
@@ -311,7 +311,7 @@ def _check_transitions(
             case "on":
                 if not transition.on.event:
                     problems.append(
-                        f"an `on` transition of {subject} has no `event`"
+                        f"an `on` transition of {subject} has no `event`",
                     )
                 if (
                     transition.on.HasField("guard") and
@@ -319,7 +319,7 @@ def _check_transitions(
                 ):
                     problems.append(
                         f"the `guard` of an `on` transition of {subject} "
-                        "has no `method`"
+                        "has no `method`",
                     )
                 if (
                     transition.on.HasField("to") and
@@ -328,7 +328,7 @@ def _check_transitions(
                     problems.append(
                         f"`to: \"{transition.on.to}\"` of an `on` "
                         f"transition of {subject} is not the hierarchical "
-                        "state name of a state"
+                        "state name of a state",
                     )
                 for action in transition.on.actions:
                     match action.WhichOneof("action"):
@@ -336,37 +336,37 @@ def _check_transitions(
                             for problem in _check_call(action.call):
                                 problems.append(
                                     f"in an `on` transition of {subject}: "
-                                    f"{problem}"
+                                    f"{problem}",
                                 )
                         case "inject":
                             for problem in _check_inject(action.inject):
                                 problems.append(
                                     f"in an `on` transition of {subject}: "
-                                    f"{problem}"
+                                    f"{problem}",
                                 )
                         case _:
                             problems.append(
                                 "an action of an `on` transition of "
                                 f"{subject} is neither a `call` nor an "
-                                "`inject`"
+                                "`inject`",
                             )
             case "when":
                 if not transition.when.description.strip():
                     problems.append(
                         f"a `when` transition of {subject} has no "
-                        "`description`"
+                        "`description`",
                     )
                 match transition.when.condition.WhichOneof("condition"):
                     case "inline":
                         if not transition.when.condition.inline.method:
                             problems.append(
                                 "the `condition` of a `when` transition of "
-                                f"{subject} has no `method`"
+                                f"{subject} has no `method`",
                             )
                     case _:
                         problems.append(
                             f"a `when` transition of {subject} has no "
-                            "`condition`"
+                            "`condition`",
                         )
                 if (
                     transition.when.HasField("to") and
@@ -375,7 +375,7 @@ def _check_transitions(
                     problems.append(
                         f"`to: \"{transition.when.to}\"` of a `when` "
                         f"transition of {subject} is not the hierarchical "
-                        "state name of a state"
+                        "state name of a state",
                     )
                 for action in transition.when.actions:
                     match action.WhichOneof("action"):
@@ -383,24 +383,24 @@ def _check_transitions(
                             for problem in _check_call(action.call):
                                 problems.append(
                                     f"in a `when` transition of {subject}: "
-                                    f"{problem}"
+                                    f"{problem}",
                                 )
                         case "inject":
                             for problem in _check_inject(action.inject):
                                 problems.append(
                                     f"in a `when` transition of {subject}: "
-                                    f"{problem}"
+                                    f"{problem}",
                                 )
                         case _:
                             problems.append(
                                 "an action of a `when` transition of "
                                 f"{subject} is neither a `call` nor an "
-                                "`inject`"
+                                "`inject`",
                             )
             case _:
                 problems.append(
                     f"a transition of {subject} is neither an `on` nor a "
-                    "`when`"
+                    "`when`",
                 )
 
     for substate in substates:
@@ -412,7 +412,7 @@ def _check_transitions(
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
                 all_hierarchical_state_names=all_hierarchical_state_names,
-            )
+            ),
         )
 
     return problems
@@ -472,7 +472,7 @@ def _check_entries(
             case _:
                 problems.append(
                     f"an `entry` of {subject} is neither a `call`, an "
-                    "`inject`, a `schedule` nor a `timer`"
+                    "`inject`, a `schedule` nor a `timer`",
                 )
 
     for substate in substates:
@@ -483,7 +483,7 @@ def _check_entries(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
-            )
+            ),
         )
 
     return problems
@@ -536,7 +536,7 @@ def _check_exits(
             case _:
                 problems.append(
                     f"an `exit` of {subject} is neither a `call` nor an "
-                    "`inject`"
+                    "`inject`",
                 )
 
     for substate in substates:
@@ -547,7 +547,7 @@ def _check_exits(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
-            )
+            ),
         )
 
     return problems
@@ -571,17 +571,17 @@ def _check_final(
         ):
             problems.append(
                 f"state `{hierarchical_state_name}` is final and cannot have a "
-                "`schedule` or a `timer`"
+                "`schedule` or a `timer`",
             )
         if len(state.transitions) > 0:
             problems.append(
                 f"state `{hierarchical_state_name}` is final and cannot have "
-                "transitions"
+                "transitions",
             )
         if len(state.states) > 0:
             problems.append(
                 f"state `{hierarchical_state_name}` is final and cannot "
-                "have states"
+                "have states",
             )
 
     for substate in state.states:
@@ -592,7 +592,7 @@ def _check_final(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
-            )
+            ),
         )
 
     return problems
@@ -835,9 +835,9 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
                 _hierarchical_state_names(
                     statechart.states,
                     hierarchical_superstate_name=None,
-                )
+                ),
             ),
-        )
+        ),
     )
     for state in statechart.states:
         problems.extend(
@@ -847,7 +847,7 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
                     state.name,
                     hierarchical_superstate_name=None,
                 ),
-            )
+            ),
         )
     problems.extend(_check_events(statechart))
     problems.extend(_check_methods(statechart))

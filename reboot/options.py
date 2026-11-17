@@ -42,7 +42,7 @@ def is_reboot_state(message: Descriptor) -> bool:
 
 
 def get_statechart_options(
-    message: Descriptor
+    message: Descriptor,
 ) -> Optional[statechart_pb2.Statechart]:
     """
     Takes a proto descriptor for a message, and extracts the statechart

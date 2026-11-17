@@ -503,7 +503,7 @@ class RebootProtocPlugin(ProtocPlugin):
                         "but is not annotated as a Reboot state; the "
                         "'rbt.v1alpha1.statechart' annotation is only for "
                         "a message that also has the 'rbt.v1alpha1.state' "
-                        "annotation."
+                        "annotation.",
                     )
                 problems = check_statechart(statechart)
                 if len(problems) > 0:
@@ -512,7 +512,7 @@ class RebootProtocPlugin(ProtocPlugin):
                         f"The statechart of '{message.full_name}' has "
                         f"{len(problems)} "
                         f"problem{'s' if len(problems) != 1 else ''}:\n"
-                        f"{lines}"
+                        f"{lines}",
                     )
             for nested in message.nested_types:
                 check_message(nested)
