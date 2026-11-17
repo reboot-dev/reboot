@@ -1,0 +1,4 @@
+dev run --python
+dev run --application=backend/src/main.py
+dev run --application-name=task-tracker
+generate api/ --python=backend/api/
