@@ -314,8 +314,8 @@ wrong means regenerating everything across 12+ files.
 
    Then ask "Build this design?", with three options and no others:
    **Build it, with sample data** (test data so every page has
-   something in it to try; its description says, in the app's own
-   nouns, that it stays on this machine and never reaches
+   something in it to try; its description states, in the app's own
+   nouns, that the data stays on this machine and never reaches
    production), **Build it, empty**, and **Change something**. "Change
    something" asks what to change, in plain text; the change is made
    and the design shown again with the same question. An alternative
