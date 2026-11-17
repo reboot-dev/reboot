@@ -33,6 +33,6 @@ async def initialize(context: InitializeContext):
 ```
 
 The test module's `application` still calls `open_<app>` only, so no
-scenario sees the sample data either. The handoff names in one line
+scenario sees the sample data either. The handoff explains
 what was added and where to see it, and that it is test data that
 stays on this machine.
