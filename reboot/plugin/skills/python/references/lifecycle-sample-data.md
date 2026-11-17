@@ -7,9 +7,8 @@ tags: sample-data, seed, initialize, design
 
 # Sample Data
 
-The app skill's design question offers it: "Build this design?",
-with **Build it, with sample data** (test data so every page has
-something in it to try, only on the developer's machine), **Build it, empty**, or **Change something**.
+For when the user answers **Build it, with sample data** to the app
+skill's "Build this design?" question.
 
 With sample data, write `backend/src/seed.py` at the build's `main.py`
 step, through the real methods, each call with its own
