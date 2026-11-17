@@ -297,9 +297,9 @@ wrong means regenerating everything across 12+ files.
    - **What every option leaves for later goes above the question,**
      in the message, once: production sign-in and deployment come
      after the build.
-   - **Scope changes how many features, never how carefully.** Every
-     option builds its features properly: real authorizers, real
-     data, and every feature's scenarios passing.
+   - **Every option builds its features fully**: real authorizers,
+     real data, and every feature's scenarios passing. Only the
+     number of features changes.
 
    The answer, or the user's corrections to the features, settles
    what is built. Write those features down as `@wip` feature files,
