@@ -13,7 +13,11 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
-from reboot.options import get_field_options, get_method_options
+from reboot.options import (
+    get_field_options,
+    get_method_options,
+    get_statechart_options,
+)
 from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,
@@ -28,6 +32,7 @@ from reboot.protoc_gen_reboot_generic import (
     RebootProtocPlugin,
     UserProtoError,
 )
+from reboot.statecharts.validation import on_transitions, when_transitions
 from typing import Optional, Sequence
 
 PythonType = str
@@ -97,6 +102,13 @@ class PythonState(BaseState):
     # cannot derive a schema from a protobuf class. Empty for an API
     # defined in pydantic, whose request is a model.
     proto_ui_request_fields: dict[str, dict[str, str]]
+    # For a state with a statechart, each method that a guard of the
+    # statechart names, with the type of every event that a transition
+    # with that guard is on.
+    statechart_guards: dict[str, list[PythonType]]
+    # For a state with a statechart, each method that a condition of
+    # the statechart names.
+    statechart_conditions: list[str]
 
 
 @dataclass
@@ -176,6 +188,31 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
     def _py_state(self, file: BaseFile, state: BaseState) -> PythonState:
         from_pydantic = file.options.proto.pydantic is not None
+
+        statechart_guards: dict[str, list[PythonType]] = {}
+        statechart_conditions: list[str] = []
+
+        statechart = get_statechart_options(
+            file.proto._descriptor.message_types_by_name[state.proto.name],
+        )
+
+        if statechart is not None:
+            for on in on_transitions(statechart):
+                if on.HasField("guard"):
+                    event_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(on.event),
+                    )
+                    event_types = statechart_guards.setdefault(
+                        on.guard.inline.method,
+                        [],
+                    )
+                    if event_type not in event_types:
+                        event_types.append(event_type)
+
+            for when in when_transitions(statechart):
+                if when.condition.inline.method not in statechart_conditions:
+                    statechart_conditions.append(when.condition.inline.method)
+
         return PythonState(
             proto=state.proto,
             services=[
@@ -190,6 +227,8 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                             ui.request_message]
                     ) for ui in state.proto.uis if ui.request_message
             },
+            statechart_guards=statechart_guards,
+            statechart_conditions=statechart_conditions,
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

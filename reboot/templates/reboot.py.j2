@@ -3906,6 +3906,28 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     {% endfor %}
     {% endfor %}
+    {% for method, event_types in state.statechart_guards.items() %}
+    # Whether a transition of the statechart that has this guard may
+    # fire, given the state and the event that the transition is on.
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+        event: {{ event_types | join(' | ') }},
+    ) -> bool:
+        raise NotImplementedError
+
+    {% endfor %}
+    {% for method in state.statechart_conditions %}
+    # Whether this condition of the statechart holds, given the state.
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+    ) -> bool:
+        raise NotImplementedError
+
+    {% endfor %}
 
 
 class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer):

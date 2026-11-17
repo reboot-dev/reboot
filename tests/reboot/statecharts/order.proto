@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package tests.reboot.statecharts;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+
+message Paid {
+  uint32 cents = 1;
+}
+
+message Refunded {
+  uint32 cents = 1;
+}
+
+message Order {
+  option (rbt.v1alpha1.state) = {
+  };
+  option (rbt.v1alpha1.statechart) = {
+    events: "tests.reboot.statecharts.Paid"
+    events: "tests.reboot.statecharts.Refunded"
+    initial: "OPEN"
+    states {
+      name: "OPEN"
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Paid"
+          guard { inline { method: "is_settled" } }
+          to: "CLOSED"
+        }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Refunded"
+          guard { inline { method: "is_settled" } }
+          to: "CLOSED"
+        }
+      }
+      transitions {
+        when {
+          description: "cancelled"
+          condition { inline { method: "is_cancelled" } }
+          to: "CLOSED"
+        }
+      }
+    }
+    states { name: "CLOSED" }
+  };
+  uint32 owed_cents = 1;
+  bool cancelled = 2;
+}
+
+service OrderMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

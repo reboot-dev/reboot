@@ -154,8 +154,10 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":options_py",
         ":protoc_gen_reboot_generic_py",
         "//reboot/aio:tracing_py",
+        "//reboot/statecharts:validation_py",
         "@googleapis//google/api:annotations_py_proto",
     ],
 )
