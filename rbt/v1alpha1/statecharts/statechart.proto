@@ -12,8 +12,8 @@ import "google/protobuf/struct.proto";
 //     ("shop.v1.ServiceDue"). Every event the statechart mentions
 //     is listed in `events`.
 //   * A condition, guard, action or activity is a method that the
-//     state type's implementation provides, named the way an rpc is
-//     ("LampGreen").
+//     state type's implementation provides, named in snake case
+//     ("lamp_green"), which is what the method is called there.
 //
 // The statechart is itself a composite state: `initial` names the
 // state it is entered at, and its `transitions` are inherited by

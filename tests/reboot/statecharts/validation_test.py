@@ -188,7 +188,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
               }
             }
@@ -275,7 +275,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             transitions {
               when {
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
               }
             }
@@ -297,7 +297,7 @@ class ValidationTest(unittest.TestCase):
               transitions {
                 when {
                   description: "  "
-                  condition { inline { method: "IsPaid" } }
+                  condition { inline { method: "is_paid" } }
                   to: "SHIPPED"
                 }
               }
@@ -381,7 +381,7 @@ class ValidationTest(unittest.TestCase):
               transitions {
                 on {
                   event: "shop.v1.Paid"
-                  guard { inline { method: "PaidInFull" } }
+                  guard { inline { method: "paid_in_full" } }
                   to: "SHIPPED"
                 }
               }
@@ -446,7 +446,7 @@ class ValidationTest(unittest.TestCase):
             transitions { on { event: "shop.v1.Opened" } }
             transitions { on { event: "shop.v1.TimedOut" } }
             entry {
-              call { description: "Open" inline { method: "Open" } }
+              call { description: "Open" inline { method: "open" } }
             }
             states {
               name: "PENDING"
@@ -454,7 +454,7 @@ class ValidationTest(unittest.TestCase):
               entry {
                 timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
               }
-              entry { schedule { inline { method: "Remind" } } }
+              entry { schedule { inline { method: "remind" } } }
             }
             """,
         )
@@ -501,7 +501,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             transitions { on { event: "shop.v1.Left" } }
             exit {
-              call { description: "Close" inline { method: "Close" } }
+              call { description: "Close" inline { method: "close" } }
             }
             states {
               name: "PENDING"
@@ -555,7 +555,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
                 actions { inject { event: "shop.v1.Refunded" } }
               }
@@ -569,7 +569,7 @@ class ValidationTest(unittest.TestCase):
                   actions {
                     call {
                       description: "Record the payment"
-                      inline { method: "RecordPayment" }
+                      inline { method: "record_payment" }
                     }
                   }
                 }
@@ -609,7 +609,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
                 actions {}
               }
@@ -632,7 +632,7 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             states {
               name: "PENDING"
-              entry { call { inline { method: "Open" } } }
+              entry { call { inline { method: "open" } } }
             }
             """,
         )
@@ -648,7 +648,7 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             initial: "PENDING"
-            exit { call { description: " " inline { method: "Close" } } }
+            exit { call { description: " " inline { method: "close" } } }
             states { name: "PENDING" }
             """,
         )
@@ -671,7 +671,7 @@ class ValidationTest(unittest.TestCase):
                 on {
                   event: "shop.v1.Paid"
                   to: "SHIPPED"
-                  actions { call { inline { method: "RecordPayment" } } }
+                  actions { call { inline { method: "record_payment" } } }
                 }
               }
             }
@@ -693,9 +693,9 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
-                actions { call { inline { method: "Refund" } } }
+                actions { call { inline { method: "refund" } } }
               }
             }
             states { name: "PENDING" }
@@ -799,7 +799,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
                 actions { inject {} }
               }
@@ -1062,7 +1062,7 @@ class ValidationTest(unittest.TestCase):
               name: "SHIPPED"
               final: true
               entry {
-                call { description: "Thank" inline { method: "Thank" } }
+                call { description: "Thank" inline { method: "thank" } }
               }
             }
             """,
@@ -1099,7 +1099,7 @@ class ValidationTest(unittest.TestCase):
               entry {
                 call {
                   description: "Refund"
-                  inline { method: "Refund" injects: "shop.v1.Refunded" }
+                  inline { method: "refund" injects: "shop.v1.Refunded" }
                 }
               }
             }
@@ -1123,7 +1123,7 @@ class ValidationTest(unittest.TestCase):
               entry {
                 call {
                   description: "Refund"
-                  inline { method: "Refund" injects: "shop.v1.Refunded" }
+                  inline { method: "refund" injects: "shop.v1.Refunded" }
                 }
               }
             }
@@ -1144,7 +1144,7 @@ class ValidationTest(unittest.TestCase):
               exit {
                 call {
                   description: "Release stock"
-                  inline { method: "ReleaseStock" }
+                  inline { method: "release_stock" }
                 }
               }
             }
@@ -1167,7 +1167,7 @@ class ValidationTest(unittest.TestCase):
               exit {
                 call {
                   description: "Release stock"
-                  inline { method: "ReleaseStock" }
+                  inline { method: "release_stock" }
                 }
               }
               exit { inject { event: "shop.v1.Left" } }
@@ -1316,7 +1316,7 @@ class ValidationTest(unittest.TestCase):
                     call {
                       description: "Record the payment"
                       inline {
-                        method: "RecordPayment"
+                        method: "record_payment"
                         injects: "shop.v1.PaidInFull"
                       }
                     }
@@ -1345,7 +1345,7 @@ class ValidationTest(unittest.TestCase):
               name: "SHIPPING"
               entry {
                 schedule {
-                  inline { method: "Ship" enqueues: "shop.v1.Shipped" }
+                  inline { method: "ship" enqueues: "shop.v1.Shipped" }
                 }
               }
             }
@@ -1536,7 +1536,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELED"
               }
             }
@@ -1620,7 +1620,7 @@ class ValidationTest(unittest.TestCase):
                     call {
                       description: "Record the payment"
                       inline {
-                        method: "RecordPayment"
+                        method: "record_payment"
                         injects: "shop.v1.PaidInFull"
                       }
                     }
@@ -1647,7 +1647,7 @@ class ValidationTest(unittest.TestCase):
               name: "SHIPPING"
               entry {
                 schedule {
-                  inline { method: "Ship" enqueues: "shop.v1.Shipped" }
+                  inline { method: "ship" enqueues: "shop.v1.Shipped" }
                 }
               }
             }
@@ -1721,11 +1721,11 @@ class ValidationTest(unittest.TestCase):
               transitions {
                 on {
                   event: "shop.v1.Paid"
-                  guard { inline { method: "Pay" } }
+                  guard { inline { method: "pay" } }
                   actions {
                     call {
                       description: "Record the payment"
-                      inline { method: "Pay" }
+                      inline { method: "pay" }
                     }
                   }
                 }
@@ -1735,7 +1735,7 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["the method `Pay` is both a `guard` and a `call`"],
+            ["the method `pay` is both a `guard` and a `call`"],
         )
 
     def test_a_method_is_not_both_a_condition_and_a_schedule(self) -> None:
@@ -1747,7 +1747,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Shipped"
-                condition { inline { method: "Ship" } }
+                condition { inline { method: "ship" } }
               }
             }
             states {
@@ -1755,14 +1755,14 @@ class ValidationTest(unittest.TestCase):
               initial: "SHIPPING"
               states {
                 name: "SHIPPING"
-                entry { schedule { inline { method: "Ship" } } }
+                entry { schedule { inline { method: "ship" } } }
               }
             }
             """,
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["the method `Ship` is both a `condition` and a `schedule`"],
+            ["the method `ship` is both a `condition` and a `schedule`"],
         )
 
     def test_a_method_named_in_three_ways_is_a_problem_for_each_two(
@@ -1774,18 +1774,18 @@ class ValidationTest(unittest.TestCase):
             initial: "PENDING"
             states {
               name: "PENDING"
-              entry { call { description: "Check" inline { method: "Check" } } }
-              exit { call { description: "Check" inline { method: "Check" } } }
+              entry { call { description: "Check" inline { method: "check" } } }
+              exit { call { description: "Check" inline { method: "check" } } }
               transitions {
                 on {
                   event: "shop.v1.Paid"
-                  guard { inline { method: "Check" } }
+                  guard { inline { method: "check" } }
                 }
               }
               transitions {
                 when {
                   description: "Checked"
-                  condition { inline { method: "Check" } }
+                  condition { inline { method: "check" } }
                 }
               }
             }
@@ -1794,9 +1794,9 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             [
-                "the method `Check` is both a `condition` and a `guard`",
-                "the method `Check` is both a `condition` and a `call`",
-                "the method `Check` is both a `guard` and a `call`",
+                "the method `check` is both a `condition` and a `guard`",
+                "the method `check` is both a `condition` and a `call`",
+                "the method `check` is both a `guard` and a `call`",
             ],
         )
 
@@ -1808,13 +1808,13 @@ class ValidationTest(unittest.TestCase):
             states {
               name: "PENDING"
               entry {
-                call { description: "Notify" inline { method: "Notify" } }
+                call { description: "Notify" inline { method: "notify" } }
               }
               transitions {
                 on {
                   event: "shop.v1.Paid"
                   actions {
-                    call { description: "Notify" inline { method: "Notify" } }
+                    call { description: "Notify" inline { method: "notify" } }
                   }
                 }
               }
@@ -1834,13 +1834,13 @@ class ValidationTest(unittest.TestCase):
               transitions {
                 on {
                   event: "shop.v1.Paid"
-                  guard { inline { method: "IsOpen" } }
+                  guard { inline { method: "is_open" } }
                 }
               }
               transitions {
                 on {
                   event: "shop.v1.Refunded"
-                  guard { inline { method: "IsOpen" } }
+                  guard { inline { method: "is_open" } }
                 }
               }
             }
@@ -1979,7 +1979,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
               }
             }
@@ -2000,7 +2000,7 @@ class ValidationTest(unittest.TestCase):
             transitions {
               when {
                 description: "Cancelled"
-                condition { inline { method: "IsCancelled" } }
+                condition { inline { method: "is_cancelled" } }
                 to: "CANCELLED"
               }
             }
@@ -2039,6 +2039,143 @@ class ValidationTest(unittest.TestCase):
                 "transition that can fire leads to it",
             ],
         )
+
+    def test_the_method_of_a_guard_is_in_snake_case(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "IsPaidInFull" } }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the `guard` of an `on` transition of state `PENDING` has "
+                "the method `IsPaidInFull`, which is not in snake case, as "
+                "`is_paid_in_full` is",
+            ],
+        )
+
+    def test_the_method_of_a_condition_is_in_snake_case(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "isCancelled" } }
+              }
+            }
+            states { name: "PENDING" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the `condition` of a `when` transition of the statechart "
+                "has the method `isCancelled`, which is not in snake case, "
+                "as `is_paid_in_full` is",
+            ],
+        )
+
+    def test_the_method_of_a_call_is_in_snake_case(self) -> None:
+        # A name in snake case starts with a letter.
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry {
+                call { description: "Open" inline { method: "2nd_open" } }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `call` has the "
+                "method `2nd_open`, which is not in snake case, as "
+                "`is_paid_in_full` is",
+            ],
+        )
+
+    def test_the_method_of_a_schedule_is_in_snake_case(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPING"
+            states {
+              name: "SHIPPING"
+              entry { schedule { inline { method: "ship__order" } } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `SHIPPING`: the `schedule` has the "
+                "method `ship__order`, which is not in snake case, as "
+                "`is_paid_in_full` is",
+            ],
+        )
+
+    def test_a_method_is_not_a_python_keyword(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              entry { call { description: "Pass" inline { method: "pass" } } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `call` has the "
+                "method `pass`, which is a Python keyword",
+            ],
+        )
+
+    def test_methods_in_snake_case_have_no_problems(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            initial: "PENDING"
+            transitions {
+              when {
+                description: "Cancelled"
+                condition { inline { method: "is_cancelled" } }
+              }
+            }
+            states {
+              name: "PENDING"
+              entry { schedule { inline { method: "remind_after_2_days" } } }
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "is_paid_in_full" } }
+                  actions {
+                    call {
+                      description: "Record the payment"
+                      inline { method: "record_payment" }
+                    }
+                  }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(check_statechart(statechart), [])
 
     def test_every_problem_is_returned(self) -> None:
         statechart = make_statechart(

@@ -9,6 +9,8 @@ and a state of the statechart itself is just its own name.
 from __future__ import annotations
 
 import itertools
+import keyword
+import re
 from rbt.v1alpha1.statecharts import statechart_pb2
 from typing import Iterable, Iterator, Optional, overload
 
@@ -62,9 +64,27 @@ def _hierarchical_state_names(
     return hierarchical_state_names
 
 
+# A name in snake case: words of lower case letters and digits that are
+# joined by `_`, the first of which starts with a letter, as in
+# "is_paid_in_full".
+_SNAKE_CASE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")
+
+
+def _method_name_problem(method: str) -> Optional[str]:
+    """Returns what is wrong with `method` as the name of a method of
+    a state type's implementation, to follow "which" in a message, or
+    `None` if nothing is. A statechart names a method the way that it
+    is implemented in Python."""
+    if _SNAKE_CASE.fullmatch(method) is None:
+        return "is not in snake case, as `is_paid_in_full` is"
+    if keyword.iskeyword(method):
+        return "is a Python keyword"
+    return None
+
+
 def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
     """Returns every problem with `call`: it has a description, and it
-    names a method."""
+    names a method, by a name that a method can have."""
     problems: list[str] = []
 
     if not call.description.strip():
@@ -72,6 +92,13 @@ def _check_call(call: statechart_pb2.Statechart.Call) -> list[str]:
 
     if not call.inline.method:
         problems.append("the `call` has no `method`")
+    else:
+        problem = _method_name_problem(call.inline.method)
+        if problem is not None:
+            problems.append(
+                f"the `call` has the method `{call.inline.method}`, which "
+                f"{problem}",
+            )
 
     return problems
 
@@ -89,11 +116,19 @@ def _check_inject(inject: statechart_pb2.Statechart.Inject) -> list[str]:
 def _check_schedule(
     schedule: statechart_pb2.Statechart.Schedule,
 ) -> list[str]:
-    """Returns every problem with `schedule`: it names a method."""
+    """Returns every problem with `schedule`: it names a method, by a
+    name that a method can have."""
     problems: list[str] = []
 
     if not schedule.inline.method:
         problems.append("the `schedule` has no `method`")
+    else:
+        problem = _method_name_problem(schedule.inline.method)
+        if problem is not None:
+            problems.append(
+                "the `schedule` has the method "
+                f"`{schedule.inline.method}`, which {problem}",
+            )
 
     return problems
 
@@ -301,7 +336,8 @@ def _check_transitions(
     of `state`, and of every state within it: each transition is an
     `on` or a `when`, an `on` has an event and its guard, if it has
     one, names a method, a `when` has a description and a condition
-    that names a method, each action of either is a `call` or an
+    that names a method, each by a name that a method can have, each
+    action of either is a `call` or an
     `inject`, and the `to` of either, if it has one, is the
     hierarchical state name of a state. `hierarchical_state_name` is
     that of `state`, and `all_hierarchical_state_names` are those of
@@ -326,14 +362,21 @@ def _check_transitions(
                     problems.append(
                         f"an `on` transition of {subject} has no `event`",
                     )
-                if (
-                    transition.on.HasField("guard") and
-                    not transition.on.guard.inline.method
-                ):
-                    problems.append(
-                        f"the `guard` of an `on` transition of {subject} "
-                        "has no `method`",
-                    )
+                if transition.on.HasField("guard"):
+                    guard_method = transition.on.guard.inline.method
+                    if not guard_method:
+                        problems.append(
+                            "the `guard` of an `on` transition of "
+                            f"{subject} has no `method`",
+                        )
+                    else:
+                        problem = _method_name_problem(guard_method)
+                        if problem is not None:
+                            problems.append(
+                                "the `guard` of an `on` transition of "
+                                f"{subject} has the method "
+                                f"`{guard_method}`, which {problem}",
+                            )
                 if (
                     transition.on.HasField("to") and
                     transition.on.to not in all_hierarchical_state_names
@@ -371,11 +414,22 @@ def _check_transitions(
                     )
                 match transition.when.condition.WhichOneof("condition"):
                     case "inline":
-                        if not transition.when.condition.inline.method:
+                        condition_method = (
+                            transition.when.condition.inline.method
+                        )
+                        if not condition_method:
                             problems.append(
                                 "the `condition` of a `when` transition of "
                                 f"{subject} has no `method`",
                             )
+                        else:
+                            problem = _method_name_problem(condition_method)
+                            if problem is not None:
+                                problems.append(
+                                    "the `condition` of a `when` transition "
+                                    f"of {subject} has the method "
+                                    f"`{condition_method}`, which {problem}",
+                                )
                     case _:
                         problems.append(
                             f"a `when` transition of {subject} has no "
