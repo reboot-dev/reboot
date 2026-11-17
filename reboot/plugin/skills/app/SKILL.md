@@ -622,9 +622,8 @@ also do what your front end adds to it: the table in
     [Hand off](../run/SKILL.md#step-6--hand-off).
     Offer the features the build plan left for later, so the user
     can pick the next build.
-    With sample data, name in one line what was added, that it is
-    test data that never reaches production, and where to
-    see it.
+    With sample data, explain in one line what was added, that it is
+    test data that never reaches production, and where to see it.
     Don't bypass the run skill by invoking `rbt dev run` /
     `npm run dev` by hand: those bare commands print only the
     API/MCP/inspect URLs, dropping the hand-over the user actually
