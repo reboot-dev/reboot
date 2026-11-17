@@ -447,6 +447,7 @@ py_test(
     deps = [
         ":greeter_servicers_py",
         ":test_helpers_py",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
         "//reboot:uuidv7_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:tests_py",
@@ -753,6 +754,7 @@ py_test(
     deps = [
         ":bank_py",
         ":general_boilerplate_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
         "//reboot:uuidv7_py",
         "//reboot/aio:tests_py",
         "//reboot/std/collections/v1:sorted_map_py",

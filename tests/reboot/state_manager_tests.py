@@ -15,6 +15,7 @@ from rbt.v1alpha1.errors_pb2 import (
     TransactionShouldRetry,
     Unavailable,
 )
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio.aborted import SystemAborted
 from reboot.aio.contexts import (
     ContextT,
@@ -232,11 +233,11 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         """
         client = DatabaseClient(self.sidecar.address)
         state_type = MyGreeterServicer.__state_type_name__
-        data: Optional[bytes] = await client.load_actor_state(
+        actor: Optional[database_pb2.Actor] = await client.load_actor(
             state_type,
             StateRef.from_id(state_type, "test-1234"),
         )
-        self.assertIsNone(data)
+        self.assertIsNone(actor)
 
     async def test_reader_before_construction(self) -> None:
         """Test that a reader can't be called before constructing an actor."""
@@ -337,6 +338,65 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state.title, 'Dr')
             self.assertEqual(state.name, 'Jonathan')
             self.assertEqual(state.adjective, 'best')
+
+    async def test_writer_stores_statechart_status_with_state(self) -> None:
+        """Test that a writer stores the statechart status that an actor
+        has with the actor's new state, since storing an actor replaces
+        what is stored for it.
+        """
+        client = DatabaseClient(self.sidecar.address)
+
+        state_type = MyGreeterServicer.__state_type_name__
+        state_ref = StateRef.from_id(state_type, "test-1234")
+
+        statechart_status = statechart_pb2.Status(
+            active="OPEN/SHIPPING",
+            history={"OPEN": "OPEN/SHIPPING"},
+            queue=[statechart_pb2.Status.Event(event="shop.v1.Cancelled")],
+        )
+
+        await client.store(
+            [
+                database_pb2.Actor(
+                    state_type=state_type,
+                    state_ref=state_ref.to_str(),
+                    state=greeter_rbt.Greeter.State(
+                        title='Dr',
+                        name='Jonathan',
+                        adjective='best',
+                    ).SerializeToString(),
+                    statechart_status=statechart_status,
+                )
+            ],
+            [],
+            [],
+            [],
+        )
+
+        async with self.state_manager.writer(
+            self.create_test_context(
+                WriterContext, MyGreeterServicer, "test-1234"
+            ),
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            self.assertEqual(state.name, 'Jonathan')
+            await writer.complete(
+                Effects(
+                    state=greeter_rbt.Greeter.
+                    State(title='Dr', name='Jonathan', adjective='worst')
+                )
+            )
+
+        actor = await client.load_actor(state_type, state_ref)
+
+        assert actor is not None
+        self.assertEqual(
+            greeter_rbt.Greeter.State.FromString(actor.state).adjective,
+            'worst',
+        )
+        self.assertEqual(actor.statechart_status, statechart_status)
 
     async def test_multiple_readers(self) -> None:
         """Test that multiple readers have their own copy of state so that if

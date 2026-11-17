@@ -2745,6 +2745,9 @@ grpc::Status DatabaseService::TransactionParticipantPrepare(
       actor->set_state_type(request->state_type());
       actor->set_state_ref(request->state_ref());
       actor->set_state(request->state());
+      if (request->has_statechart_status()) {
+        *actor->mutable_statechart_status() = request->statechart_status();
+      }
     }
 
     expected<rocksdb::Status> status = Apply(

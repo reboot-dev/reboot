@@ -42,6 +42,7 @@ from rbt.v1alpha1.errors_pb2 import (
     TransactionShouldRetry,
     Unavailable,
 )
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.admin.export_import_converters import ExportImportItemConverters
 from reboot.aio import tracing
 from reboot.aio.aborted import Aborted, SystemAborted
@@ -565,6 +566,11 @@ class StateManager(ABC):
             # Provisional state within the transaction.
             self.state: Optional[Message] = None
 
+            # Where the state's statechart is within the transaction,
+            # if its state type has one and it has started. Set
+            # whenever `state` is, and stored whenever `state` is.
+            self.statechart_status: Optional[statechart_pb2.Status] = None
+
             # Streaming readers executing within this transaction,
             # tagged with the transaction ids of the (possibly nested)
             # transaction they belong to: a nested transaction's
@@ -1078,6 +1084,10 @@ class StateManager(ABC):
             # or `None` if it was not yet constructed.
             state: Optional[bytes]
 
+            # A copy of the statechart status from before the nested
+            # transaction, or `None` if there was none.
+            statechart_status: Optional[statechart_pb2.Status]
+
             # We keep only the idempotent mutation KEYS, not the
             # mutations themselves: because mutations are only ever
             # added within a transaction, on rollback we filter the
@@ -1099,6 +1109,14 @@ class StateManager(ABC):
             # used this state (either read or mutated) before the
             # nested transaction that is taking this snapshot.
             used_by_ancestor = len(self.owner_ids) > 0
+
+            # A copy, since the nested transaction may change what
+            # `self.statechart_status` is.
+            statechart_status: Optional[statechart_pb2.Status] = None
+            if self.statechart_status is not None:
+                statechart_status = statechart_pb2.Status()
+                statechart_status.CopyFrom(self.statechart_status)
+
             self._snapshots.append(
                 StateManager.Transaction.Snapshot(
                     transaction_ids=list(transaction_ids),
@@ -1115,6 +1133,7 @@ class StateManager(ABC):
                         self.state.SerializeToString(deterministic=True)
                         if self.state is not None else None
                     ),
+                    statechart_status=statechart_status,
                     idempotent_mutation_keys=set(self.idempotent_mutations),
                     task_uuids={task.task_id.task_uuid for task in self.tasks},
                 )
@@ -1208,6 +1227,11 @@ class StateManager(ABC):
                 # ancestor transaction method may hold a live
                 # reference to `self.state`.
                 self.state.CopyFrom(state)
+            if snapshot.statechart_status is None:
+                self.statechart_status = None
+            else:
+                self.statechart_status = statechart_pb2.Status()
+                self.statechart_status.CopyFrom(snapshot.statechart_status)
             self.idempotent_mutations = {
                 key: idempotent_mutation
                 for key, idempotent_mutation in
@@ -2754,6 +2778,14 @@ class SidecarStateManager(
                                   dict[StateRef,
                                        Message]] = defaultdict(lambda: {})
 
+        # Where the statechart of each state in `_states` is, for each
+        # one whose state type has a statechart that has started. It
+        # is loaded and stored with the state.
+        self._statechart_statuses: defaultdict[
+            StateTypeName,
+            dict[StateRef, statechart_pb2.Status],
+        ] = defaultdict(dict)
+
         # Per-state read/write lock, held by writers and transactions,
         # so that read-only transactions on the same state can run
         # concurrently while writers and write-mode transactions remain
@@ -2809,17 +2841,18 @@ class SidecarStateManager(
                                       asyncio.Event]] = defaultdict(dict)
 
         # Futures for state preloads. `preload()` creates a future
-        # that resolves with `Optional[bytes]` (raw data, or `None` if
-        # the state doesn't exist). `_load()` pops the future and
+        # that resolves with `Optional[database_pb2.Actor]` (the actor
+        # as stored, or `None` if it doesn't exist). `_load()` pops
+        # the future and
         # awaits it before falling back to its own call into the
         # database.
         #
         # NOTE: we've kept the original `_loads` events separate from
-        # `_state_preloads` futures to simplify the addition of the
+        # `_actor_preloads` futures to simplify the addition of the
         # preload feature.
-        self._state_preloads: defaultdict[
+        self._actor_preloads: defaultdict[
             StateTypeName,
-            dict[StateRef, asyncio.Future[Optional[bytes]]],
+            dict[StateRef, asyncio.Future[Optional[database_pb2.Actor]]],
         ] = defaultdict(dict)
 
         # Futures for calls to the database to recovery idempotent
@@ -3316,7 +3349,7 @@ class SidecarStateManager(
         fire-and-forget optimization that returns immediately; the
         actual RPC runs as a background task.
 
-        Results are delivered via futures in `_state_preloads` and
+        Results are delivered via futures in `_actor_preloads` and
         `_idempotent_mutations_loads`. `_load()` and
         `check_for_idempotent_mutation()` await these futures before
         falling back to their own RPCs.
@@ -3330,14 +3363,15 @@ class SidecarStateManager(
         """
         # Only try and load state if it's not already cached, not
         # already being loaded, or not already preloaded.
-        state_future: Optional[asyncio.Future[Optional[bytes]]] = None
+        actor_future: Optional[asyncio.Future[Optional[database_pb2.Actor]]
+                              ] = None
         if (
             state_ref not in self._states[state_type_name] and
             state_ref not in self._loads[state_type_name] and
-            state_ref not in self._state_preloads[state_type_name]
+            state_ref not in self._actor_preloads[state_type_name]
         ):
-            state_future = asyncio.get_event_loop().create_future()
-            self._state_preloads[state_type_name][state_ref] = state_future
+            actor_future = asyncio.get_event_loop().create_future()
+            self._actor_preloads[state_type_name][state_ref] = actor_future
 
         # Only try and load idempotent mutations similarly.
         idempotent_mutations_future: Optional[asyncio.Future[Optional[list[
@@ -3352,7 +3386,7 @@ class SidecarStateManager(
             self._idempotent_mutations_loads[state_type_name][
                 state_ref] = idempotent_mutations_future
 
-        if state_future is None and idempotent_mutations_future is None:
+        if actor_future is None and idempotent_mutations_future is None:
             # Nothing to preload!
             return
 
@@ -3361,17 +3395,16 @@ class SidecarStateManager(
                 response = await self._database_client.preload(
                     state_type_name,
                     state_ref,
-                    skip_state=state_future is None,
+                    skip_state=actor_future is None,
                     skip_idempotent_mutations=(
                         idempotent_mutations_future is None
                     ),
                 )
                 if response.HasField("timestamp"):
                     self._update_latest_timestamp(response.timestamp)
-                if state_future is not None:
-                    state_future.set_result(
-                        response.actor.state if response.
-                        HasField("actor") else None
+                if actor_future is not None:
+                    actor_future.set_result(
+                        response.actor if response.HasField("actor") else None
                     )
                 if idempotent_mutations_future is not None:
                     idempotent_mutations_future.set_result(
@@ -3395,8 +3428,8 @@ class SidecarStateManager(
                 # `cancel()`) so consumers can distinguish when they
                 # are cancelled.
                 error = RuntimeError("Preload failed")
-                if state_future is not None and not state_future.done():
-                    state_future.set_exception(error)
+                if actor_future is not None and not actor_future.done():
+                    actor_future.set_exception(error)
                 if (
                     idempotent_mutations_future is not None and
                     not idempotent_mutations_future.done()
@@ -3407,11 +3440,11 @@ class SidecarStateManager(
                 # ensures we only pop our own future, not a newer
                 # preload's since we might have waited for 60 seconds.
                 if (
-                    state_future is not None and
-                    self._state_preloads[state_type_name].get(state_ref)
-                    is state_future
+                    actor_future is not None and
+                    self._actor_preloads[state_type_name].get(state_ref)
+                    is actor_future
                 ):
-                    del self._state_preloads[state_type_name][state_ref]
+                    del self._actor_preloads[state_type_name][state_ref]
                 if (
                     idempotent_mutations_future is not None and
                     self._idempotent_mutations_loads[state_type_name].
@@ -3529,6 +3562,17 @@ class SidecarStateManager(
                     # the transaction aren't seen by concurrent readers.
                     transaction.state = state_type()
                     transaction.state.CopyFrom(state)
+                    statechart_status = (
+                        self._statechart_statuses[state_type_name].
+                        get(state_ref)
+                    )
+                    if statechart_status is not None:
+                        transaction.statechart_status = (
+                            statechart_pb2.Status()
+                        )
+                        transaction.statechart_status.CopyFrom(
+                            statechart_status
+                        )
                 state = cast(StateT, transaction.state)
 
         if state is not None:
@@ -3569,9 +3613,9 @@ class SidecarStateManager(
                     with span(
                         state_name=state_type_name,
                         span_name="reboot.aio.state_managers._load() "
-                        "- load_actor_state"
+                        "- load_actor"
                     ):
-                        data: Optional[bytes] = None
+                        actor: Optional[database_pb2.Actor] = None
 
                         # Check for a future from `preload()` before
                         # calling into the database ourselves.
@@ -3580,12 +3624,12 @@ class SidecarStateManager(
                         # any other concurrent callers and any other
                         # calls to `preload()` will see the event in
                         # `_loads` and wait on that.
-                        preload = self._state_preloads[state_type_name].pop(
+                        preload = self._actor_preloads[state_type_name].pop(
                             state_ref, None
                         )
                         if preload is not None:
                             try:
-                                data = await preload
+                                actor = await preload
                             except asyncio.CancelledError:
                                 # Propagate any cancellations, e.g.,
                                 # if the RPC that instigated this load
@@ -3601,13 +3645,17 @@ class SidecarStateManager(
                                 preload = None
 
                         # Only try and load if we didn't preload (or
-                        # preload failed). Otherwise, if `data` is
+                        # preload failed). Otherwise, if `actor` is
                         # `None` it means we preloaded and the state
                         # does not yet exist.
                         if preload is None:
-                            data = await self._database_client.load_actor_state(
+                            actor = await self._database_client.load_actor(
                                 state_type_name, state_ref
                             )
+
+                        data: Optional[bytes] = (
+                            actor.state if actor is not None else None
+                        )
 
                     if data is not None:
                         with span(
@@ -3632,8 +3680,13 @@ class SidecarStateManager(
                             raise SystemAborted(StateAlreadyConstructed())
 
                         assert state is not None
+                        assert actor is not None
 
                         self._states[state_type_name][state_ref] = state
+
+                        if actor.HasField('statechart_status'):
+                            self._statechart_statuses[state_type_name][
+                                state_ref] = actor.statechart_status
 
                         if transaction is not None:
                             # Make a copy of `state` so that
@@ -3641,6 +3694,13 @@ class SidecarStateManager(
                             # aren't seen by concurrent readers.
                             transaction.state = state_type()
                             transaction.state.CopyFrom(state)
+                            if actor.HasField('statechart_status'):
+                                transaction.statechart_status = (
+                                    statechart_pb2.Status()
+                                )
+                                transaction.statechart_status.CopyFrom(
+                                    actor.statechart_status
+                                )
                             state = cast(StateT, transaction.state)
 
                         # Need to enqueue the loaded state to any
@@ -3806,6 +3866,14 @@ class SidecarStateManager(
                         state_type=state_type,
                         state_ref=state_ref.to_str(),
                         state=state_copy.SerializeToString(),
+                        # Storing an actor replaces what is stored for
+                        # it, so we store the statechart status that
+                        # it has with its new state.
+                        statechart_status=(
+                            transaction.statechart_status
+                            if transaction is not None else self.
+                            _statechart_statuses[state_type].get(state_ref)
+                        ),
                     )
                 )
 
@@ -6507,6 +6575,14 @@ class SidecarStateManager(
                             # has not been mutated!
                             transaction.mode == Lock.Mode.EXCLUSIVE else None
                         ),
+                        # The statechart status is stored with the
+                        # state, which replaces what is stored for
+                        # the actor.
+                        statechart_status=(
+                            transaction.statechart_status
+                            if transaction.state is not None and
+                            transaction.mode == Lock.Mode.EXCLUSIVE else None
+                        ),
                         task_upserts=[
                             task.to_sidecar_task()
                             for task in transaction.tasks
@@ -6674,6 +6750,13 @@ class SidecarStateManager(
                     state_was_cached = state_ref in self._states[state_type]
                     if transaction.state is not None:
                         self._states[state_type][state_ref] = transaction.state
+                        if transaction.statechart_status is not None:
+                            self._statechart_statuses[state_type][
+                                state_ref] = transaction.statechart_status
+                        else:
+                            self._statechart_statuses[state_type].pop(
+                                state_ref, None
+                            )
                     else:
                         # This can occur during the recovery process, when the
                         # transaction is already prepared. In that case, we expect

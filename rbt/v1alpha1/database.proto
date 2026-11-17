@@ -473,6 +473,10 @@ message TransactionParticipantPrepareRequest {
 
   // Idempotent mutations recorded during the transaction.
   repeated IdempotentMutation idempotent_mutations = 6;
+
+  // Where the participant's statechart is, which is stored with
+  // `state`, as it is in an `Actor`.
+  optional rbt.v1alpha1.statecharts.Status statechart_status = 7;
 }
 
 message TransactionParticipantPrepareResponse {

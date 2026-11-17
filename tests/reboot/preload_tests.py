@@ -16,7 +16,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
 
-    async def test_preload_eliminates_load_actor_state_rpc(self) -> None:
+    async def test_preload_eliminates_load_actor_rpc(self) -> None:
         """After restart, a request for a state that is in the database but
         not cached in memory should trigger exactly one `Preload` RPC
         and zero `Load` RPCs — the preloaded bytes are consumed by
@@ -39,26 +39,26 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.down()
         await self.rbt.up(revision=revision)
 
-        load_actor_state = DatabaseClient.load_actor_state
-        load_actor_state_calls = 0
+        load_actor = DatabaseClient.load_actor
+        load_actor_calls = 0
 
-        async def mock_load_actor_state(database_client, *args, **kwargs):
-            nonlocal load_actor_state_calls
-            load_actor_state_calls += 1
-            return await load_actor_state(database_client, *args, **kwargs)
+        async def mock_load_actor(database_client, *args, **kwargs):
+            nonlocal load_actor_calls
+            load_actor_calls += 1
+            return await load_actor(database_client, *args, **kwargs)
 
         with mock.patch(
-            "reboot.server.database.DatabaseClient.load_actor_state",
-            mock_load_actor_state,
+            "reboot.server.database.DatabaseClient.load_actor",
+            mock_load_actor,
         ):
             # Reader request: the middleware fires `preload()` before
             # `_load()` runs, so `_load()` finds the preloaded bytes
-            # and never calls `load_actor_state`.
+            # and never calls `load_actor`.
             alice = Account.ref("alice")
             balance = await alice.balance(context)
             self.assertEqual(balance.amount, 100)
 
-        self.assertEqual(load_actor_state_calls, 0)
+        self.assertEqual(load_actor_calls, 0)
 
     async def test_preload_eliminates_recover_idempotent_mutations_rpc(
         self
@@ -138,13 +138,13 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.down()
         await self.rbt.up(revision=revision)
 
-        load_actor_state = DatabaseClient.load_actor_state
-        load_actor_state_calls = 0
+        load_actor = DatabaseClient.load_actor
+        load_actor_calls = 0
 
-        async def mock_load_actor_state(database_client, *args, **kwargs):
-            nonlocal load_actor_state_calls
-            load_actor_state_calls += 1
-            return await load_actor_state(database_client, *args, **kwargs)
+        async def mock_load_actor(database_client, *args, **kwargs):
+            nonlocal load_actor_calls
+            load_actor_calls += 1
+            return await load_actor(database_client, *args, **kwargs)
 
         async def mock_preload(database_client, *args, **kwargs):
             raise RuntimeError("Mock preload failure")
@@ -153,19 +153,19 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
             "reboot.server.database.DatabaseClient.preload",
             mock_preload,
         ), mock.patch(
-            "reboot.server.database.DatabaseClient.load_actor_state",
-            mock_load_actor_state,
+            "reboot.server.database.DatabaseClient.load_actor",
+            mock_load_actor,
         ):
             # Reader request: preload fails, `_load()` catches the
             # `RuntimeError` from awaiting the future, falls back to
-            # its own `load_actor_state` RPC.
+            # its own `load_actor` RPC.
             alice = Account.ref("alice")
             balance = await alice.balance(context)
             self.assertEqual(balance.amount, 100)
 
         # Fallback path was taken, but we have 2 calls because of
         # effect validation.
-        self.assertEqual(load_actor_state_calls, 2)
+        self.assertEqual(load_actor_calls, 2)
 
     async def test_preload_is_noop_when_state_is_cached(self) -> None:
         """A second request for a state that's already cached in memory

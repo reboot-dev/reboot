@@ -237,13 +237,13 @@ class DatabaseClient:
             )
         )
 
-    async def load_actor_state(
+    async def load_actor(
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
-    ) -> Optional[bytes]:
-        """Attempt to load state from database. Return None if state
-         has not (yet) been stored.
+    ) -> Optional[database_pb2.Actor]:
+        """Attempt to load an actor from the database. Return None if
+        the actor has not (yet) been stored.
         """
         stub = await self._get_database_stub()
         response: database_pb2.LoadResponse = await stub.Load(
@@ -265,7 +265,7 @@ class DatabaseClient:
         # Invariant: If an actor is filled in a LoadResponse, its state field is
         # also filled (although said state may itself be empty).
         assert response.actors[0].HasField('state')
-        return response.actors[0].state
+        return response.actors[0]
 
     async def preload(
         self,
