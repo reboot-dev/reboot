@@ -37,8 +37,8 @@ below send you to these `python` pages; read them from here:
 
 ## Which page to read
 
-Read a page at the step that needs it, and read it once. An app
-with both frontends reads the pages for both.
+Read a reference at the step that needs it, and read it once. An
+app with both frontends reads the references for both.
 
 **Every app**, at the frontend step:
 
