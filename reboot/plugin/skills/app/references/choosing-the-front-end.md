@@ -7,7 +7,7 @@ tags: routing, front-end, mcp-app, web-app, both, ask
 
 # Choosing the Front End
 
-The app skill reads this page first, unless the build started from
+The app skill reads this reference first, unless the build started from
 `/reboot:web-app` or `/reboot:mcp-app`. Settle the front end here, then
 go back to the [app skill](../SKILL.md) and follow it from "When to
 Use".
