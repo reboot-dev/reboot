@@ -36,7 +36,7 @@ prompt already settles it:
 - **On the web and in AI chat**, no question: the prompt's own answer naming both, or a
   conjunction ("a website and an MCP server").
 
-Naming one frontend is not asking for it alone: "a website for my
+Naming one front end is not asking for it alone: "a website for my
 CRM" and "a tool I can use from Claude" still get the question. Domain
 words never settle it (a CRM, a booking app, "login").
 
