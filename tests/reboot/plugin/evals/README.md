@@ -1,122 +1,144 @@
 # Plugin evals
 
-Each case gives Claude Code, with the plugin loaded, one request a
-person might make, and checks the result against what Reboot requires:
-the API is pydantic Python, the backend enforces who may read what, an
-outside call in a workflow is guarded, and a deployed API only grows.
-Each case has the agent write the code, and graders read what it
-wrote.
+These are eval cases for the Reboot plugin, run with
+[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals).
+Each case is a folder here with a `case.yaml`: one request a person
+might make of Claude Code, and graders that check what the agent
+wrote. `run.sh` runs the cases against a plugin checkout, with the
+plugin loaded and without it.
 
-The four cases cover what Claude most often gets wrong about Reboot
-without the plugin (a prior test found every run writing a `.proto`
-API, leaving the authorizer out or bare, and making workflows instance
-methods) and the costliest mistakes: a deploy that won't boot, private
-data open to anyone, a customer charged twice.
+## What these evals test
 
-## What a case checks, and what it never checks
+Each case grades the agent's first draft. A session gets one request,
+cannot run commands, and has no one to answer its questions. The agent
+never runs `rbt generate`, `mypy`, the tests or the app, so it never
+sees an error from them. Nothing here checks that the code runs.
 
-A case checks what stays true however the skills are written: what
-Reboot itself requires, and what the request asked for. It never checks
-how the agent got there: which skill loaded, what it asked, in what
-order it worked, or how its messages read. Those change whenever the
-skills do, and a grader tied to them would have to change with every
-skill change.
+A grader looks for one of two kinds of mistake:
 
-So a grader changes only when Reboot changes (a new release that
-changes the rule it checks), and a skill change never needs to touch
-one. A skill change that teaches something new adds a case for it.
+- **Silent mistakes.** Reboot raises no error for these, so nothing
+  later tells the agent or the user: an authorizer that lets everyone
+  in, a charge that repeats when a workflow restarts. When one of these
+  graders fails, a user would ship the mistake.
+- **Mistakes Reboot reports.** Reboot rejects these with an explicit
+  error when the code is generated, type-checked or run: a deleted
+  field, a state field with no default. In a real session the agent
+  sees the error and fixes it, so a user may never see what the grader
+  saw. The grader is still worth having. A first draft that is already
+  right saves the user the failed run and the turns spent fixing it.
 
-- No grader rewards or penalizes asking a question. The sessions run
-  unattended, so the system prompt says where the agent would ask, to
-  choose, say what it chose, and go on.
-- The `reboot-skill` grader on each case records whether any Reboot
-  skill loaded. It matches any skill name, so renames don't break it,
-  and it is reported but not scored.
-
-## The cases
-
-| Case | The request | What passes |
-| --- | --- | --- |
-| `api-in-python` | A shared grocery list's API | `reboot.api` pydantic, every field tagged with a default, method kinds that fit; no `.proto` |
-| `private-profile` | Implement a profile's servicer; the API marks some fields private | The backend refuses private fields and changes to anyone but the owner, behind a real `authorizer()`; servicer shape (`self.state`, `self.ref().state_id`) |
-| `checkout-workflow` | Stripe charge and email receipt that survive a restart | A `@classmethod` workflow; each outside call in `at_least_once` / `at_most_once`, the charge with a stable idempotency key |
-| `deployed-api-change` | Rename a field and drop another on an app said to be deployed | The renamed field keeps its tag; the dropped field stays in the schema, and the answer says why |
-
-The agent can read, load skills, and write and edit files, but cannot
-run commands, so nothing is generated, installed or started. The cases
-check the code against Reboot's rules, not by running it.
-`deployed-api-change` deploys nothing: the prompt says the app is
-deployed, and the case checks that the edit follows the
-schema-evolution rule a deploy would enforce. Whether the code runs is
-for a build, which takes far longer.
-
-### How graders read the code
-
-`claude plugin eval` hands graders the agent's last message, its
-trace, or a named file. Its `files` target is only the list of file
-names, and the trace holds every skill page the agent read, so a
-pattern there would match the skills' own examples. So each request
-names the file to write, as a user could ("Write the API in
-`api/grocery/v1/grocery.py`"), and graders read that file (`target:
-{source: file, path: ...}`). Where naming the file would give the
-answer away, a grader can match the agent's `Write` calls instead
-(`tool_used` with `tool: Write`), which hold what it wrote and nothing
-it read.
+So a failure of the second kind means the skills cost the user time.
+It does not mean the user ends up with broken code.
 
 ## Running
 
-Needs `claude` (Claude Code) signed in. Every command starts unattended
-agent sessions on your account.
+Run them from the repository root. This needs `claude` (Claude Code)
+signed in, and every command starts unattended agent sessions on your
+account.
 
 ```sh
-tests/reboot/plugin/evals/run.sh -j 4                                          # every case, with and without the plugin
-tests/reboot/plugin/evals/run.sh --case private-profile --runs 1 --ablation none # one case, plugin only
-tests/reboot/plugin/evals/run.sh --plugin <other checkout>/reboot/plugin -j 4  # these cases against another plugin
+tests/reboot/plugin/evals/run.sh -j 4                                  # every case, with and without the plugin
+tests/reboot/plugin/evals/run.sh --case <name> --runs 1 --ablation none # one case, plugin only
+tests/reboot/plugin/evals/run.sh --plugin <checkout>/reboot/plugin -j 4 # these cases against another plugin
 ```
 
-Each case runs three times, because the same request doesn't always
-produce the same code; a result is a count such as 2 of 3. Graders are
-judged by Sonnet: Haiku failed answers that plainly met a rubric.
+`run.sh` takes `--plugin` and passes every other flag on to `claude plugin eval`. Results are in `results/<time>/` (ignored by git):
+`report.html`, `aggregate-result.json`, and `plugin.txt` with the
+plugin's commit.
 
-The full set, three runs with and three without the plugin, is 24
-agent sessions, too slow and costly to run on every PR or nightly. Run
-it by hand when a skill changes, against `main` and against the
-change, and when a new model comes out. Otherwise the result rarely
-moves.
+Nothing runs the cases on a schedule or in CI. They run when a person
+runs them.
 
-Results are in `results/<time>/` (ignored by git): `report.html`,
-`aggregate-result.json`, and `plugin.txt` with the commit that ran.
+## Before you open a PR
+
+If your branch changes the plugin or the cases, run the evals and
+commit the result in `RESULT.md`. When the branch is done, commit your
+changes and run:
+
+```sh
+tests/reboot/plugin/evals/compare.sh
+```
+
+It runs every case against `main`'s plugin and against the branch's,
+and writes the comparison to `RESULT.md`. Commit that file with the
+branch, for the reviewer to read.
+
+It always runs every case, so it refuses flags such as `--case`. The
+raw results, with each judge's reasoning, stay in
+`results/compare-<time>/`.
+
+Run it once per branch, not once per push, because a run is slow and
+expensive: about 9 agent sessions and $5 at API prices for each case,
+and 10 to 15 minutes in all. CI runs no evals on a PR for the same
+reason.
+
+Run it signed in to Claude Code with your Claude subscription, so the
+run counts against your plan's usage and spends no API credits. Unset
+`ANTHROPIC_API_KEY` first: Claude Code bills the key when it is set.
+
+The `Check Plugin Evals Result` job fails a PR that changes the plugin
+or the cases when `RESULT.md` is not for that change. A rebase does not
+make the result stale. Changing the plugin or the cases again does, so
+run `compare.sh` again.
+
+Every such PR rewrites `RESULT.md`, so a rebase over another one
+conflicts on it. Keep your branch's version.
+
+## If `Check Plugin Evals Result` fails
+
+The job fails when your branch changes the plugin or the cases and
+`RESULT.md` has no result for that change. To fix it:
+
+1. Commit your changes to the plugin and the cases. `compare.sh`
+   refuses to run while any of them are uncommitted, because it
+   records the result for the committed change.
+2. From the repository root, run
+   `tests/reboot/plugin/evals/compare.sh`. It takes 10 to 15 minutes.
+3. Read the top of `RESULT.md`. It lists every regression: a grader
+   that passes fewer runs on your change than on `main`. Fix each one
+   or explain it in the PR.
+4. Commit `RESULT.md` and push. The job passes on that commit.
+
+If you change the plugin or the cases after that, the job fails again.
+Repeat the steps.
 
 ## Reading the results
 
-- **With and without the plugin** (the default): each case also runs
-  with no plugin loaded. A case that passes without the plugin isn't a
-  failure, but it is a flag: the model already does it, so the skill
-  text that teaches it may be unnecessary. Remove that text in a skill
-  change and run the case again; if it still passes, the text was
-  doing nothing.
-- **Before and after a skill change:** the cases come from this
-  checkout, and `--plugin` picks the skills they run against. Run
-  them once with `--plugin` pointed at a checkout of `main` and once
-  against the change, both with `--ablation none`. A case that passes
-  on `main` and fails on the change is a regression.
+Each case runs several times, because the same request doesn't always
+produce the same code. A grader's result is a count, such as 2 of 3.
+
+- **With and without the plugin.** A grader that fails without the
+  plugin and passes with it shows the skills working. A grader that
+  passes both ways shows the model already does this, so the skill
+  text that teaches it may be unnecessary.
+- **Before and after a plugin change.** `RESULT.md` has each grader's
+  count on `main` and on the change. A grader that passes fewer runs
+  on the change than on `main` is a regression. `RESULT.md` lists
+  the regressions at its top and puts their rows first in the table.
+  A difference of one run can be chance; two or more is unlikely to
+  be.
+- **`reboot-skill`.** This grader records whether any Reboot skill
+  loaded. It is reported and not scored.
 
 ## Adding a case
 
-A skill change that teaches something new adds a case for it. The
-case should fail against `main`'s skills, which don't teach it yet,
-and pass against the change. Run both with `--plugin` as above and put
-the two counts in the PR.
+A plugin change that teaches something new adds a case for it. The
+case should fail against `main`'s plugin and pass against the change;
+`RESULT.md` shows both counts.
 
-- One folder per case, named for what it checks, with a `case.yaml`
-  and, if the request needs an existing app, a `fixture.sh` that
-  writes it.
-- Pick a domain no other case uses, so each case adds coverage.
-- Check results mechanically where you can (a `regex` grader on a
-  named file, such as an import that must or mustn't appear), and
-  with an `llm` grader where it takes judgment. An `llm` rubric names
-  what passes and what fails, reads the named file (`focus: {source:
-  file, path: ...}`), and asks the judge to quote what it relied on.
-  Never `target: files` or `focus: files`: those are file names only.
-- Grade what Reboot requires or what the request asked for, never the
-  route the agent took.
+- Make one folder per case, named for what it checks, with a
+  `case.yaml`. Copy an existing case to start.
+- If the request needs an existing app, put the app's files in
+  `fixture/` and add a `fixture.sh` that copies them into the
+  workspace.
+- Grade what Reboot requires or what the request asked for. Don't
+  grade the route the agent took: which skill it loaded, what it
+  asked, or how its messages read. A grader should change only when
+  Reboot changes, never when a skill is reworded.
+- Have the request name the file to write, and point graders at that
+  file (`source: file`). Use a `regex` grader where a pattern can
+  decide, and an `llm` grader where it takes judgment. An `llm`
+  rubric states what passes and what fails, and asks the judge to
+  quote what it relied on.
+- The sessions run unattended, so no grader rewards or penalizes
+  asking a question.
