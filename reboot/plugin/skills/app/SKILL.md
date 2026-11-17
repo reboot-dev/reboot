@@ -467,8 +467,9 @@ also do what your front end adds to it: the table in
 5. `uv run rbt generate`. Don't read what it wrote: the signature
    your servicer must match is in `python/references/api-methods.md`
    ("The Servicer Signature Each Declaration Obliges").
-6. Write the servicer (`backend/src/servicers/<name>.py`) —
-   context-type patterns in `python/references/servicer-*.md`.
+6. Write the servicer (`backend/src/servicers/<name>.py`) and its
+   `authorizer()` — context-type patterns in
+   `python/references/servicer-*.md`.
 7. Write `main.py` — `python/references/lifecycle-application-entry.md`.
 8. Scaffold the frontend at `frontend/`, as the
    [`frontend` skill](../frontend/SKILL.md) says for your front end.
