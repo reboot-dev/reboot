@@ -44,12 +44,11 @@ Otherwise ask, whatever the session's autonomy settings, and **as
 the first thing in the session**: before you read any other file or
 plan the app.
 
-**Say nothing about how you decided to ask.** No rule, trigger or
-skill term before the question ("no verbatim trigger in your
-description" means nothing to the person). At most one plain sentence
-on why the answer matters, in the app's own words: "This decides
-what gets built: a website, the same app inside Claude or ChatGPT, or
-both." Then the question.
+**Don't explain how you decided to ask.** Name no rule or skill term
+before the question. At most one plain sentence on why the answer
+matters, in the app's own words: "This decides what gets built: a
+website, the same app inside Claude or ChatGPT, or both." Then the
+question.
 
 ```
 Question: "Where will people use your app?"
