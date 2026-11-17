@@ -29,10 +29,8 @@ app has one or both front ends:
 prompt already settles it:
 
 - **On the web**, no question: "just a website", "only a web app",
-  "only on the web", "no MCP", "no AI", or the prompt's own answer
-  naming only the web.
+  "no MCP", "no AI", or the prompt's own answer naming only the web.
 - **In AI chat**, no question: "just an MCP server", "only for Claude",
-  "only in AI chat",
   "no web app", "no website", or the prompt's own answer naming only
   MCP.
 - **On the web and in AI chat**, no question: the prompt's own answer naming both, or a
