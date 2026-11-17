@@ -1059,6 +1059,71 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(check_statechart(statechart), [])
 
+    def test_a_final_state_has_no_inject(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Refunded"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Refunded" } }
+            states {
+              name: "CANCELLED"
+              final: true
+              entry { inject { event: "shop.v1.Refunded" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `CANCELLED` is final and cannot inject an event"],
+        )
+
+    def test_a_final_state_has_no_call_that_may_inject(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Refunded"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Refunded" } }
+            states {
+              name: "CANCELLED"
+              final: true
+              entry {
+                call {
+                  description: "Refund"
+                  inline { method: "Refund" injects: "shop.v1.Refunded" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `CANCELLED` is final and cannot inject an event"],
+        )
+
+    def test_a_final_state_that_injects_twice_is_a_problem_once(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Refunded"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Refunded" } }
+            states {
+              name: "CANCELLED"
+              final: true
+              entry { inject { event: "shop.v1.Refunded" } }
+              entry {
+                call {
+                  description: "Refund"
+                  inline { method: "Refund" injects: "shop.v1.Refunded" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `CANCELLED` is final and cannot inject an event"],
+        )
+
     def test_a_final_state_has_no_exit(self) -> None:
         statechart = make_statechart(
             """

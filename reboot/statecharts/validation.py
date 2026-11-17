@@ -573,8 +573,8 @@ def _check_final(
 ) -> list[str]:
     """Returns every problem with `state`, and with every state within
     it, being final: a final state has no `schedule`, no `timer`, no
-    `exit`, no transitions and no substates. `hierarchical_state_name`
-    is that of `state`."""
+    `inject`, no `call` that may inject, no `exit`, no transitions and
+    no substates. `hierarchical_state_name` is that of `state`."""
     problems: list[str] = []
 
     if state.final:
@@ -585,6 +585,19 @@ def _check_final(
             problems.append(
                 f"state `{hierarchical_state_name}` is final and cannot have a "
                 "`schedule` or a `timer`",
+            )
+        # An event that is injected on entering a final state is
+        # handled in that state, which has no transitions, so it is
+        # dropped.
+        if any(
+            entry.WhichOneof("entry") == "inject" or (
+                entry.WhichOneof("entry") == "call" and
+                len(entry.call.inline.injects) > 0
+            ) for entry in state.entry
+        ):
+            problems.append(
+                f"state `{hierarchical_state_name}` is final and cannot "
+                "inject an event",
             )
         # A final state is never left, so an `exit` of one never runs.
         if len(state.exit) > 0:
