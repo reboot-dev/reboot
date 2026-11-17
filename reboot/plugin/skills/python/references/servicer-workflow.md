@@ -1351,6 +1351,15 @@ A running workflow has exactly three outcomes:
    retried automatically — but it also means a bug-induced exception
    retries forever until you ship a fix or expunge the workflow.
 
+A workflow can also be **cancelled from outside**, by `cancel()` on its
+`<Service>.<Method>Task` handle (see "Cancelling a Scheduled or Spawned
+Task" in `scheduling-basic.md`) or by `rbt task cancel`. The body then
+sees an `asyncio.CancelledError` at its current `await`. Let it
+propagate: the workflow ends as cancelled and is not retried, and
+`await`ing its handle raises an `Aborted` whose `error` is `Cancelled`.
+Catching it and returning a response instead ends the workflow with
+that response, as if it had returned normally.
+
 ### Declare the Errors You Plan to Raise
 
 `Workflow(...)` takes the same `errors=[...]` keyword as the other

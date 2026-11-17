@@ -3,11 +3,14 @@ import pydantic_core
 import re
 import types
 import typing
+import uuid
 from enum import Enum
 from google.protobuf import json_format
 from google.protobuf.message import Message
 from google.protobuf.struct_pb2 import Value
 from pydantic.fields import FieldInfo
+from rbt.v1alpha1 import tasks_pb2
+from reboot.aio.types import StateId, StateRef, StateTypeName
 from reboot.settings import (
     AUTO_CONSTRUCT_METHOD,
     AUTO_CONSTRUCT_STATE_TYPE,
@@ -880,6 +883,46 @@ def Field(*, tag: int, **kwargs) -> Any:
     json_schema_extra['tag'] = tag
     kwargs['json_schema_extra'] = json_schema_extra
     return pydantic.Field(**kwargs)
+
+
+class TaskId(Model):
+    """The id of a task: the id of the state it runs on and its UUID.
+    The state type is implied by the `<State>.<Method>Task` class the
+    id is used with.
+
+    `schedule()` returns one, `<State>.<Method>Task.retrieve()` takes
+    one, and it can be stored in a state or a response like any other
+    `Model`, e.g. `Optional[TaskId] = Field(tag=..., default=None)`.
+    """
+    state_id: str = Field(tag=1, default="")
+    # The task's UUID in its canonical text form, e.g.
+    # '12345678-1234-5678-1234-567812345678'.
+    task_uuid: str = Field(tag=2, default="")
+
+
+def task_id_to_pydantic(task_id: tasks_pb2.TaskId) -> TaskId:
+    """The `TaskId` of a task, which leaves out the state type: the
+    `<State>.<Method>Task` class it is used with implies it."""
+    return TaskId(
+        state_id=StateRef(task_id.state_ref).id,
+        task_uuid=str(uuid.UUID(bytes=task_id.task_uuid)),
+    )
+
+
+def task_id_from_pydantic(
+    state_type: StateTypeName,
+    task_id: TaskId,
+) -> tasks_pb2.TaskId:
+    """The `tasks_pb2.TaskId` of a task of a state of type
+    `state_type`."""
+    return tasks_pb2.TaskId(
+        state_type=state_type,
+        state_ref=StateRef.from_id(
+            state_type,
+            StateId(task_id.state_id),
+        ).to_str(),
+        task_uuid=uuid.UUID(task_id.task_uuid).bytes,
+    )
 
 
 class MethodKind(str, Enum):

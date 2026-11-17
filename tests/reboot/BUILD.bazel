@@ -373,6 +373,23 @@ py_oci_image(
 )
 
 py_test(
+    name = "cancel_task_tests_py",
+    srcs = [
+        ":cancel_task_tests.py",
+    ],
+    main = "cancel_task_tests.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        "//rbt/v1alpha1:errors_py_proto",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/internals:tasks_dispatcher_py",
+    ],
+)
+
+py_test(
     name = "cancellation_tests_py",
     srcs = [
         ":cancellation_tests.py",

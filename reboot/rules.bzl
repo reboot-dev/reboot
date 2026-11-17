@@ -120,6 +120,7 @@ def py_reboot_library(
             "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
             "@com_github_reboot_dev_reboot//reboot/aio:state_managers_py",
             "@com_github_reboot_dev_reboot//reboot/aio:stubs_py",
+            "@com_github_reboot_dev_reboot//reboot/aio:task_handles_py",
             "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
             "@com_github_reboot_dev_reboot//reboot/aio:types_py",
             "@com_github_reboot_dev_reboot//reboot/aio:external_py",

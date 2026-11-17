@@ -2,7 +2,7 @@
 title: Recurring and "Cron" Schedules by Self-Rescheduling
 impact: MEDIUM
 impactDescription: Without a self-reschedule the recurring tick stops after one fire; reaching for an OS cron daemon loses durability
-tags: scheduling, recurring, periodic, cron, wall-clock, daily, hourly, self-reschedule, workflow
+tags: scheduling, recurring, periodic, cron, wall-clock, daily, hourly, self-reschedule, workflow, cancel
 ---
 
 ## Recurring and "Cron" Schedules by Self-Rescheduling
@@ -234,3 +234,28 @@ async def deactivate(
 
 The next tick that fires after `deactivate` simply doesn't schedule
 another one, ending the chain.
+
+The flag only stops _future_ occurrences. To also stop the `run()`
+workflow that is in flight, keep the `reboot.api.TaskId` that
+`schedule()` returns in state (`run_task_id: Optional[TaskId] = Field(tag=..., default=None)`) and cancel it from `deactivate`; see
+"Cancelling a Scheduled or Spawned Task" in `scheduling-basic.md`:
+
+```python
+async def tick(self, context: WriterContext) -> None:
+    self.state.run_task_id = await self.ref().schedule().run(context)
+    ...
+
+
+async def deactivate(self, context: WriterContext) -> None:
+    self.state.active = False
+    if self.state.run_task_id is not None:
+        await NightlyReport.RunTask.retrieve(
+            context,
+            task_id=self.state.run_task_id,
+        ).cancel()
+```
+
+Because `deactivate` is a writer, the cancellation is an effect that is
+requested once the writer commits. The pending `tick()` can be
+cancelled the same way, which ends the chain at once instead of at the
+next tick.

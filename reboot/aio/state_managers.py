@@ -182,12 +182,17 @@ class Effects:
         response: Optional[Message] = None,
         error: Optional[Message] = None,
         tasks: Optional[list[TaskEffect]] = None,
+        task_ids_to_cancel: Optional[list[tasks_pb2.TaskId]] = None,
         _colocated_upserts: Optional[list[tuple[str, Optional[bytes]]]] = None,
     ):
         self.state = state
         self.response = response
         self.error = error
         self.tasks = tasks
+        # The tasks the method asked to cancel (see
+        # `TaskHandle.cancel()`), which are cancelled once these
+        # effects are committed.
+        self.task_ids_to_cancel = task_ids_to_cancel
         self._colocated_upserts = _colocated_upserts
 
     def requires_exclusive(
@@ -197,12 +202,14 @@ class Effects:
     ) -> bool:
         """Returns `True` iff applying these effects require the
         exclusive transaction lock, i.e., the state has been mutated,
-        tasks were scheduled, or there are colocated keys.
+        tasks were scheduled or cancelled, or there are colocated keys.
 
         `initial_state_bytes` is the serialized state loaded for the
         transaction (or `None` if the state wasn't constructed yet).
         """
         if self.tasks:
+            return True
+        if self.task_ids_to_cancel:
             return True
         if self._colocated_upserts:
             return True
@@ -464,6 +471,13 @@ class StateManager(ABC):
             using_restart_detection: bool = False,
         ) -> None:
             self._ids = transaction_ids
+
+            # The tasks that this transaction's methods on this state
+            # asked to cancel (see `TaskHandle.cancel()`), cancelled
+            # once the transaction commits. They are held in memory
+            # only, so a transaction recovered after a restart has
+            # none.
+            self.task_ids_to_cancel: list[tasks_pb2.TaskId] = []
 
             self.coordinator_state_type = coordinator_state_type
             self.coordinator_state_ref = coordinator_state_ref
@@ -4728,6 +4742,10 @@ class SidecarStateManager(
                     )
                     if effects.tasks is not None:
                         tasks_dispatcher.dispatch(effects.tasks)
+                    if effects.task_ids_to_cancel:
+                        tasks_dispatcher.cancel_tasks(
+                            effects.task_ids_to_cancel
+                        )
                 else:
                     # NOTE: we do this store while holding the
                     # transaction lock so any outstanding readers
@@ -4754,6 +4772,10 @@ class SidecarStateManager(
                                 for task in effects.tasks
                             ), 'Task state type does not match transaction state type'
                             transaction.tasks.extend(effects.tasks)
+                        if effects.task_ids_to_cancel:
+                            transaction.task_ids_to_cancel.extend(
+                                effects.task_ids_to_cancel
+                            )
 
             yield (state_copy, StateManager.Writer(complete))
 
@@ -5114,6 +5136,10 @@ class SidecarStateManager(
                     workflow_iteration=context.workflow_iteration,
                     constructor=context.constructor,
                 )
+                if effects.task_ids_to_cancel:
+                    transaction.task_ids_to_cancel.extend(
+                        effects.task_ids_to_cancel
+                    )
 
         if not context.nested:
             # We need to register as the coordinator _before_ we
@@ -6709,6 +6735,11 @@ class SidecarStateManager(
                     if len(transaction.tasks) > 0:
                         transaction.tasks_dispatcher.dispatch(
                             transaction.tasks
+                        )
+
+                    if len(transaction.task_ids_to_cancel) > 0:
+                        transaction.tasks_dispatcher.cancel_tasks(
+                            transaction.task_ids_to_cancel
                         )
 
                     if not state_was_cached:

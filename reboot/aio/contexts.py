@@ -13,7 +13,13 @@ from datetime import timedelta
 from enum import Enum
 from google.protobuf.message import Message
 from logging import Logger
-from rbt.v1alpha1 import database_pb2, errors_pb2, react_pb2, react_pb2_grpc
+from rbt.v1alpha1 import (
+    database_pb2,
+    errors_pb2,
+    react_pb2,
+    react_pb2_grpc,
+    tasks_pb2,
+)
 from reboot.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from reboot.aio.auth import Auth
 from reboot.aio.backoff import Backoff
@@ -892,6 +898,10 @@ class Context(ABC, IdempotencyManager):
     # part of the effects.
     _tasks: list[TaskEffect]
 
+    # Any tasks cancelled with this context (see `TaskHandle.cancel()`)
+    # that we need to include as part of the effects.
+    _task_ids_to_cancel: list[tasks_pb2.TaskId]
+
     # NOTE: `_colocated_upserts` argument is for internal use only. See
     # usage in the `StateManager` class.
     _colocated_upserts: Optional[list[tuple[str, Optional[bytes]]]]
@@ -941,6 +951,8 @@ class Context(ABC, IdempotencyManager):
         self._effect_validation = effect_validation
 
         self._tasks = []
+
+        self._task_ids_to_cancel = []
 
         self._colocated_upserts = None
 
