@@ -100,21 +100,34 @@ def _check_schedule(
 
 def _check_timer(timer: statechart_pb2.Statechart.Timer) -> list[str]:
     """Returns every problem with `timer`: it has an event to enqueue,
-    and a delay that is more than zero."""
+    none of its `seconds`, `minutes`, `hours` and `days` is negative,
+    and one of them is more than zero."""
     problems: list[str] = []
 
     if not timer.enqueue.event:
         problems.append("the `timer` has no event to `enqueue`")
 
-    # A timer's delay is the sum of whichever of these it gives.
-    delay_seconds = (
-        timer.seconds + 60 * timer.minutes + 60 * 60 * timer.hours +
-        24 * 60 * 60 * timer.days
-    )
-    if delay_seconds <= 0:
+    delays = {
+        "seconds": timer.seconds,
+        "minutes": timer.minutes,
+        "hours": timer.hours,
+        "days": timer.days,
+    }
+
+    for field, delay in delays.items():
+        if delay < 0:
+            # `:g` writes the delay the way a statechart does: -30.0
+            # as "-30" and -0.5 as "-0.5".
+            problems.append(
+                f"the `timer` has `{field}: {delay:g}`, but a delay cannot "
+                "be negative",
+            )
+
+    # A field that a timer leaves out is zero.
+    if all(delay == 0 for delay in delays.values()):
         problems.append(
-            "the `timer` has no delay: its `seconds`, `minutes`, `hours` "
-            "and `days` must add up to more than zero",
+            "the `timer` has no delay: one of its `seconds`, `minutes`, "
+            "`hours` and `days` must be more than zero",
         )
 
     return problems

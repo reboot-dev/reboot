@@ -890,8 +890,114 @@ class ValidationTest(unittest.TestCase):
             check_statechart(statechart),
             [
                 "in an `entry` of state `PENDING`: the `timer` has no delay: "
-                "its `seconds`, `minutes`, `hours` and `days` must add up to "
+                "one of its `seconds`, `minutes`, `hours` and `days` must be "
                 "more than zero"
+            ],
+        )
+
+    def test_a_field_of_a_timer_is_not_negative(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
+            states {
+              name: "PENDING"
+              entry {
+                timer {
+                  minutes: -30
+                  enqueue { event: "shop.v1.TimedOut" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `timer` has "
+                "`minutes: -30`, but a delay cannot be negative",
+            ],
+        )
+
+    def test_each_negative_field_of_a_timer_is_a_problem(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
+            states {
+              name: "PENDING"
+              entry {
+                timer {
+                  hours: -1
+                  minutes: -0.5
+                  enqueue { event: "shop.v1.TimedOut" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `timer` has "
+                "`minutes: -0.5`, but a delay cannot be negative",
+                "in an `entry` of state `PENDING`: the `timer` has "
+                "`hours: -1`, but a delay cannot be negative",
+            ],
+        )
+
+    def test_a_negative_field_is_a_problem_whatever_the_sum(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
+            states {
+              name: "PENDING"
+              entry {
+                timer {
+                  hours: 1
+                  minutes: -30
+                  enqueue { event: "shop.v1.TimedOut" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `timer` has "
+                "`minutes: -30`, but a delay cannot be negative",
+            ],
+        )
+
+    def test_a_timer_with_a_negative_field_has_no_other_delay_problem(
+        self,
+    ) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.TimedOut"
+            initial: "PENDING"
+            transitions { on { event: "shop.v1.TimedOut" } }
+            states {
+              name: "PENDING"
+              entry {
+                timer {
+                  seconds: -5
+                  enqueue { event: "shop.v1.TimedOut" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `PENDING`: the `timer` has "
+                "`seconds: -5`, but a delay cannot be negative",
             ],
         )
 
@@ -933,7 +1039,7 @@ class ValidationTest(unittest.TestCase):
             check_statechart(statechart),
             [
                 "in an `entry` of state `PENDING`: the `timer` has no delay: "
-                "its `seconds`, `minutes`, `hours` and `days` must add up to "
+                "one of its `seconds`, `minutes`, `hours` and `days` must be "
                 "more than zero"
             ],
         )
