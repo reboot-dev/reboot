@@ -180,12 +180,16 @@ class Effects:
         self,
         *,
         state: Optional[Message] = None,
+        statechart_status: Optional[statechart_pb2.Status] = None,
         response: Optional[Message] = None,
         error: Optional[Message] = None,
         tasks: Optional[list[TaskEffect]] = None,
         _colocated_upserts: Optional[list[tuple[str, Optional[bytes]]]] = None,
     ):
         self.state = state
+        # Where the state's statechart is after the method, if the
+        # method changed that. `None` leaves it as it was.
+        self.statechart_status = statechart_status
         self.response = response
         self.error = error
         self.tasks = tasks
@@ -198,7 +202,8 @@ class Effects:
     ) -> bool:
         """Returns `True` iff applying these effects require the
         exclusive transaction lock, i.e., the state has been mutated,
-        tasks were scheduled, or there are colocated keys.
+        its statechart status has changed, tasks were scheduled, or
+        there are colocated keys.
 
         `initial_state_bytes` is the serialized state loaded for the
         transaction (or `None` if the state wasn't constructed yet).
@@ -206,6 +211,8 @@ class Effects:
         if self.tasks:
             return True
         if self._colocated_upserts:
+            return True
+        if self.statechart_status is not None:
             return True
         if self.state is not None:
             if initial_state_bytes is None:
@@ -1455,6 +1462,21 @@ class StateManager(ABC):
         sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def statechart_status(
+        self,
+        context: Context,
+    ) -> Optional[statechart_pb2.Status]:
+        """Returns a copy of where the statechart of the state that
+        `context` is for is, or `None` if its state type has none or
+        it has not started.
+
+        Must be called by a reader, a writer or a transaction that has
+        loaded the state. Within a transaction it returns the
+        transaction's own.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -3227,6 +3249,39 @@ class SidecarStateManager(
             if pending_task_effect is not None:
                 middleware.tasks_dispatcher.dispatch([pending_task_effect])
 
+    def statechart_status(
+        self,
+        context: Context,
+    ) -> Optional[statechart_pb2.Status]:
+        """Override of StateManager.statechart_status(...) for
+        SidecarStateManager."""
+        state_type_name = context.state_type_name
+        state_ref = context._state_ref
+
+        if context.transaction_root_id is not None:
+            transaction = self._lookup_participant_transaction(
+                state_type_name,
+                state_ref,
+                context.transaction_root_id,
+            )
+            assert transaction is not None and transaction.state is not None, (
+                "The statechart status is only read for a state that has "
+                "been loaded"
+            )
+            statechart_status = transaction.statechart_status
+        else:
+            statechart_status = (
+                self._statechart_statuses[state_type_name].get(state_ref)
+            )
+
+        if statechart_status is None:
+            return None
+
+        # A copy, so that whoever asks cannot change what we hold.
+        statechart_status_copy = statechart_pb2.Status()
+        statechart_status_copy.CopyFrom(statechart_status)
+        return statechart_status_copy
+
     async def import_actor(
         self,
         state_type: StateTypeName,
@@ -3849,6 +3904,10 @@ class SidecarStateManager(
         # readers queues below.
         state_copy: Optional[Message] = None
 
+        # Likewise a copy of the statechart status, if these effects
+        # change it.
+        statechart_status_copy: Optional[statechart_pb2.Status] = None
+
         if effects is not None:
             # Invariant for storing state is that the caller holds the
             # lock!
@@ -3857,23 +3916,48 @@ class SidecarStateManager(
             # asyncio context holds the lock ... maybe use a contextvar?
             assert self._locks[state_type][state_ref].is_locked()
 
-            if effects.state is not None:
-                state_copy = type(effects.state)()
-                state_copy.CopyFrom(effects.state)
+            # We store the actor when these effects change its state
+            # or its statechart status. Storing an actor replaces what
+            # is stored for it, so whichever of the two the effects
+            # leave as it was is stored as the actor has it: within a
+            # transaction, as the transaction has it.
+            if (
+                effects.state is not None or
+                effects.statechart_status is not None
+            ):
+                if effects.state is not None:
+                    state_copy = type(effects.state)()
+                    state_copy.CopyFrom(effects.state)
+                    state = state_copy.SerializeToString()
+                else:
+                    existing_state = (
+                        transaction.state if transaction is not None else
+                        self._states[state_type].get(state_ref)
+                    )
+                    assert existing_state is not None, (
+                        "A statechart status is only stored for a state "
+                        "that has been loaded"
+                    )
+                    state = existing_state.SerializeToString()
+
+                statechart_status: Optional[statechart_pb2.Status]
+                if effects.statechart_status is not None:
+                    statechart_status_copy = statechart_pb2.Status()
+                    statechart_status_copy.CopyFrom(effects.statechart_status)
+                    statechart_status = statechart_status_copy
+                else:
+                    statechart_status = (
+                        transaction.statechart_status
+                        if transaction is not None else
+                        self._statechart_statuses[state_type].get(state_ref)
+                    )
 
                 actor_upserts.append(
                     database_pb2.Actor(
                         state_type=state_type,
                         state_ref=state_ref.to_str(),
-                        state=state_copy.SerializeToString(),
-                        # Storing an actor replaces what is stored for
-                        # it, so we store the statechart status that
-                        # it has with its new state.
-                        statechart_status=(
-                            transaction.statechart_status
-                            if transaction is not None else self.
-                            _statechart_statuses[state_type].get(state_ref)
-                        ),
+                        state=state,
+                        statechart_status=statechart_status,
                     )
                 )
 
@@ -4009,17 +4093,30 @@ class SidecarStateManager(
                 transaction.stored = True
 
         # Now that everything is stored we can update in memory
-        # state. First we update state related to effects (if any).
-        if effects is not None and effects.state is not None:
-            assert state_copy is not None
-
+        # state. First what these effects changed of the actor, its
+        # state or its statechart status, and then we notify the
+        # streaming readers, since what a reader returns may depend
+        # on either.
+        if effects is not None and (
+            effects.state is not None or effects.statechart_status is not None
+        ):
             queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]] = None
+
+            # What we put on the streaming readers' queues: the new
+            # state, or the state as it is if only the statechart
+            # status changed.
+            state_to_queue: Optional[Message] = state_copy
 
             if transaction is not None:
                 assert transaction.state is not None
-                # NOTE: must do `CopyFrom` here as the state is passed
-                # by _reference_ to the transaction method.
-                transaction.state.CopyFrom(state_copy)
+                if state_copy is not None:
+                    # NOTE: must do `CopyFrom` here as the state is
+                    # passed by _reference_ to the transaction method.
+                    transaction.state.CopyFrom(state_copy)
+                else:
+                    state_to_queue = transaction.state
+                if statechart_status_copy is not None:
+                    transaction.statechart_status = statechart_status_copy
                 # Only notify streaming readers belonging to the
                 # (possibly nested) transaction doing this store: a
                 # nested transaction's modifications only become
@@ -4036,21 +4133,29 @@ class SidecarStateManager(
                 ]
 
             else:
-                state_was_cached = state_ref in self._states[state_type]
-                self._states[state_type][state_ref] = state_copy
+                if state_copy is not None:
+                    state_was_cached = state_ref in self._states[state_type]
+                    self._states[state_type][state_ref] = state_copy
+
+                    if not state_was_cached:
+                        # We MAY have just created a new actor.
+                        for event in self._actors_list_maybe_changed_events:
+                            event.set()
+                else:
+                    state_to_queue = self._states[state_type].get(state_ref)
+                if statechart_status_copy is not None:
+                    self._statechart_statuses[state_type][state_ref] = (
+                        statechart_status_copy
+                    )
                 queues = self._streaming_readers[state_type].get(state_ref)
 
-                if not state_was_cached:
-                    # We MAY have just created a new actor.
-                    for event in self._actors_list_maybe_changed_events:
-                        event.set()
-
             if queues is not None:
+                assert state_to_queue is not None
                 for queue in queues:
                     # NOTE: we defer making a reader specific copy of this
                     # state until the reader actually reads it to reduce
                     # memory usage.
-                    queue.put_nowait((state_copy, idempotency_key))
+                    queue.put_nowait((state_to_queue, idempotency_key))
 
         # Now we update state related to idempotency (if any).
         if idempotent_mutation is not None:

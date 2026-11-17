@@ -398,6 +398,162 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(actor.statechart_status, statechart_status)
 
+    async def test_writer_changes_statechart_status(self) -> None:
+        """Test that a writer whose effects have a statechart status
+        changes where the state's statechart is, and that one whose
+        effects have none leaves it as it was.
+        """
+        context = self.create_test_context(
+            WriterContext, MyGreeterServicer, "test-1234"
+        )
+
+        async with self.state_manager.writer(
+            context,
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            self.assertIsNone(self.state_manager.statechart_status(context))
+            await writer.complete(
+                Effects(
+                    state=greeter_rbt.Greeter.State(
+                        title='Dr', name='Jonathan', adjective='best'
+                    ),
+                    statechart_status=statechart_pb2.Status(active="OPEN"),
+                )
+            )
+
+        self.assertEqual(
+            self.state_manager.statechart_status(context),
+            statechart_pb2.Status(active="OPEN"),
+        )
+
+        # A statechart status alone is stored with the state as it is.
+        async with self.state_manager.writer(
+            context,
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            await writer.complete(
+                Effects(
+                    statechart_status=statechart_pb2.Status(active="CLOSED"),
+                )
+            )
+
+        self.assertEqual(
+            self.state_manager.statechart_status(context),
+            statechart_pb2.Status(active="CLOSED"),
+        )
+
+        # Effects without a statechart status leave it as it was.
+        async with self.state_manager.writer(
+            context,
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            self.assertEqual(state.adjective, 'best')
+            await writer.complete(
+                Effects(
+                    state=greeter_rbt.Greeter.
+                    State(title='Dr', name='Jonathan', adjective='worst')
+                )
+            )
+
+        self.assertEqual(
+            self.state_manager.statechart_status(context),
+            statechart_pb2.Status(active="CLOSED"),
+        )
+
+    async def test_statechart_status_change_notifies_streaming_readers(
+        self,
+    ) -> None:
+        """Test that a writer that changes only the statechart status
+        notifies a streaming reader, since what a reader returns may
+        depend on where the statechart is.
+        """
+        context = self.create_test_context(
+            WriterContext, MyGreeterServicer, "test-1234"
+        )
+
+        async with self.state_manager.writer(
+            context,
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            await writer.complete(
+                Effects(
+                    state=greeter_rbt.Greeter.State(
+                        title='Dr', name='Jonathan', adjective='best'
+                    ),
+                    statechart_status=statechart_pb2.Status(active="OPEN"),
+                )
+            )
+
+        async with self.state_manager.streaming_reader(
+            self.create_test_context(
+                ReaderContext, MyGreeterServicer, "test-1234"
+            ),
+            MyGreeterServicer.__state_type__,
+            authorize=None,
+        ) as states:
+            # A streaming reader starts with the state as it is.
+            state = await states.__anext__()
+            self.assertEqual(state.name, 'Jonathan')
+
+            async with self.state_manager.writer(
+                context,
+                MyGreeterServicer.__state_type__,
+                self.create_task_dispatcher_mock(),
+                authorize=None,
+            ) as (_, writer):
+                await writer.complete(
+                    Effects(
+                        statechart_status=statechart_pb2.Status(
+                            active="CLOSED",
+                        ),
+                    )
+                )
+
+            state = await states.__anext__()
+            self.assertEqual(state.name, 'Jonathan')
+            self.assertEqual(
+                self.state_manager.statechart_status(context),
+                statechart_pb2.Status(active="CLOSED"),
+            )
+
+    async def test_statechart_status_is_a_copy(self) -> None:
+        """Test that changing the statechart status that the state
+        manager returns does not change the one that it holds.
+        """
+        context = self.create_test_context(
+            WriterContext, MyGreeterServicer, "test-1234"
+        )
+
+        async with self.state_manager.writer(
+            context,
+            MyGreeterServicer.__state_type__,
+            self.create_task_dispatcher_mock(),
+            authorize=None,
+        ) as (state, writer):
+            await writer.complete(
+                Effects(
+                    state=greeter_rbt.Greeter.State(),
+                    statechart_status=statechart_pb2.Status(active="OPEN"),
+                )
+            )
+
+        statechart_status = self.state_manager.statechart_status(context)
+        assert statechart_status is not None
+        statechart_status.active = "CLOSED"
+
+        self.assertEqual(
+            self.state_manager.statechart_status(context),
+            statechart_pb2.Status(active="OPEN"),
+        )
+
     async def test_multiple_readers(self) -> None:
         """Test that multiple readers have their own copy of state so that if
         they change it other readers won't be impacted.
@@ -1786,6 +1942,42 @@ class TransactionTest(unittest.IsolatedAsyncioTestCase):
         await surviving_waiter
         self.assertTrue(transaction.committed())
 
+    async def test_rollback_restores_statechart_status(self) -> None:
+        """Rolling back to the snapshot of a nested transaction restores
+        the statechart status from before it."""
+        transaction = self._transaction()
+        transaction.state = greeter_rbt.Greeter.State(name='Jonathan')
+        transaction.statechart_status = statechart_pb2.Status(active="OPEN")
+
+        transaction._push_snapshot(transaction.ids + [uuid.uuid4()])
+        snapshot = transaction._snapshots[-1]
+
+        # The nested transaction changes the statechart status that the
+        # snapshot was taken of, which the snapshot has a copy of.
+        transaction.statechart_status.active = "CLOSED"
+
+        transaction._rollback(snapshot, lock=Lock())
+
+        self.assertEqual(
+            transaction.statechart_status,
+            statechart_pb2.Status(active="OPEN"),
+        )
+
+    async def test_rollback_removes_statechart_status(self) -> None:
+        """Rolling back to the snapshot of a nested transaction that
+        there was no statechart status before leaves none."""
+        transaction = self._transaction()
+        transaction.state = greeter_rbt.Greeter.State(name='Jonathan')
+
+        transaction._push_snapshot(transaction.ids + [uuid.uuid4()])
+        snapshot = transaction._snapshots[-1]
+
+        transaction.statechart_status = statechart_pb2.Status(active="OPEN")
+
+        transaction._rollback(snapshot, lock=Lock())
+
+        self.assertIsNone(transaction.statechart_status)
+
 
 class EffectsRequiresExclusiveTest(unittest.TestCase):
     """Unit tests for `Effects.requires_exclusive()`, which decides
@@ -1818,6 +2010,18 @@ class EffectsRequiresExclusiveTest(unittest.TestCase):
             Effects(state=state).requires_exclusive(
                 initial_state_bytes=initial_state_bytes,
             )
+        )
+
+    def test_statechart_status_is_mutation(self) -> None:
+        """Effects that have a statechart status change where the
+        state's statechart is, even with the state as it was."""
+        state = self._state(title="Dr", name="Jonathan", adjective="best")
+        initial_state_bytes = state.SerializeToString(deterministic=True)
+        self.assertTrue(
+            Effects(
+                state=state,
+                statechart_status=statechart_pb2.Status(active="OPEN"),
+            ).requires_exclusive(initial_state_bytes=initial_state_bytes)
         )
 
     def test_changed_state_is_mutation(self) -> None:
