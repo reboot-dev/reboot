@@ -1,6 +1,6 @@
 ---
 name: app
-description: "Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright (\"just a website\", \"only for Claude\", or both named), otherwise with one question, \"Who will use this app?\" (people in a browser, AI agents in a chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …)."
+description: "Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright (\"just a website\", \"only for Claude\", or both named), otherwise with one question, \"Where will people use your app?\" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …)."
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -29,8 +29,8 @@ settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
 and do what it says: both front ends are the default; skip the
 question only when the prompt settles it outright ("just a website",
-"only for Claude", or both named); otherwise ask "Who will use this app?" (people, agents, or
-both) before anything else. Write no file until the front end is
+"only for Claude", or both named); otherwise ask "Where will people use your app?" (on the web, in AI
+chat, or both) before anything else. Write no file until the front end is
 settled. This holds in auto mode too.
 
 ## When to Use
