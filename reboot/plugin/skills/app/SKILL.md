@@ -45,11 +45,9 @@ for all of them:
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
 [`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: both front ends are the default; skip the
-question only when the prompt settles it outright ("just a website",
-"only for Claude", or both named); otherwise ask "Where will people use your app?" (on the web, in AI
-chat, or both) before anything else. Write no file until the front end is
-settled. This holds in auto mode too.
+and do what it says: both front ends are the default, and it says
+when to ask "Where will people use your app?". Write no file until
+the front end is settled. This holds in auto mode too.
 
 ## When to Use
 
