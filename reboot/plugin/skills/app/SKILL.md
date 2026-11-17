@@ -191,9 +191,7 @@ do not explore it in the main conversation.
 ## Never Read Generated or Installed Source in the Main Thread
 
 `*_rbt.py`, `*_rbt_react.ts`, `site-packages/`, `node_modules/`,
-and codegen templates run to tens of thousands of lines. Every one
-you open is re-sent on every remaining turn, which makes reading
-them the most expensive way in the system to learn a fact.
+and codegen templates run to tens of thousands of lines.
 
 The generated surfaces you actually need are written out in these
 references — the React client in
@@ -479,8 +477,7 @@ also do what your front end adds to it: the table in
     [`frontend` skill](../frontend/SKILL.md) lists for your front end.
     Write the calls from those references
     and do **not** open `frontend/api/**/*_rbt_react.ts` to check
-    them — it is tens of thousands of lines that then ride along on
-    every later turn.
+    them: it is tens of thousands of lines.
 11. `cd frontend && npm run build` (sanity check the bundle).
 12. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase (the
