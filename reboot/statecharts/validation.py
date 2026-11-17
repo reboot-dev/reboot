@@ -669,7 +669,7 @@ def _transitions(
         yield from state.transitions
 
 
-def _on_transitions(
+def on_transitions(
     statechart: statechart_pb2.Statechart,
 ) -> Iterator[statechart_pb2.Statechart.On]:
     """Yields every `on` transition of `statechart` and of every state
@@ -679,7 +679,7 @@ def _on_transitions(
             yield transition.on
 
 
-def _when_transitions(
+def when_transitions(
     statechart: statechart_pb2.Statechart,
 ) -> Iterator[statechart_pb2.Statechart.When]:
     """Yields every `when` transition of `statechart` and of every
@@ -689,7 +689,7 @@ def _when_transitions(
             yield transition.when
 
 
-def _calls(
+def calls(
     statechart: statechart_pb2.Statechart,
 ) -> Iterator[statechart_pb2.Statechart.Call]:
     """Yields every `call` of `statechart` and of every state within
@@ -703,18 +703,18 @@ def _calls(
         if exit.WhichOneof("exit") == "call":
             yield exit.call
 
-    for on in _on_transitions(statechart):
+    for on in on_transitions(statechart):
         for action in on.actions:
             if action.WhichOneof("action") == "call":
                 yield action.call
 
-    for when in _when_transitions(statechart):
+    for when in when_transitions(statechart):
         for action in when.actions:
             if action.WhichOneof("action") == "call":
                 yield action.call
 
 
-def _schedules(
+def schedules(
     statechart: statechart_pb2.Statechart,
 ) -> Iterator[statechart_pb2.Statechart.Schedule]:
     """Yields every `schedule` of `statechart` and of every state
@@ -738,12 +738,12 @@ def _injects(
         if exit.WhichOneof("exit") == "inject":
             yield exit.inject
 
-    for on in _on_transitions(statechart):
+    for on in on_transitions(statechart):
         for action in on.actions:
             if action.WhichOneof("action") == "inject":
                 yield action.inject
 
-    for when in _when_transitions(statechart):
+    for when in when_transitions(statechart):
         for action in when.actions:
             if action.WhichOneof("action") == "inject":
                 yield action.inject
@@ -767,18 +767,18 @@ def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
     transition."""
     problems: list[str] = []
 
-    events_of_on_transitions = {on.event for on in _on_transitions(statechart)}
+    events_of_on_transitions = {on.event for on in on_transitions(statechart)}
 
     # The event of each `inject`, and each event that a `call` may
     # inject.
     injected_events = {inject.event for inject in _injects(statechart)}
-    for call in _calls(statechart):
+    for call in calls(statechart):
         injected_events.update(call.inline.injects)
 
     # The event of each `timer`, and each event that a `schedule` may
     # enqueue.
     enqueued_events = {timer.enqueue.event for timer in _timers(statechart)}
-    for schedule in _schedules(statechart):
+    for schedule in schedules(statechart):
         enqueued_events.update(schedule.inline.enqueues)
 
     injected_and_enqueued_events = injected_events | enqueued_events
@@ -815,14 +815,14 @@ def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
     problems: list[str] = []
 
     condition_methods = {
-        when.condition.inline.method for when in _when_transitions(statechart)
+        when.condition.inline.method for when in when_transitions(statechart)
     }
     guard_methods = {
-        on.guard.inline.method for on in _on_transitions(statechart)
+        on.guard.inline.method for on in on_transitions(statechart)
     }
-    call_methods = {call.inline.method for call in _calls(statechart)}
+    call_methods = {call.inline.method for call in calls(statechart)}
     schedule_methods = {
-        schedule.inline.method for schedule in _schedules(statechart)
+        schedule.inline.method for schedule in schedules(statechart)
     }
 
     # The methods that the statechart names, by what names them.

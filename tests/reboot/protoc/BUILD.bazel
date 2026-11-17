@@ -135,6 +135,29 @@ failure_test(
 )
 
 failure_test(
+    name = "statechart_with_event_that_is_not_a_message",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/statechart_with_event_that_is_not_a_message.proto':
+        The statechart of 'tests.reboot.protoc.Echo' has the event
+        'tests.reboot.protoc.Shouted', which is not a message; an event
+        is the full name of a message of
+        'tests/reboot/protoc/statechart_with_event_that_is_not_a_message.proto'
+        or of a file that it imports.
+    """,
+)
+
+failure_test(
+    name = "statechart_with_method_that_is_an_rpc",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/statechart_with_method_that_is_an_rpc.proto':
+        The statechart of 'tests.reboot.protoc.Echo' names the method
+        'reply', which is also what the rpc 'Reply' of
+        'tests.reboot.protoc.EchoMethods' is as a method; a method of a
+        statechart and an rpc cannot have the same name.
+    """,
+)
+
+failure_test(
     name = "statechart_without_initial",
     expected_error = """
         Error processing 'tests/reboot/protoc/statechart_without_initial.proto':

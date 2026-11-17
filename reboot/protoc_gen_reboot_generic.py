@@ -16,6 +16,7 @@ from google.protobuf.descriptor import (
 from google.protobuf.descriptor_pb2 import FileDescriptorProto
 from jinja2_strcase.jinja2_strcase import \
     to_lower_camel as _strcase_to_lower_camel
+from jinja2_strcase.jinja2_strcase import to_snake
 # TODO: Dependency not recognized in git-submodule for some reason.
 from pyprotoc_plugin.helpers import (  # type: ignore[import]
     add_template_path,
@@ -23,6 +24,7 @@ from pyprotoc_plugin.helpers import (  # type: ignore[import]
 )
 from pyprotoc_plugin.plugins import ProtocPlugin  # type: ignore[import]
 from rbt.v1alpha1 import options_pb2
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.options import (
     get_file_options,
     get_method_options,
@@ -37,7 +39,13 @@ from reboot.settings import (
     AUTO_CONSTRUCT_PROTO_METHOD,
     SET_CLAIMS_PROTO_METHOD,
 )
-from reboot.statecharts.validation import check_statechart
+from reboot.statecharts.validation import (
+    calls,
+    check_statechart,
+    on_transitions,
+    schedules,
+    when_transitions,
+)
 from reboot.version import REBOOT_VERSION
 from typing import Any, Literal, Optional, Sequence
 
@@ -514,11 +522,73 @@ class RebootProtocPlugin(ProtocPlugin):
                         f"problem{'s' if len(problems) != 1 else ''}:\n"
                         f"{lines}",
                     )
+                self._check_statechart_events(message, statechart)
+                self._check_statechart_methods(message, statechart)
             for nested in message.nested_types:
                 check_message(nested)
 
         for message in file.message_types_by_name.values():
             check_message(message)
+
+    def _check_statechart_events(
+        self,
+        state: Descriptor,
+        statechart: statechart_pb2.Statechart,
+    ) -> None:
+        """Checks that each event of `statechart`, which is that of
+        `state`, is a message."""
+        for event in statechart.events:
+            try:
+                self.pool.FindMessageTypeByName(event)
+            except KeyError:
+                raise UserProtoError(
+                    f"The statechart of '{state.full_name}' has the event "
+                    f"'{event}', which is not a message; an event is the "
+                    f"full name of a message of '{state.file.name}' or of a "
+                    "file that it imports.",
+                )
+
+    def _check_statechart_methods(
+        self,
+        state: Descriptor,
+        statechart: statechart_pb2.Statechart,
+    ) -> None:
+        """Checks that no method that `statechart`, which is that of
+        `state`, names is also what an rpc of `state` is as a method."""
+        method_names = {
+            on.guard.inline.method
+            for on in on_transitions(statechart)
+            if on.HasField("guard")
+        }
+        method_names |= {
+            when.condition.inline.method
+            for when in when_transitions(statechart)
+        }
+        method_names |= {call.inline.method for call in calls(statechart)}
+        method_names |= {
+            schedule.inline.method for schedule in schedules(statechart)
+        }
+
+        for service_full_name in self._proto_state(state).implements:
+            try:
+                service = self.pool.FindServiceByName(service_full_name)
+            except KeyError:
+                # A missing service is a problem of the state, which is
+                # reported for the state.
+                continue
+
+            for rpc in service.methods:
+                # An rpc is a method by its name in snake case, which
+                # is how a statechart names a method.
+                rpc_method_name = to_snake(rpc.name)
+                if rpc_method_name in method_names:
+                    raise UserProtoError(
+                        f"The statechart of '{state.full_name}' names the "
+                        f"method '{rpc_method_name}', which is also what "
+                        f"the rpc '{rpc.name}' of '{service_full_name}' is "
+                        "as a method; a method of a statechart and an rpc "
+                        "cannot have the same name.",
+                    )
 
     def _check_states(
         self, proto_file: ProtoFile, proto_states: list[ProtoState]
