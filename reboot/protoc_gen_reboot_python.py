@@ -35,6 +35,7 @@ from reboot.protoc_gen_reboot_generic import (
 from reboot.statecharts.validation import (
     calls,
     on_transitions,
+    schedules,
     when_transitions,
 )
 from typing import Optional, Sequence
@@ -125,6 +126,10 @@ class PythonState(BaseState):
     # For a state with a statechart, each method that a call of the
     # statechart names.
     statechart_calls: dict[str, PythonStatechartCall]
+    # For a state with a statechart, each method that a schedule of
+    # the statechart names, with the type of every event that the
+    # schedule may enqueue.
+    statechart_schedules: dict[str, list[PythonType]]
 
 
 @dataclass
@@ -208,6 +213,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         statechart_guards: dict[str, list[PythonType]] = {}
         statechart_conditions: list[str] = []
         statechart_calls: dict[str, PythonStatechartCall] = {}
+        statechart_schedules: dict[str, list[PythonType]] = {}
 
         statechart = get_statechart_options(
             file.proto._descriptor.message_types_by_name[state.proto.name],
@@ -253,6 +259,18 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                         if event_type not in statechart_call.event_types:
                             statechart_call.event_types.append(event_type)
 
+            for schedule in schedules(statechart):
+                enqueue_types = statechart_schedules.setdefault(
+                    schedule.inline.method,
+                    [],
+                )
+                for enqueue in schedule.inline.enqueues:
+                    enqueue_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(enqueue),
+                    )
+                    if enqueue_type not in enqueue_types:
+                        enqueue_types.append(enqueue_type)
+
         return PythonState(
             proto=state.proto,
             services=[
@@ -270,6 +288,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             statechart_guards=statechart_guards,
             statechart_conditions=statechart_conditions,
             statechart_calls=statechart_calls,
+            statechart_schedules=statechart_schedules,
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

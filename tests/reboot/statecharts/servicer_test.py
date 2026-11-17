@@ -1,5 +1,6 @@
 import inspect
 import unittest
+from reboot.aio.contexts import WorkflowContext
 from tests.reboot.statecharts import order_pb2
 from tests.reboot.statecharts.order_rbt import Order
 from typing import Optional
@@ -36,6 +37,17 @@ class OrderServicer(Order.Servicer):
     def stop_reminders(self, state: Order.State) -> None:
         pass
 
+    @classmethod
+    async def send_reminders(cls, context: WorkflowContext) -> None:
+        pass
+
+    @classmethod
+    async def charge_card(
+        cls,
+        context: WorkflowContext,
+    ) -> Optional[order_pb2.Paid | order_pb2.Refunded]:
+        return order_pb2.Paid(cents=500)
+
 
 class ServicerTest(unittest.TestCase):
     """Tests the methods that a servicer has for the statechart of its
@@ -44,7 +56,9 @@ class ServicerTest(unittest.TestCase):
     `Refunded`, and `is_cancelled` is a condition. Of its calls,
     `record_payment` is an action of a transition on `Paid` and
     injects `Settled`, `void` is an action of a `when` transition,
-    `send_receipt` is an `entry` and `stop_reminders` is an `exit`."""
+    `send_receipt` is an `entry` and `stop_reminders` is an `exit`. Of
+    its schedules, `charge_card` enqueues `Paid` or `Refunded` and
+    `send_reminders` enqueues nothing."""
 
     def test_servicer_implements_methods_of_statechart(self) -> None:
         servicer = OrderServicer()
@@ -128,6 +142,40 @@ class ServicerTest(unittest.TestCase):
             self.assertEqual(["self", "state"], list(signature.parameters))
             self.assertEqual("None", signature.return_annotation)
 
+    def test_schedule_is_class_method_that_takes_workflow_context(
+        self,
+    ) -> None:
+        for schedule in ["charge_card", "send_reminders"]:
+            self.assertIsInstance(
+                inspect.getattr_static(Order.Servicer, schedule),
+                classmethod,
+            )
+            self.assertTrue(
+                inspect.iscoroutinefunction(
+                    getattr(Order.Servicer, schedule),
+                ),
+            )
+
+        # The signature of a class method leaves out the class.
+        signature = inspect.signature(Order.Servicer.charge_card)
+
+        self.assertEqual(["context"], list(signature.parameters))
+        self.assertEqual(
+            "IMPORT_reboot_aio_contexts.WorkflowContext",
+            signature.parameters["context"].annotation,
+        )
+        self.assertEqual(
+            "IMPORT_typing.Optional[tests.reboot.statecharts.order_pb2."
+            "Paid | tests.reboot.statecharts.order_pb2.Refunded]",
+            signature.return_annotation,
+        )
+        self.assertEqual(
+            "None",
+            inspect.signature(
+                Order.Servicer.send_reminders,
+            ).return_annotation,
+        )
+
     def test_servicer_without_a_method_is_not_instantiated(self) -> None:
         for method in [
             "is_settled",
@@ -136,13 +184,15 @@ class ServicerTest(unittest.TestCase):
             "void",
             "send_receipt",
             "stop_reminders",
+            "send_reminders",
+            "charge_card",
         ]:
             # `OrderServicer` but for `method`, which is as `Order`
             # declares it: abstract.
             servicer_type = type(
                 "OrderServicerWithout",
                 (OrderServicer,),
-                {method: getattr(Order.Servicer, method)},
+                {method: inspect.getattr_static(Order.Servicer, method)},
             )
 
             with self.assertRaises(TypeError) as raised:

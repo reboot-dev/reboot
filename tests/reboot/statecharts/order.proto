@@ -25,6 +25,16 @@ message Order {
     initial: "OPEN"
     states {
       name: "OPEN"
+      entry { schedule { inline { method: "send_reminders" } } }
+      entry {
+        schedule {
+          inline {
+            method: "charge_card"
+            enqueues: "tests.reboot.statecharts.Paid"
+            enqueues: "tests.reboot.statecharts.Refunded"
+          }
+        }
+      }
       exit {
         call {
           description: "Stop the reminders"

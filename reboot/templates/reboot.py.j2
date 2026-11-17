@@ -3951,6 +3951,24 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         raise NotImplementedError
 
     {% endfor %}
+    {% for method, enqueue_types in state.statechart_schedules.items() %}
+    # A schedule of the statechart, which is given what a workflow is.
+    {% if enqueue_types %}
+    # An event that it returns is enqueued.
+    {% endif %}
+    @classmethod
+    @IMPORT_abc_abstractmethod
+    async def {{ method }}(
+        cls,
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+    {% if enqueue_types %}
+    ) -> IMPORT_typing.Optional[{{ enqueue_types | join(' | ') }}]:
+    {% else %}
+    ) -> None:
+    {% endif %}
+        raise NotImplementedError
+
+    {% endfor %}
 
 
 class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer):
