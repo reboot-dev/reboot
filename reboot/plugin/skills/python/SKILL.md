@@ -548,8 +548,11 @@ the wizard surfaces the new flow.
 
 ## Building a web app
 
-What a web app adds to the app skill's build, step by step. The
-React side is the frontend skill's
+What a web app adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Project files** goes with "Create `.python-version`, …", **API
+definition** with "Write the API definition", and **Authorizers**
+with "Write the servicer". The React side is the frontend skill's
 [Building a web app](../frontend/SKILL.md#building-a-web-app).
 
 **Project files:** in `.rbtrc`, point the React codegen at
