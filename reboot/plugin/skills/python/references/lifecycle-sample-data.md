@@ -49,7 +49,5 @@ async def seed(context: InitializeContext):
 Changing an alias's text later adds a new item rather than updating
 the old one.
 
-The test module's `application` still creates only the app's own
-states, never `seed`'s, so no scenario sees the sample data either. The
-handoff explains what was added and where to see it, and that it is test data that
+The handoff explains what was added and where to see it, and that it is test data that
 stays on this machine.
