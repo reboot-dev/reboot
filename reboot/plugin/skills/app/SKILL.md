@@ -276,7 +276,7 @@ wrong means regenerating everything across 12+ files.
        things or neither (moving stock between two warehouses takes
        it from one and adds it to the other atomically);
      - **live updates**: a change one person makes shows at once on
-       another's open page, no reload (proved by a browser scenario
+       another's open page, no reload (tested by a browser scenario
        with two users, as `frontend/references/testing-web-app.md`
        has it);
      - **durable work**: a `Workflow` or a `schedule()`d task that
