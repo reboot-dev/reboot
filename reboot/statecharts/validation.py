@@ -573,8 +573,8 @@ def _check_final(
 ) -> list[str]:
     """Returns every problem with `state`, and with every state within
     it, being final: a final state has no `schedule`, no `timer`, no
-    transitions and no substates. `hierarchical_state_name` is that of
-    `state`."""
+    `exit`, no transitions and no substates. `hierarchical_state_name`
+    is that of `state`."""
     problems: list[str] = []
 
     if state.final:
@@ -585,6 +585,12 @@ def _check_final(
             problems.append(
                 f"state `{hierarchical_state_name}` is final and cannot have a "
                 "`schedule` or a `timer`",
+            )
+        # A final state is never left, so an `exit` of one never runs.
+        if len(state.exit) > 0:
+            problems.append(
+                f"state `{hierarchical_state_name}` is final and cannot have "
+                "an `exit`",
             )
         if len(state.transitions) > 0:
             problems.append(

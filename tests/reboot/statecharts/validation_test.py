@@ -1059,6 +1059,51 @@ class ValidationTest(unittest.TestCase):
         )
         self.assertEqual(check_statechart(statechart), [])
 
+    def test_a_final_state_has_no_exit(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "CANCELLED"
+            states {
+              name: "CANCELLED"
+              final: true
+              exit {
+                call {
+                  description: "Release stock"
+                  inline { method: "ReleaseStock" }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `CANCELLED` is final and cannot have an `exit`"],
+        )
+
+    def test_a_final_state_with_two_exits_is_a_problem_once(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Left"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Left" } }
+            states {
+              name: "CANCELLED"
+              final: true
+              exit {
+                call {
+                  description: "Release stock"
+                  inline { method: "ReleaseStock" }
+                }
+              }
+              exit { inject { event: "shop.v1.Left" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            ["state `CANCELLED` is final and cannot have an `exit`"],
+        )
+
     def test_a_final_state_has_no_transitions(self) -> None:
         statechart = make_statechart(
             """
