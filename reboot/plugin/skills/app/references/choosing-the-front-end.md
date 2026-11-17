@@ -17,11 +17,9 @@ state, used in a browser through a web app and in an AI chat client
 (Claude, ChatGPT) through an MCP App, added there as a connector. An
 app has one or both front ends:
 
-- **Both** (the default) — one backend, one sign-in, a web app and an
-  MCP App: its tools, and a `UI()` where the chat client shows the
-  person a view. A person signs in once: signing in on either front
-  end signs them in on the other. Reboot's OAuth server does this;
-  build one sign-in, not one per front end.
+- **Both** (the default) — one backend with one `Application(oauth=...)`
+  and one `User` per upstream identity, a web app and an MCP App: its
+  tools, and a `UI()` where the chat client shows the person a view.
 - **Web** — the web app alone.
 - **MCP** — the MCP App alone.
 
