@@ -88,16 +88,11 @@ and add why to its description in a few words, from the prompt's own:
   asked about in a chat ("a CRM I also want to ask about my week's
   follow-ups").
 
-**The recommended option goes first**, since the dialog pre-selects
-the first option: what a person gets by pressing Enter is what the
-build recommends. The other two follow in the order above. When
-nothing in the description leans either way, mark none: "On the web
-and in AI chat" stays first, as the default, unlabelled.
-
-A question that comes back with no choice (nobody there, or the
-dialog was not delivered) takes the recommended option, or "On the
-web and in AI chat" when none is marked: say so in one line. The answer goes
-into `AGENTS.md`'s Decisions when it is written.
+The recommended option goes first (the app skill's "Asking the
+User"); the other two follow in the order above. When nothing in the
+description leans either way, mark none: "On the web and in AI chat"
+stays first, as the default, unlabelled. The answer goes into
+`AGENTS.md`'s Decisions when it is written.
 
 Then state the plan in one sentence ("Building this with both front ends,
 a web app and an MCP App for AI chat clients.") and go back to the app
