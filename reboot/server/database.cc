@@ -12,6 +12,7 @@
 #include <ios>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <shared_mutex>
 #include <thread>
 #include <unordered_set>
@@ -384,6 +385,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
     allow_legacy_coordinator_prepared_ = allow;
   }
 
+  // Store actors the way persistence version 4 did, and mark the
+  // database as being of that version. This should only be used in
+  // tests.
+  void SetTestOnlyStoreActorsAsOfPersistenceVersion4();
+
   // Service methods.
   grpc::Status ColocatedRange(
       grpc::ServerContext* context,
@@ -479,6 +485,29 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // if necessary.
   expected<void> MaybeMigratePersistence();
   expected<void> MigratePersistence3To4();
+  expected<void> MigratePersistence4To5();
+  expected<void> MigratePersistence5To6();
+
+  // Returns whether `txn`, which is prepared and is of the actor
+  // that has `state_ref`, was prepared before persistence version 5:
+  // whether it puts the actor's state under `state:<state ref>`.
+  bool WasPreparedBeforePersistenceVersion5(
+      rocksdb::Transaction& txn,
+      const std::string& state_ref);
+
+  // Stores every actor whose state is still under `state:<state ref>`
+  // as an `Actor` under `actor:<state ref>`, replacing what is there,
+  // and deletes its `state:<state ref>` unless the actor has a
+  // transaction that was prepared before persistence version 5. Only
+  // for a migration, which nothing else runs alongside.
+  expected<void> MigrateActorStates();
+
+  // Does the same for the one actor that has `state_ref`, if its
+  // state is under `state:<state ref>`.
+  expected<void> MigrateActorState(
+      const std::string& state_type,
+      const std::string& state_ref);
+
 
   // Lookup a rocksdb column family handle for the specified state type,
   // or fail if no such column family exists for the state type.
@@ -526,6 +555,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   // Helper to check if an actor has an ongoing transaction.
   bool HasTransaction(const std::string& state_ref);
+
+  // Returns whether the actor that has `state_ref` has a transaction
+  // that was prepared before persistence version 5.
+  bool IsTxnPreparedBeforePersistenceVersion5(const std::string& state_ref);
 
   // Helper to validate a non-transactional store request.
   expected<void> ValidateNonTransactionalStore(const StoreRequest& request);
@@ -648,10 +681,20 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // `DeleteTransaction`, and `HasTransaction`.
   mutable Mutex txns_mutex_{"DatabaseService::txns_mutex_"};
 
+  // The state ref of each transaction that was prepared before
+  // persistence version 5 and has not committed or aborted since.
+  // Such a transaction puts its actor's state under
+  // `state:<state ref>` when it commits. Protected by `txns_mutex_`.
+  std::set<std::string> txns_prepared_before_persistence_version_5_;
+
   // The persistence version of the database. Only a migration
   // changes it, and migrating is done before the database is served
   // from.
   int persistence_version_;
+
+  // Whether actors are stored the way persistence version 4 stored
+  // them. This should only be true for tests.
+  bool test_only_store_actors_as_of_persistence_version_4_ = false;
 
   // Flag to control whether newly prepared coordinator transactions are allowed
   // to use the "legacy" format (i.e. not providing a coordinator state ref).
@@ -731,6 +774,9 @@ DatabaseService::DatabaseService(
   db_->GetAllPreparedTransactions(&txns);
   for (rocksdb::Transaction* txn : txns) {
     std::string state_ref = GetStateRefFromTransaction(*txn);
+    if (WasPreparedBeforePersistenceVersion5(*txn, state_ref)) {
+      txns_prepared_before_persistence_version_5_.insert(state_ref);
+    }
     // `try_emplace` forwards the trailing argument directly to
     // `Borrowable<LockableTransaction>`'s constructor, which in turn
     // forwards to `LockableTransaction(unique_ptr)`. Needed instead
@@ -802,15 +848,60 @@ rocksdb::WriteOptions DefaultWriteOptions(bool sync = true) {
 
 ////////////////////////////////////////////////////////////////////////
 
-#define STATE_KEY_PREFIX "state"
+// An actor is stored under `actor:<state ref>`, as a serialized
+// `Actor`.
+#define ACTOR_KEY_PREFIX "actor"
 
-std::string MakeActorStateKey(const std::string& state_ref) {
-  return fmt::format(STATE_KEY_PREFIX ":{}", state_ref);
+std::string MakeActorKey(const std::string& state_ref) {
+  return fmt::format(ACTOR_KEY_PREFIX ":{}", state_ref);
 }
 
-std::string_view GetStateRefFromActorStateKey(
+std::string_view GetStateRefFromActorKey(const std::string_view actor_key) {
+  return actor_key.substr(strlen(ACTOR_KEY_PREFIX) + 1);
+}
+
+// A colocated entry is stored under `state:<state ref>`, as the bytes
+// it was given.
+//
+// TODO: to colocate state types in general, and not only the entries
+// of a `SortedMap`, we will probably want what is colocated to be
+// stored as a complete `Actor` too, the way an actor is under
+// `actor:<state ref>`.
+#define COLOCATED_ENTRY_KEY_PREFIX "state"
+
+std::string MakeColocatedEntryKey(const std::string& state_ref) {
+  return fmt::format(COLOCATED_ENTRY_KEY_PREFIX ":{}", state_ref);
+}
+
+std::string_view GetStateRefFromColocatedEntryKey(
+    const std::string_view colocated_entry_key) {
+  return colocated_entry_key.substr(strlen(COLOCATED_ENTRY_KEY_PREFIX) + 1);
+}
+
+// Up to persistence version 4 the state of an actor was stored under
+// `state:<state ref>` too, as the state alone. We only use a version
+// suffix on what is old, and only what migrates uses it.
+#define ACTOR_STATE_KEY_PREFIX_V4 "state"
+
+std::string MakeActorStateKeyV4(const std::string& state_ref) {
+  return fmt::format(ACTOR_STATE_KEY_PREFIX_V4 ":{}", state_ref);
+}
+
+std::string_view GetStateRefFromActorStateKeyV4(
     const std::string_view actor_state_key) {
-  return actor_state_key.substr(strlen(STATE_KEY_PREFIX) + 1);
+  return actor_state_key.substr(strlen(ACTOR_STATE_KEY_PREFIX_V4) + 1);
+}
+
+// Returns whether what is stored under `state:<state ref>` for
+// `state_ref` is a colocated entry, where it is otherwise the state
+// of an actor from up to persistence version 4.
+//
+// A state ref is compound, i.e., has a `/`, only when it was made by
+// colocating, and so far everything that is colocated is an entry and
+// not an actor. An actor that is colocated would need to be told
+// apart some other way.
+bool IsColocatedEntry(const std::string_view state_ref) {
+  return state_ref.find('/') != std::string_view::npos;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -833,9 +924,10 @@ std::string MakeTaskKey(const Task::Status& status, const TaskId& task_id) {
 
 ////////////////////////////////////////////////////////////////////////
 
-#define CURRENT_PERSISTENCE_VERSION 4
+#define CURRENT_PERSISTENCE_VERSION 6
 
 constexpr std::string_view kPersistenceVersionKey = "persistence_version";
+
 constexpr std::string_view kServerInfoKey = "server_info";
 
 expected<void> WritePersistenceVersion(rocksdb::DB* db, int version) {
@@ -1455,6 +1547,11 @@ void DatabaseService::DeleteTransaction(
     auto iterator = txns_.find(state_ref);
 
     if (iterator != std::end(txns_) && iterator->second.get() == &**txn) {
+      // Only a database of persistence version 5 has a transaction
+      // that was prepared before it.
+      if (persistence_version_ == 5) {
+        txns_prepared_before_persistence_version_5_.erase(state_ref);
+      }
       return txns_.extract(iterator);
     }
 
@@ -1504,12 +1601,29 @@ expected<rocksdb::Status> DatabaseService::Apply(
       return make_unexpected(column_family_handle.error());
     }
 
-    const std::string& actor_state_key = MakeActorStateKey(actor.state_ref());
+    rocksdb::Status status;
 
-    rocksdb::Status status = batch.Put(
-        *column_family_handle,
-        rocksdb::Slice(actor_state_key),
-        rocksdb::Slice(actor.state()));
+    if (test_only_store_actors_as_of_persistence_version_4_) {
+      const std::string& state_key = MakeActorStateKeyV4(actor.state_ref());
+
+      status = batch.Put(
+          *column_family_handle,
+          rocksdb::Slice(state_key),
+          rocksdb::Slice(actor.state()));
+    } else {
+      const std::string& actor_key = MakeActorKey(actor.state_ref());
+
+      std::string serialized_actor;
+      if (!actor.SerializeToString(&serialized_actor)) {
+        return make_unexpected(
+            fmt::format("Failed to serialize actor '{}'", actor.state_ref()));
+      }
+
+      status = batch.Put(
+          *column_family_handle,
+          rocksdb::Slice(actor_key),
+          rocksdb::Slice(serialized_actor));
+    }
 
     if (!status.ok()) {
       // Since the goal is to make all these updates
@@ -1581,7 +1695,7 @@ expected<rocksdb::Status> DatabaseService::Apply(
         LookupOrCreateColumnFamilyHandle(cup.state_type());
 
     rocksdb::Status status;
-    const std::string& key = MakeActorStateKey(cup.key());
+    const std::string& key = MakeColocatedEntryKey(cup.key());
     if (cup.has_value()) {
       status = batch.Put(
           *column_family_handle,
@@ -1664,6 +1778,20 @@ expected<rocksdb::Status> DatabaseService::Apply(
 bool DatabaseService::HasTransaction(const std::string& state_ref) {
   std::lock_guard lock(txns_mutex_);
   return txns_.find(state_ref) != std::end(txns_);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+bool DatabaseService::IsTxnPreparedBeforePersistenceVersion5(
+    const std::string& state_ref) {
+  // Only a database of persistence version 5 has such a transaction,
+  // and we need no lock to say that another has none.
+  if (persistence_version_ != 5) {
+    return false;
+  }
+
+  std::lock_guard lock(txns_mutex_);
+  return txns_prepared_before_persistence_version_5_.count(state_ref) > 0;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1885,14 +2013,16 @@ grpc::Status DatabaseService::ColocatedRange(
   if (request->has_end()) {
     // `iterate_upper_bound` is exclusive, so we can just use the end key.
     end_key_str = fmt::format(
-        STATE_KEY_PREFIX ":{}{}{}",
+        COLOCATED_ENTRY_KEY_PREFIX ":{}{}{}",
         request->parent_state_ref(),
         '/',
         request->end());
   } else {
     // If uncapped, append '0', which sorts one higher than our separator ('/').
-    end_key_str =
-        fmt::format(STATE_KEY_PREFIX ":{}{}", request->parent_state_ref(), '0');
+    end_key_str = fmt::format(
+        COLOCATED_ENTRY_KEY_PREFIX ":{}{}",
+        request->parent_state_ref(),
+        '0');
   }
   rocksdb::Slice end_key = rocksdb::Slice(end_key_str);
   rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
@@ -1903,7 +2033,7 @@ grpc::Status DatabaseService::ColocatedRange(
     if (request->has_start()) {
       iterator->Seek(
           fmt::format(
-              STATE_KEY_PREFIX ":{}{}{}",
+              COLOCATED_ENTRY_KEY_PREFIX ":{}{}{}",
               request->parent_state_ref(),
               '/',
               request->start()));
@@ -1911,7 +2041,7 @@ grpc::Status DatabaseService::ColocatedRange(
       // If uncapped, append only a trailing forward slash.
       iterator->Seek(
           fmt::format(
-              STATE_KEY_PREFIX ":{}{}",
+              COLOCATED_ENTRY_KEY_PREFIX ":{}{}",
               request->parent_state_ref(),
               '/'));
     }
@@ -1919,7 +2049,7 @@ grpc::Status DatabaseService::ColocatedRange(
     for (int i = 0; i < request->limit() && iterator->Valid();
          iterator->Next(), i++) {
       auto key = iterator->key();
-      key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
+      key.remove_prefix(strlen(COLOCATED_ENTRY_KEY_PREFIX) + 1);
       *response->add_keys() = key.ToString();
       *response->add_values() = iterator->value().ToString();
     }
@@ -1990,7 +2120,7 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     // end of the scan range should be exclusive. To ensure the end key is
     // omitted from the scan, append a NUL byte.
     end_key_str = fmt::format(
-        STATE_KEY_PREFIX ":{}{}{}{}",
+        COLOCATED_ENTRY_KEY_PREFIX ":{}{}{}{}",
         request->parent_state_ref(),
         '/',
         request->end(),
@@ -1998,8 +2128,10 @@ grpc::Status DatabaseService::ColocatedReverseRange(
   } else {
     // If uncapped, append only a trailing forward slash. This is safe because
     // we don't allow the empty string to be a valid key.
-    end_key_str =
-        fmt::format(STATE_KEY_PREFIX ":{}{}", request->parent_state_ref(), '/');
+    end_key_str = fmt::format(
+        COLOCATED_ENTRY_KEY_PREFIX ":{}{}",
+        request->parent_state_ref(),
+        '/');
   }
 
   // Disable the prefix seek optimization, for two reasons:
@@ -2020,7 +2152,7 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     if (request->has_start()) {
       iterator->SeekForPrev(
           fmt::format(
-              STATE_KEY_PREFIX ":{}{}{}",
+              COLOCATED_ENTRY_KEY_PREFIX ":{}{}{}",
               request->parent_state_ref(),
               '/',
               request->start()));
@@ -2030,7 +2162,7 @@ grpc::Status DatabaseService::ColocatedReverseRange(
       // optimization in RocksDB.
       iterator->SeekForPrev(
           fmt::format(
-              STATE_KEY_PREFIX ":{}{}",
+              COLOCATED_ENTRY_KEY_PREFIX ":{}{}",
               request->parent_state_ref(),
               '0'));
     }
@@ -2038,7 +2170,7 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     for (int i = 0; i < request->limit() && iterator->Valid();
          iterator->Prev(), i++) {
       auto key = iterator->key();
-      key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
+      key.remove_prefix(strlen(COLOCATED_ENTRY_KEY_PREFIX) + 1);
       *response->add_keys() = key.ToString();
       *response->add_values() = iterator->value().ToString();
     }
@@ -2137,7 +2269,7 @@ grpc::Status DatabaseService::Find(
   if (request->has_start()) {
     // Forward pagination from a specific key.
     const auto& start_key = request->start();
-    std::string start_key_ref = MakeActorStateKey(start_key.state_ref());
+    std::string start_key_ref = MakeActorKey(start_key.state_ref());
 
     // Start at the specified key (inclusive).
     iterator->Seek(start_key_ref);
@@ -2178,13 +2310,13 @@ grpc::Status DatabaseService::Find(
         }
       }
       std::string_view key_view = iterator->key().ToStringView();
-      const std::string prefix = STATE_KEY_PREFIX ":";
+      const std::string prefix = ACTOR_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
           || key_view.substr(0, prefix.size()) != prefix) {
-        // We've reached a key that doesn't belong to actor state.
+        // We've reached a key that doesn't belong to an actor.
         break;
       }
-      std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
+      std::string_view state_ref = GetStateRefFromActorKey(key_view);
       // Only include state refs that belong to the requested shards.
       if (BelongsToShard(request->state_type(), state_ref, shard_ids)) {
         response->add_state_refs(std::string(state_ref));
@@ -2195,7 +2327,7 @@ grpc::Status DatabaseService::Find(
   } else if (request->has_until()) {
     // Backward pagination before a specific key.
     const auto& until_key = request->until();
-    std::string until_key_ref = MakeActorStateKey(until_key.state_ref());
+    std::string until_key_ref = MakeActorKey(until_key.state_ref());
 
     // End at the specified key (inclusive).
     iterator->SeekForPrev(until_key_ref);
@@ -2238,13 +2370,13 @@ grpc::Status DatabaseService::Find(
         }
       }
       std::string_view key_view = iterator->key().ToStringView();
-      const std::string prefix = STATE_KEY_PREFIX ":";
+      const std::string prefix = ACTOR_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
           || key_view.substr(0, prefix.size()) != prefix) {
-        // We've reached a key that doesn't belong to actor state.
+        // We've reached a key that doesn't belong to an actor.
         break;
       }
-      std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
+      std::string_view state_ref = GetStateRefFromActorKey(key_view);
       // Only include state refs that belong to the requested shards.
       if (BelongsToShard(request->state_type(), state_ref, shard_ids)) {
         state_refs.push_back(std::string(state_ref));
@@ -2303,7 +2435,7 @@ grpc::Status DatabaseService::Load(
 
     actors_to_load.push_back(&actor);
     column_families.push_back(*column_family_handle);
-    keys.push_back(MakeActorStateKey(actor.state_ref()));
+    keys.push_back(MakeActorKey(actor.state_ref()));
   }
 
   // Now add all the tasks. We'll fetch the whole Task object, so we don't
@@ -2359,8 +2491,7 @@ grpc::Status DatabaseService::Load(
       // of actors we were trying to load.
       if (i < actors_to_load.size()) {
         Actor& actor = *response->add_actors();
-        actor.CopyFrom(*actors_to_load[i]);
-        actor.set_state(values[i]);
+        CHECK(actor.ParseFromString(values[i]));
       } else {
         Task& task = *response->add_tasks();
         // TODO: We are currently deserializing the Task into a proto
@@ -2698,6 +2829,17 @@ grpc::Status DatabaseService::TransactionParticipantCommit(
   }();
 
   if (status.ok()) {
+    if (IsTxnPreparedBeforePersistenceVersion5(request->state_ref())) {
+      // The transaction has just put its actor's state under
+      // `state:<state ref>`. We migrate that while the
+      // transaction is still what keeps anything else from storing
+      // the actor. The transaction has committed, so there is no
+      // failing this call if migrating fails; restarting migrates.
+      expected<void> migrate =
+          MigrateActorState(request->state_type(), request->state_ref());
+      CHECK(migrate.has_value()) << migrate.error();
+    }
+
     // TODO(benh): do we want to keep anything around about the
     // transaction in case it gets used again incorrectly?
     DeleteTransaction(std::move(txn));
@@ -2744,6 +2886,17 @@ grpc::Status DatabaseService::TransactionParticipantAbort(
     return grpc::Status(
         grpc::UNKNOWN,
         fmt::format("Failed to abort transaction: {}", status.ToString()));
+  }
+
+  if (IsTxnPreparedBeforePersistenceVersion5(request->state_ref())) {
+    // The `state:<state ref>` of the transaction's actor was left
+    // for as long as the transaction was prepared. It has what the
+    // actor had before the transaction, and nothing could store the
+    // actor since, so migrating it now changes nothing but removes
+    // it, before something does store the actor.
+    expected<void> migrate =
+        MigrateActorState(request->state_type(), request->state_ref());
+    CHECK(migrate.has_value()) << migrate.error();
   }
 
   // NOTE: we need to delete the transaction participant
@@ -3338,9 +3491,27 @@ grpc::Status DatabaseService::_Export(
     ExportItem item;
     std::string state_ref;
     size_t estimated_item_bytes = 0;
-    if (key_type_prefix == STATE_KEY_PREFIX) {
+    if (key_type_prefix == ACTOR_KEY_PREFIX) {
+      auto* actor = item.mutable_actor();
+      CHECK(actor->ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+      state_ref = actor->state_ref();
+      estimated_item_bytes = EstimateActorSize(*actor);
+    } else if (key_type_prefix == COLOCATED_ENTRY_KEY_PREFIX) {
       state_ref = std::string(
-          GetStateRefFromActorStateKey(iterator->key().ToStringView()));
+          GetStateRefFromColocatedEntryKey(iterator->key().ToStringView()));
+
+      if (!IsColocatedEntry(state_ref)) {
+        // This is the state of an actor from up to persistence
+        // version 4, left for a transaction that was prepared before
+        // persistence version 5. The actor is exported from what is
+        // under its `actor:<state ref>`.
+        continue;
+      }
+
+      // A colocated entry is exported as an actor whose state is the
+      // entry's bytes.
       auto* actor = item.mutable_actor();
       actor->set_state_type(request.state_type());
       actor->set_state_ref(state_ref);
@@ -4337,6 +4508,248 @@ expected<void> DatabaseService::MigratePersistence3To4() {
   return SetPersistenceVersion(4);
 }
 
+bool DatabaseService::WasPreparedBeforePersistenceVersion5(
+    rocksdb::Transaction& txn,
+    const std::string& state_ref) {
+  const std::string& state_key = MakeActorStateKeyV4(state_ref);
+
+  rocksdb::WriteBatchWithIndex* batch = txn.GetWriteBatch();
+
+  std::shared_lock lock(column_family_handles_mutex_);
+
+  // The transaction does not say which state type its actor is of, so
+  // we look in every one.
+  for (rocksdb::ColumnFamilyHandle* column_family_handle :
+       column_family_handles_) {
+    std::unique_ptr<rocksdb::WBWIIterator> iterator(
+        CHECK_NOTNULL(batch->NewIterator(column_family_handle)));
+
+    iterator->Seek(rocksdb::Slice(state_key));
+
+    if (iterator->Valid()
+        && iterator->Entry().key.ToStringView() == state_key) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Puts into `batch` what stores the actor that has `state_ref` and
+// `state` as an `Actor` under `actor:<state ref>`, and, with
+// `delete_state`, what deletes its `state:<state ref>`.
+void MigrateActorStateInBatch(
+    rocksdb::WriteBatch& batch,
+    rocksdb::ColumnFamilyHandle* column_family_handle,
+    const std::string& state_ref,
+    const std::string& state,
+    bool delete_state) {
+  Actor actor;
+  actor.set_state_type(column_family_handle->GetName());
+  actor.set_state_ref(state_ref);
+  actor.set_state(state);
+
+  std::string serialized_actor;
+  CHECK(actor.SerializeToString(&serialized_actor));
+
+  const std::string& actor_key = MakeActorKey(state_ref);
+
+  rocksdb::Status status = batch.Put(
+      column_family_handle,
+      rocksdb::Slice(actor_key),
+      rocksdb::Slice(serialized_actor));
+  CHECK(status.ok()) << status.ToString();
+
+  if (delete_state) {
+    const std::string& state_key = MakeActorStateKeyV4(state_ref);
+
+    status = batch.Delete(column_family_handle, rocksdb::Slice(state_key));
+    CHECK(status.ok()) << status.ToString();
+  }
+}
+
+expected<void> DatabaseService::MigrateActorStates() {
+  // How large a write batch gets before it is written.
+  static constexpr size_t kMaxBatchBytes = 32 * 1024 * 1024;
+
+  const std::string prefix = ACTOR_STATE_KEY_PREFIX_V4 ":";
+
+  std::shared_lock lock(column_family_handles_mutex_);
+
+  for (rocksdb::ColumnFamilyHandle* column_family_handle :
+       column_family_handles_) {
+    if (column_family_handle->GetName() == "default") {
+      continue;
+    }
+
+    // The iterator sees the column family as it was when the iterator
+    // was created, so what is written below does not disturb it.
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
+
+    rocksdb::WriteBatch batch;
+    size_t actors = 0;
+
+    iterator->Seek(rocksdb::Slice(prefix));
+
+    while (iterator->Valid()) {
+      std::string_view key = iterator->key().ToStringView();
+      if (key.substr(0, prefix.size()) != prefix) {
+        break;
+      }
+
+      std::string_view state_ref = GetStateRefFromActorStateKeyV4(key);
+
+      // A colocated entry stays as it is. Every entry colocated with
+      // the same state shares the state ref up to the first `/`, and
+      // `0` is the character after `/`, so this seeks past them all.
+      if (IsColocatedEntry(state_ref)) {
+        const std::string after_colocated_entries = fmt::format(
+            "{}{}0",
+            prefix,
+            state_ref.substr(0, state_ref.find('/')));
+        iterator->Seek(rocksdb::Slice(after_colocated_entries));
+        continue;
+      }
+
+      const std::string actor_state_ref = std::string(state_ref);
+
+      // A transaction that was prepared before persistence version 5
+      // has already written, though not committed, what it puts under
+      // `state:<state ref>`. Deleting that key now would be a later
+      // write than the transaction's, and so would hide what it
+      // commits. The `state:<state ref>` of its actor is therefore
+      // left until the transaction has committed or aborted, which
+      // migrates the actor.
+      const bool has_txn_prepared_before_persistence_version_5 =
+          txns_prepared_before_persistence_version_5_.count(actor_state_ref)
+          > 0;
+
+      MigrateActorStateInBatch(
+          batch,
+          column_family_handle,
+          actor_state_ref,
+          iterator->value().ToString(),
+          /* delete_state = */
+          !has_txn_prepared_before_persistence_version_5);
+      actors++;
+
+      if (batch.GetDataSize() >= kMaxBatchBytes) {
+        rocksdb::Status status = db_->Write(DefaultWriteOptions(), &batch);
+        if (!status.ok()) {
+          return make_unexpected(
+              fmt::format(
+                  "Failed to migrate actor state(s): {}",
+                  status.ToString()));
+        }
+        batch.Clear();
+      }
+
+      iterator->Next();
+    }
+
+    if (!iterator->status().ok()) {
+      return make_unexpected(
+          fmt::format(
+              "Failed to migrate actor state(s): {}",
+              iterator->status().ToString()));
+    }
+
+    if (batch.Count() > 0) {
+      rocksdb::Status status = db_->Write(DefaultWriteOptions(), &batch);
+      if (!status.ok()) {
+        return make_unexpected(
+            fmt::format(
+                "Failed to migrate actor state(s): {}",
+                status.ToString()));
+      }
+    }
+
+    REBOOT_DATABASE_LOG(1) << "Migrated " << actors << " actor state(s) of '"
+                           << column_family_handle->GetName() << "'";
+  }
+
+  return {};
+}
+
+expected<void> DatabaseService::MigrateActorState(
+    const std::string& state_type,
+    const std::string& state_ref) {
+  expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
+      LookupColumnFamilyHandle(state_type);
+  if (!column_family_handle.has_value()) {
+    return make_unexpected(
+        fmt::format(
+            "Failed to migrate actor state: {}",
+            column_family_handle.error()));
+  }
+
+  const std::string& state_key = MakeActorStateKeyV4(state_ref);
+  std::string state;
+  rocksdb::Status status = db_->Get(
+      rocksdb::ReadOptions(),
+      *column_family_handle,
+      rocksdb::Slice(state_key),
+      &state);
+
+  if (status.IsNotFound()) {
+    return {};
+  } else if (!status.ok()) {
+    return make_unexpected(
+        fmt::format("Failed to migrate actor state: {}", status.ToString()));
+  }
+
+  rocksdb::WriteBatch batch;
+  MigrateActorStateInBatch(
+      batch,
+      *column_family_handle,
+      state_ref,
+      state,
+      /* delete_state = */ true);
+
+  status = db_->Write(DefaultWriteOptions(), &batch);
+  if (!status.ok()) {
+    return make_unexpected(
+        fmt::format("Failed to migrate actor state: {}", status.ToString()));
+  }
+
+  return {};
+}
+
+// Stores each actor as an `Actor` under `actor:<state ref>`, where
+// its state alone was stored under `state:<state ref>`.
+expected<void> DatabaseService::MigratePersistence4To5() {
+  expected<void> migrate = MigrateActorStates();
+  if (!migrate.has_value()) {
+    return migrate;
+  }
+
+  // Finally, update the persistence version.
+  return SetPersistenceVersion(5);
+}
+
+// Persistence version 5 stores actors as version 6 does, but may have
+// a transaction that was prepared before it. Such a transaction puts
+// its actor's state under `state:<state ref>` when it commits.
+// Committing it migrates its actor, but we may stop between the two.
+// So for as long as there is such a transaction when the database is
+// opened, we stay at persistence version 5, and migrate again the
+// next time it is opened.
+expected<void> DatabaseService::MigratePersistence5To6() {
+  expected<void> migrate = MigrateActorStates();
+  if (!migrate.has_value()) {
+    return migrate;
+  }
+
+  if (!txns_prepared_before_persistence_version_5_.empty()) {
+    return {};
+  }
+
+  // Finally, update the persistence version.
+  return SetPersistenceVersion(6);
+}
+
 expected<void> DatabaseService::SetPersistenceVersion(int version) {
   expected<void> write_persistence_version =
       WritePersistenceVersion(db_.get(), version);
@@ -4369,6 +4782,8 @@ expected<void> DatabaseService::MaybeMigratePersistence() {
     expected<void> migrate;
     switch (version) {
       case 3: migrate = MigratePersistence3To4(); break;
+      case 4: migrate = MigratePersistence4To5(); break;
+      case 5: migrate = MigratePersistence5To6(); break;
       default: LOG(FATAL) << "Unreachable";
     }
     if (!migrate.has_value()) {
@@ -4735,8 +5150,8 @@ grpc::Status DatabaseService::Preload(
 
   if (column_family_handle.has_value()) {
     if (!request->skip_state()) {
-      // Fetch the state for this `state_ref` if it exists.
-      const std::string& key = MakeActorStateKey(request->state_ref());
+      // Fetch the actor for this `state_ref` if it exists.
+      const std::string& key = MakeActorKey(request->state_ref());
       std::string value;
       rocksdb::Status status = db_->Get(
           rocksdb::ReadOptions(),
@@ -4745,10 +5160,7 @@ grpc::Status DatabaseService::Preload(
           &value);
 
       if (status.ok()) {
-        Actor* actor = response.mutable_actor();
-        actor->set_state_type(request->state_type());
-        actor->set_state_ref(request->state_ref());
-        actor->set_state(value);
+        CHECK(response.mutable_actor()->ParseFromString(value));
       } else if (!status.IsNotFound()) {
         return grpc::Status(
             grpc::UNKNOWN,
@@ -4850,6 +5262,19 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
 }
 
 ////////////////////////////////////////////////////////////////////////
+
+void DatabaseService::SetTestOnlyStoreActorsAsOfPersistenceVersion4() {
+  test_only_store_actors_as_of_persistence_version_4_ = true;
+  expected<void> set_persistence_version = SetPersistenceVersion(4);
+  CHECK(set_persistence_version.has_value()) << set_persistence_version.error();
+}
+
+void TestOnly_StoreActorsAsOfPersistenceVersion4(grpc::Service* service) {
+  auto* database_service = dynamic_cast<DatabaseService*>(service);
+  if (database_service) {
+    database_service->SetTestOnlyStoreActorsAsOfPersistenceVersion4();
+  }
+}
 
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
   auto* sidecar_service = dynamic_cast<DatabaseService*>(service);

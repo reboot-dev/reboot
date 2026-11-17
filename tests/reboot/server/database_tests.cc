@@ -2212,6 +2212,184 @@ TEST_F(TwoShardDatabaseTest, ColocatedReverseRangeBasic) {
 std::string STATE_TYPE_NAME = "MyCoolStateType";
 std::string STATE_TYPE_TAG = "ANYSWoW0wtzIdA";
 
+TEST_F(TwoShardDatabaseTest, MigratesActorStatesOfPersistenceVersion4) {
+  // Persistence version 4 stored the state of an actor under
+  // `state:<state ref>`, where a colocated entry is stored too.
+  TestOnly_StoreActorsAsOfPersistenceVersion4(server->TestOnly_GetService());
+
+  const std::string state_type = "Greeter";
+  const std::string state_ref_1 = make_state_ref("test_1");
+  const std::string state_ref_2 = make_state_ref("test_2");
+
+  v1alpha1::Actor actor_1;
+  actor_1.set_state_type(state_type);
+  actor_1.set_state_ref(state_ref_1);
+  actor_1.set_state("hello");
+
+  v1alpha1::Actor actor_2;
+  actor_2.set_state_type(state_type);
+  actor_2.set_state_ref(state_ref_2);
+  actor_2.set_state("world");
+
+  store({actor_1, actor_2}, {});
+
+  colocated_store(std::string(state_type), state_ref_1 + "/entry", "colocated");
+
+  const auto colocated = std::vector{
+      std::make_tuple(state_ref_1 + "/entry", std::string("colocated"))};
+
+  // The first of two restarts migrates, and the second finds
+  // everything already migrated.
+  for (int restart = 0; restart < 2; restart++) {
+    restart_server();
+    recover_all_shards();
+
+    std::optional<std::string> state_1 = load(state_type, state_ref_1);
+    ASSERT_TRUE(state_1.has_value());
+    EXPECT_EQ("hello", state_1.value());
+
+    std::optional<std::string> state_2 = load(state_type, state_ref_2);
+    ASSERT_TRUE(state_2.has_value());
+    EXPECT_EQ("world", state_2.value());
+
+    EXPECT_EQ(
+        colocated_range(
+            std::string(state_type),
+            std::string(state_ref_1),
+            "",
+            "",
+            128),
+        colocated);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(
+    TwoShardDatabaseTest,
+    MigratesActorStateOfTransactionPreparedInPersistenceVersion4) {
+  // A transaction that was prepared in persistence version 4 puts its
+  // actor's state under `state:<state ref>` when it commits, which is
+  // after the migration.
+  TestOnly_StoreActorsAsOfPersistenceVersion4(server->TestOnly_GetService());
+
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  v1alpha1::Actor actor;
+  actor.set_state_type(state_type);
+  actor.set_state_ref(state_ref);
+  actor.set_state("before");
+
+  store({actor}, {});
+
+  v1alpha1::Transaction transaction;
+  transaction.set_state_type(state_type);
+  transaction.set_state_ref(state_ref);
+  transaction.add_transaction_ids(UUID::random().toBytes());
+  transaction.set_coordinator_state_type("some.Coordinator");
+  transaction.set_coordinator_state_ref(make_state_ref("some_actor_1"));
+
+  actor.set_state("after");
+
+  store({actor}, {}, std::move(transaction));
+
+  transaction_participant_prepare(
+      stout::copy(state_type),
+      stout::copy(state_ref));
+
+  restart_server();
+  recover_all_shards();
+
+  // The migration has stored what was committed.
+  std::optional<std::string> state = load(state_type, state_ref);
+  ASSERT_TRUE(state.has_value());
+  EXPECT_EQ("before", state.value());
+
+  transaction_participant_commit(
+      stout::copy(state_type),
+      stout::copy(state_ref));
+
+  state = load(state_type, state_ref);
+  ASSERT_TRUE(state.has_value());
+  EXPECT_EQ("after", state.value());
+
+  // And it is still what is stored after each of two more restarts:
+  // the first migrates again, now that the transaction has committed,
+  // and moves to persistence version 6, and the second has nothing to
+  // migrate.
+  for (int restart = 0; restart < 2; restart++) {
+    restart_server();
+    recover_all_shards();
+
+    state = load(state_type, state_ref);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ("after", state.value());
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(
+    TwoShardDatabaseTest,
+    MigratesActorStateOfTransactionPreparedInPersistenceVersion4ThatAborts) {
+  // The `state:<state ref>` of an actor is left for as long as a
+  // transaction that was prepared in persistence version 4 is, and
+  // must not replace what is stored for the actor after it aborts.
+  TestOnly_StoreActorsAsOfPersistenceVersion4(server->TestOnly_GetService());
+
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  v1alpha1::Actor actor;
+  actor.set_state_type(state_type);
+  actor.set_state_ref(state_ref);
+  actor.set_state("before");
+
+  store({actor}, {});
+
+  v1alpha1::Transaction transaction;
+  transaction.set_state_type(state_type);
+  transaction.set_state_ref(state_ref);
+  transaction.add_transaction_ids(UUID::random().toBytes());
+  transaction.set_coordinator_state_type("some.Coordinator");
+  transaction.set_coordinator_state_ref(make_state_ref("some_actor_1"));
+
+  actor.set_state("aborted");
+
+  store({actor}, {}, std::move(transaction));
+
+  transaction_participant_prepare(
+      stout::copy(state_type),
+      stout::copy(state_ref));
+
+  restart_server();
+  recover_all_shards();
+
+  transaction_participant_abort(
+      stout::copy(state_type),
+      stout::copy(state_ref));
+
+  std::optional<std::string> state = load(state_type, state_ref);
+  ASSERT_TRUE(state.has_value());
+  EXPECT_EQ("before", state.value());
+
+  actor.set_state("after");
+
+  store({actor}, {});
+
+  for (int restart = 0; restart < 2; restart++) {
+    restart_server();
+    recover_all_shards();
+
+    state = load(state_type, state_ref);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ("after", state.value());
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, Find) {
   // Store some actors with different IDs to test `Find`.
   auto make_state_ref = [&](const std::string& id) {
