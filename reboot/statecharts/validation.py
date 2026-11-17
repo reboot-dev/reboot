@@ -692,131 +692,39 @@ def _schedules(
             yield entry.schedule
 
 
-@overload
-def _events_of_on_transitions(
-    *, statechart: statechart_pb2.Statechart
-) -> list[str]:
-    ...
+def _injects(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Inject]:
+    """Yields every `inject` of `statechart` and of every state within
+    it: each one that is an `entry`, an `exit`, or an action of an
+    `on` or a `when` transition."""
+    for entry in _entries(statechart):
+        if entry.WhichOneof("entry") == "inject":
+            yield entry.inject
+
+    for exit in _exits(statechart):
+        if exit.WhichOneof("exit") == "inject":
+            yield exit.inject
+
+    for on in _on_transitions(statechart):
+        for action in on.actions:
+            if action.WhichOneof("action") == "inject":
+                yield action.inject
+
+    for when in _when_transitions(statechart):
+        for action in when.actions:
+            if action.WhichOneof("action") == "inject":
+                yield action.inject
 
 
-@overload
-def _events_of_on_transitions(
-    *, state: statechart_pb2.Statechart.State
-) -> list[str]:
-    ...
-
-
-def _events_of_on_transitions(
-    *,
-    statechart: Optional[statechart_pb2.Statechart] = None,
-    state: Optional[statechart_pb2.Statechart.State] = None,
-) -> list[str]:
-    """Returns the event of every `on` transition of `statechart`, or
-    of `state`, and of every state within it. An event is returned
-    once for each `on` transition it is the event of. An `on` that has
-    no event has none."""
-    if statechart is not None:
-        transitions = statechart.transitions
-        substates = statechart.states
-    else:
-        assert state is not None
-        transitions = state.transitions
-        substates = state.states
-
-    events: list[str] = []
-
-    for transition in transitions:
-        if transition.WhichOneof("transition") == "on":
-            events.append(transition.on.event)
-
-    for substate in substates:
-        events.extend(_events_of_on_transitions(state=substate))
-
-    # An `on` that has no event has an empty `event` field, which was
-    # collected above as the empty string. That is not an event, so it
-    # is left out.
-    return [event for event in events if event != ""]
-
-
-@overload
-def _injected_and_enqueued_events(
-    *, statechart: statechart_pb2.Statechart
-) -> list[str]:
-    ...
-
-
-@overload
-def _injected_and_enqueued_events(
-    *, state: statechart_pb2.Statechart.State
-) -> list[str]:
-    ...
-
-
-def _injected_and_enqueued_events(
-    *,
-    statechart: Optional[statechart_pb2.Statechart] = None,
-    state: Optional[statechart_pb2.Statechart.State] = None,
-) -> list[str]:
-    """Returns every event that `statechart`, or `state`, and every
-    state within it, injects or enqueues: the event of an `inject` and
-    of a `timer`, and the events that a `call` may inject and a
-    `schedule` may enqueue. An event is returned once for each time it
-    is injected or enqueued. An `inject` or a `timer` that has no
-    event injects or enqueues none."""
-    if statechart is not None:
-        entries = statechart.entry
-        exits = statechart.exit
-        transitions = statechart.transitions
-        substates = statechart.states
-    else:
-        assert state is not None
-        entries = state.entry
-        exits = state.exit
-        transitions = state.transitions
-        substates = state.states
-
-    events: list[str] = []
-
-    for entry in entries:
-        match entry.WhichOneof("entry"):
-            case "call":
-                events.extend(entry.call.inline.injects)
-            case "inject":
-                events.append(entry.inject.event)
-            case "schedule":
-                events.extend(entry.schedule.inline.enqueues)
-            case "timer":
-                events.append(entry.timer.enqueue.event)
-
-    for exit in exits:
-        match exit.WhichOneof("exit"):
-            case "call":
-                events.extend(exit.call.inline.injects)
-            case "inject":
-                events.append(exit.inject.event)
-
-    for transition in transitions:
-        match transition.WhichOneof("transition"):
-            case "on":
-                actions = transition.on.actions
-            case "when":
-                actions = transition.when.actions
-            case _:
-                continue
-        for action in actions:
-            match action.WhichOneof("action"):
-                case "call":
-                    events.extend(action.call.inline.injects)
-                case "inject":
-                    events.append(action.inject.event)
-
-    for substate in substates:
-        events.extend(_injected_and_enqueued_events(state=substate))
-
-    # An `inject` or a `timer` that has no event has an empty `event`
-    # field, which was collected above as the empty string. That is
-    # not an event, so it is left out.
-    return [event for event in events if event != ""]
+def _timers(
+    statechart: statechart_pb2.Statechart,
+) -> Iterator[statechart_pb2.Statechart.Timer]:
+    """Yields every `timer` of `statechart` and of every state within
+    it."""
+    for entry in _entries(statechart):
+        if entry.WhichOneof("entry") == "timer":
+            yield entry.timer
 
 
 def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
@@ -827,37 +735,42 @@ def _check_events(statechart: statechart_pb2.Statechart) -> list[str]:
     transition."""
     problems: list[str] = []
 
-    events_of_on_transitions = _events_of_on_transitions(statechart=statechart)
-    injected_and_enqueued_events = _injected_and_enqueued_events(
-        statechart=statechart
-    )
+    events_of_on_transitions = {on.event for on in _on_transitions(statechart)}
 
-    # An event that is mentioned more than once is a problem once.
-    unlisted_events: list[str] = []
-    for event in events_of_on_transitions + injected_and_enqueued_events:
-        if event not in statechart.events and event not in unlisted_events:
-            unlisted_events.append(event)
+    # The event of each `inject`, and each event that a `call` may
+    # inject.
+    injected_events = {inject.event for inject in _injects(statechart)}
+    for call in _calls(statechart):
+        injected_events.update(call.inline.injects)
 
-    for event in unlisted_events:
+    # The event of each `timer`, and each event that a `schedule` may
+    # enqueue.
+    enqueued_events = {timer.enqueue.event for timer in _timers(statechart)}
+    for schedule in _schedules(statechart):
+        enqueued_events.update(schedule.inline.enqueues)
+
+    injected_and_enqueued_events = injected_events | enqueued_events
+
+    # An `on`, an `inject` or a `timer` that has no event has an empty
+    # `event` field, which was collected above as the empty string.
+    # That is not an event, so it is left out.
+    events_of_on_transitions.discard("")
+    injected_and_enqueued_events.discard("")
+
+    mentioned_events = events_of_on_transitions | injected_and_enqueued_events
+
+    for event in sorted(mentioned_events - set(statechart.events)):
         problems.append(
             f"the statechart mentions the event `{event}`, which is not "
-            "one of its `events`"
+            "one of its `events`",
         )
 
-    # An event that is injected or enqueued more than once is a problem
-    # once.
-    events_without_on_transition: list[str] = []
-    for event in injected_and_enqueued_events:
-        if (
-            event not in events_of_on_transitions and
-            event not in events_without_on_transition
-        ):
-            events_without_on_transition.append(event)
-
-    for event in events_without_on_transition:
+    for event in sorted(
+        injected_and_enqueued_events - events_of_on_transitions,
+    ):
         problems.append(
             f"the statechart injects or enqueues the event `{event}`, but "
-            "has no `on` transition for it"
+            "has no `on` transition for it",
         )
 
     return problems
