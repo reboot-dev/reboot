@@ -67,6 +67,9 @@ Options:
 **Mark one "(Recommended)" only when the description leans to it**,
 and add why to its description in a few words, from the prompt's own:
 
+- **On the web and in AI chat** when it is both: worked in on a
+  screen and asked about in a chat ("a CRM I also want to ask about
+  my week's follow-ups").
 - **On the web** when the app is mostly looked at or worked in on a
   screen: a board, a calendar, a map, a dashboard, a page for the
   public, a form a stranger fills in ("a booking page for my
@@ -74,14 +77,10 @@ and add why to its description in a few words, from the prompt's own:
 - **In AI chat** when the app is mostly asked and told things in a
   conversation: a lookup, a log kept by talking, actions with no
   page to work in ("ask Claude what's in my pantry").
-- **On the web and in AI chat** when it is both: worked in on a screen and
-  asked about in a chat ("a CRM I also want to ask about my week's
-  follow-ups").
 
 The recommended option goes first (the app skill's "Asking the
-User"); the other two follow in the order above. When nothing in the
-description leans either way, mark none: "On the web and in AI chat"
-stays first, as the default, unlabelled. The answer goes into
+User"); the others keep the order above. When nothing in the
+description leans either way, mark none. The answer goes into
 `AGENTS.md`'s Decisions when it is written.
 
 Then state the plan in one sentence ("Building this with both front ends,
