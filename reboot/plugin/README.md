@@ -24,6 +24,17 @@ plugin-namespaced name (e.g. `/reboot:mcp-app`); Codex selects a
 skill automatically from its `description`. Both read the same
 `SKILL.md` files and `references/`.
 
+## How references are read
+
+Each `SKILL.md` is short and links its `references/`, saying when to
+read each one; the agent opens a reference when its step needs it.
+Nothing makes it open one. An agent that decides it already has
+enough context can skip a reference, and with it a rule written only
+there. Every reference is one link from a `SKILL.md`, never behind a
+second link, which makes a skip less likely but does not prevent it.
+A rule that must not be missed is stated in the `SKILL.md` at the step
+that needs it, not only in a reference.
+
 ## Installation
 
 The quickest path installs for whichever of Claude Code / Codex you
