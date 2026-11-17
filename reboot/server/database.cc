@@ -469,7 +469,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       std::shared_ptr<rocksdb::Statistics> statistics,
       std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
       std::unique_ptr<rocksdb::TransactionDB>&& db,
-      const ServerInfo& server_info);
+      const ServerInfo& server_info,
+      int persistence_version);
+
+  // Writes `version` as the persistence version of the database.
+  expected<void> SetPersistenceVersion(int version);
 
   // Migrate from previous persistence versions to the current version,
   // if necessary.
@@ -644,6 +648,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // `DeleteTransaction`, and `HasTransaction`.
   mutable Mutex txns_mutex_{"DatabaseService::txns_mutex_"};
 
+  // The persistence version of the database. Only a migration
+  // changes it, and migrating is done before the database is served
+  // from.
+  int persistence_version_;
+
   // Flag to control whether newly prepared coordinator transactions are allowed
   // to use the "legacy" format (i.e. not providing a coordinator state ref).
   // This should only be true for tests.
@@ -681,7 +690,8 @@ DatabaseService::DatabaseService(
     std::shared_ptr<rocksdb::Statistics> statistics,
     std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
     std::unique_ptr<rocksdb::TransactionDB>&& db,
-    const ServerInfo& server_info)
+    const ServerInfo& server_info,
+    int persistence_version)
   : state_directory_(state_directory),
     // The application metadata is serialized proto bytes stored in a file,
     // not in RocksDB. This is for backwards compatibility with previous
@@ -691,7 +701,8 @@ DatabaseService::DatabaseService(
     column_family_handles_(std::move(column_family_handles)),
     db_(std::move(db)),
     server_info_(server_info),
-    shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY) {
+    shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY),
+    persistence_version_(persistence_version) {
   CHECK(server_info_.shard_infos_size() > 0)
       << "Server info must contain at least one shard.";
 
@@ -850,6 +861,37 @@ expected<void> WritePersistenceVersion(rocksdb::DB* db, int version) {
   }
 
   return {};
+}
+
+// Returns the persistence version of `db`. A database from before
+// there were persistence versions has none stored, and is of version
+// 0.
+expected<int> ReadPersistenceVersion(rocksdb::DB* db) {
+  std::string serialized_version_get;
+  rocksdb::Status status = db->Get(
+      rocksdb::ReadOptions(),
+      kPersistenceVersionKey,
+      &serialized_version_get);
+
+  if (status.IsNotFound()) {
+    return 0;
+  } else if (!status.ok()) {
+    return make_unexpected(
+        fmt::format(
+            "Failed to read persistence version: {}",
+            status.ToString()));
+  }
+
+  PersistenceVersion pv;
+  CHECK(pv.ParseFromString(serialized_version_get));
+
+  if (pv.version() < 1) {
+    // Version 0 did not support a version tag, so this is unexpected.
+    return make_unexpected(
+        fmt::format("Corrupted persistence version: {}", pv.version()));
+  }
+
+  return pv.version();
 }
 
 expected<void> WriteServerInfo(rocksdb::DB* db, const ServerInfo& server_info) {
@@ -1789,12 +1831,22 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
   // debugging when starting a sidecar, i.e., it will give a sense of
   // what is stored.
 
+  expected<int> persistence_version = ReadPersistenceVersion(txn_db);
+  if (!persistence_version.has_value()) {
+    return make_unexpected(
+        fmt::format(
+            "Could not read persistence version of '{}': {}",
+            state_directory.string(),
+            persistence_version.error()));
+  }
+
   std::unique_ptr<DatabaseService> service(new DatabaseService(
       state_directory,
       statistics,
       std::move(column_family_handles),
       std::unique_ptr<rocksdb::TransactionDB>(txn_db),
-      server_info));
+      server_info,
+      *persistence_version));
 
   // Migrate to the current persistence version, if necessary. Nothing
   // is served from the database yet, so nothing else is reading or
@@ -4282,42 +4334,30 @@ expected<void> DatabaseService::MigratePersistence3To4() {
   }
 
   // Finally, update the persistence version.
-  return WritePersistenceVersion(db_.get(), 4);
+  return SetPersistenceVersion(4);
+}
+
+expected<void> DatabaseService::SetPersistenceVersion(int version) {
+  expected<void> write_persistence_version =
+      WritePersistenceVersion(db_.get(), version);
+  if (!write_persistence_version.has_value()) {
+    return write_persistence_version;
+  }
+
+  persistence_version_ = version;
+
+  return {};
 }
 
 expected<void> DatabaseService::MaybeMigratePersistence() {
-  // Read the persistence version from the default column family.
-  std::string serialized_pv_get;
-  rocksdb::Status status = db_->Get(
-      rocksdb::ReadOptions(),
-      kPersistenceVersionKey,
-      &serialized_pv_get);
-  int version;
-  if (status.ok()) {
-    PersistenceVersion pv;
-    CHECK(pv.ParseFromString(std::move(serialized_pv_get)));
-    if (pv.version() == CURRENT_PERSISTENCE_VERSION) {
-      // Up to date.
-      return {};
-    } else if (pv.version() < 1) {
-      // Version 0 did not support a version tag, so this is unexpected.
-      return make_unexpected(
-          fmt::format("Corrupted persistence version: {}", pv.version()));
-    } else if (pv.version() > CURRENT_PERSISTENCE_VERSION) {
-      return make_unexpected(
-          fmt::format("Unsupported persistence version: {}", pv.version()));
-    } else {
-      // Is a previous version which needs updating.
-      version = pv.version();
-    }
-  } else if (status.IsNotFound()) {
-    // Version 0 will not have a persisted version yet.
-    version = 0;
-  } else {
+  int version = persistence_version_;
+
+  if (version == CURRENT_PERSISTENCE_VERSION) {
+    // Up to date.
+    return {};
+  } else if (version > CURRENT_PERSISTENCE_VERSION) {
     return make_unexpected(
-        fmt::format(
-            "Failed to read persistence version: {}",
-            status.ToString()));
+        fmt::format("Unsupported persistence version: {}", version));
   }
 
   // Expecting at least persistence version >= 3.
