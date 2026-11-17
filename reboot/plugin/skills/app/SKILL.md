@@ -57,10 +57,10 @@ both front ends reads both columns.
 
 | Step | MCP App | Web app |
 | --- | --- | --- |
-| Design | "Designing an MCP App" in [`python/references/mcp-app-concepts.md`](../python/references/mcp-app-concepts.md) | "Designing a web app" in the [`frontend` skill](../frontend/SKILL.md), and "Who Signs In" in [`python/references/auth-web-apps.md`](../python/references/auth-web-apps.md) |
-| Project files, API, servicers, `main.py`, authorizers, scenarios, updates | "Building an MCP App" in the [`python` skill](../python/SKILL.md) | "Building a web app" in the [`python` skill](../python/SKILL.md) |
-| Frontend scaffold and build, browser scenarios, updates | "Building MCP App UIs" in the [`frontend` skill](../frontend/SKILL.md) | "Building a web app" in the [`frontend` skill](../frontend/SKILL.md) |
-| Both front ends in one `frontend/` | "Building both" in the [`frontend` skill](../frontend/SKILL.md) | |
+| Design | [Designing an MCP App](../python/references/mcp-app-concepts.md#designing-an-mcp-app) in `python/references/mcp-app-concepts.md` | [Designing a web app](../frontend/SKILL.md#designing-a-web-app) in the `frontend` skill, and [Who Signs In](../python/references/auth-web-apps.md#who-signs-in) in `python/references/auth-web-apps.md` |
+| Project files, API, servicers, `main.py`, authorizers, scenarios, updates | [Building an MCP App](../python/SKILL.md#building-an-mcp-app) in the `python` skill | [Building a web app](../python/SKILL.md#building-a-web-app) in the `python` skill |
+| Frontend scaffold and build, browser scenarios, updates | [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis) in the `frontend` skill | [Building a web app](../frontend/SKILL.md#building-a-web-app) in the `frontend` skill |
+| Both front ends in one `frontend/` | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill | |
 
 ## Which References to Read, and When
 
