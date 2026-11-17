@@ -256,13 +256,12 @@ docs would have prevented. Before writing code, load the references
 the task actually requires from the lists below. "Common gotchas"
 should be loaded for almost every task.
 
-Everything you read stays in the conversation and is re-sent on every
-later turn, so read a reference at the step that needs it rather than
-all of them up front, and read each one **once**. That cost is also
-why generated and installed source — `*_rbt.py`, `*_rbt_react.ts`,
-`site-packages/`, `node_modules/`, codegen templates — is the most
-expensive place in the system to learn a fact: the shapes worth
-knowing are written out in the references below. When something
+Read a reference at the step that needs it rather than all of them
+up front, and read each one **once**. Never learn a fact from
+generated or installed source — `*_rbt.py`, `*_rbt_react.ts`,
+`site-packages/`, `node_modules/`, codegen templates: it runs to tens
+of thousands of lines, and the shapes worth knowing are written out in
+the references below. When something
 genuinely isn't covered, bound the output hard (a targeted
 `grep -n … | head -40`, or `sed -n '<start>,<end>p'` over a known
 range), never a whole generated file.

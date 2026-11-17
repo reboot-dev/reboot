@@ -71,8 +71,8 @@ rules apply to every page:
 ## Never read generated code
 
 `frontend/api/**/*_rbt_react.ts` and `node_modules/` run to tens of
-thousands of lines, and anything you open is sent again on every
-later turn. What you need from the generated client is written out in
+thousands of lines. What you need from the generated client is
+written out in
 [`react-generated-client.md`](references/react-generated-client.md).
 If something is genuinely missing, bound the output: a
 `grep -n … | head -40`, never the whole file.

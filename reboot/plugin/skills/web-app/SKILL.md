@@ -74,9 +74,8 @@ is in the [`frontend` skill](../frontend/SKILL.md).
 
 ## Which References to Read, and When
 
-Everything you read stays in the conversation and is re-sent on
-every later turn, so **read each reference at the step that needs
-it** — not all of them up front — and read each one **once**. The
+**Read each reference at the step that needs it** — not all of them
+up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
@@ -201,9 +200,7 @@ do not explore it in the main conversation.
 ## Never Read Generated or Installed Source in the Main Thread
 
 `*_rbt.py`, `*_rbt_react.ts`, `site-packages/`, `node_modules/`,
-and codegen templates run to tens of thousands of lines. Every one
-you open is re-sent on every remaining turn, which makes reading
-them the most expensive way in the system to learn a fact.
+and codegen templates run to tens of thousands of lines.
 
 The generated surfaces you actually need are written out in these
 references — the React client in
@@ -475,8 +472,8 @@ config: it adds `frontend/mcp/<name>/` beside `web/` and
     provider and its `url`, the generated hook/mutator/error
     declarations, sign-in, and typed errors are all written out
     there. Write the calls from that reference and do **not** open
-    `frontend/api/**/*_rbt_react.ts` to check them — it is tens of
-    thousands of lines that then ride along on every later turn.
+    `frontend/api/**/*_rbt_react.ts` to check them: it is tens of
+    thousands of lines.
 12. `cd frontend && npm run build` (sanity check the bundle).
 13. **Write and run the scenarios of every feature before handing
     the app off.** Each feature file from the design phase gets its

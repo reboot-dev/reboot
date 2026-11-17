@@ -66,9 +66,8 @@ including the MCP App's API, servicer and sign-in references; the
 React references live in the `frontend` skill. Neither set is
 restated inline below.
 
-Everything you read stays in the conversation and is re-sent on
-every later turn, so **read each reference at the step that needs
-it** — not all of them up front — and read each one **once**. The
+**Read each reference at the step that needs it** — not all of them
+up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
 exactly one of them — the step that needs it.
 
@@ -259,9 +258,7 @@ do not explore it in the main conversation.
 ## Never Read Generated or Installed Source in the Main Thread
 
 `*_rbt.py`, `*_rbt_react.ts`, `site-packages/`, `node_modules/`,
-and codegen templates run to tens of thousands of lines. Every one
-you open is re-sent on every remaining turn, which makes reading
-them the most expensive way in the system to learn a fact.
+and codegen templates run to tens of thousands of lines.
 
 The generated surfaces you actually need are written out in these
 references — the React client in

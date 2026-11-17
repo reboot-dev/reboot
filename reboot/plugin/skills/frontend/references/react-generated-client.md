@@ -17,8 +17,7 @@ or
 [`react-mcp-scaffolding.md`](react-mcp-scaffolding.md).
 
 **Do not read the generated `*_rbt_react.ts` to rediscover any of
-this.** It runs to tens of thousands of lines, and every one you open
-is re-sent on every later turn.
+this.** It runs to tens of thousands of lines.
 
 ## What Is Emitted, per State Type
 
