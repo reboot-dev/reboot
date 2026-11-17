@@ -468,8 +468,15 @@ optional extra:
 
 ## Building an MCP App
 
-What an MCP App adds to the app skill's build, step by step. The
-React side is the frontend skill's
+What an MCP App adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Design** goes with the [Design Phase](../app/SKILL.md#design-phase),
+**Project files** with "Create `.python-version`, …", **API
+definition** with "Write the API definition", **Servicers** and
+**Authorizers** with "Write the servicer", **`main.py`** with "Write
+`main.py`", **Scenarios** with the scenarios step, and **Updates**
+with the [Update Flow](../app/SKILL.md#update-flow). The React side
+is the frontend skill's
 [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis).
 
 **Design:**
