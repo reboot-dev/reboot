@@ -48,6 +48,3 @@ async def seed(context: InitializeContext):
 
 Changing an alias's text later adds a new item rather than updating
 the old one.
-
-The handoff explains what was added and where to see it, and that it is test data that
-stays on this machine.
