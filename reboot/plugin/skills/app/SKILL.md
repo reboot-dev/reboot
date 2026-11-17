@@ -312,15 +312,21 @@ wrong means regenerating everything across 12+ files.
    - The design items of each front end you build: see
      [What Each Front End Adds](#what-each-front-end-adds) above.
 
-   Then ask "Build this design?", with three options and no others:
-   **Build it, with sample data** (test data so every page has
-   something in it to try; its description states, in the app's own
-   nouns, that the data stays on this machine and never reaches
-   production), **Build it, empty**, and **Change something**. "Change
-   something" asks what to change, in plain text; the change is made
-   and the design shown again with the same question. An alternative
-   the design weighed goes in the design's text, not in the options.
-   Send the design and go on.
+   Then ask "Build this design?", with these three options and no
+   others:
+
+   1. **Build it, with sample data**: test data so every page has
+      something in it to try. Its description says, in the app's own
+      nouns, that the data stays on this machine and never reaches
+      production.
+   2. **Build it, empty**.
+   3. **Change something**: ask what to change, in plain text, and
+      make the change. If the answer doesn't make clear whether to
+      build with sample data or empty, show the design again with the
+      same question.
+
+   An alternative the design weighed goes in the design's text, not
+   in the options.
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
