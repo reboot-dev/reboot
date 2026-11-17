@@ -12,10 +12,10 @@ The app skill reads this reference first, unless the build started from
 go back to the [app skill](../SKILL.md) and follow it from "When to
 Use".
 
-A Reboot app is full stack: one backend, the same methods and the
-same live state, reached in a browser through a web app and from an
-AI chat client (Claude, ChatGPT) through an MCP App, added there as a
-connector. The front ends are only what sits on top:
+A Reboot app has one backend: the same methods and the same live
+state, used in a browser through a web app and in an AI chat client
+(Claude, ChatGPT) through an MCP App, added there as a connector. An
+app has one or both front ends:
 
 - **Both** (the default) — one backend, one sign-in, a web app and an
   MCP App: its tools, and a `UI()` where the chat client shows the
