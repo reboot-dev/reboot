@@ -228,17 +228,18 @@ wrong means regenerating everything across 12+ files.
    Header:   "Build plan"
    Options (label, then description):
      - "Two features now, the rest after (Recommended)"
-       "<the two recommended features, as activities> first. ~<minutes> min"
+       "<the two recommended features, as activities> first. Usually 15–30 min"
      - "One feature at a time"
-       "<the first feature, as an activity> first, then you choose the next. ~<minutes> min"
+       "<the first feature, as an activity> first, then you choose the next. Usually 10–20 min"
      - "All at once"
-       "Every feature in one build. ~<minutes> min"
+       "Every feature in one build. Usually 30–60 min, more for a big app"
    ```
 
    For a community garden: "Two features now, the rest after
-   (Recommended)", described "Plots and reminders first. ~25 min";
-   "One feature at a time", "Plots first, then you choose the next.
-   ~15 min"; "All at once", "Every feature in one build. ~40 min".
+   (Recommended)", described "Plots and reminders first. Usually
+   15–30 min"; "One feature at a time", "Plots first, then you choose
+   the next. Usually 10–20 min"; "All at once", "Every feature in one
+   build. Usually 30–60 min, more for a big app".
    The labels are always these three; only the descriptions are the
    app's.
 
@@ -279,11 +280,9 @@ wrong means regenerating everything across 12+ files.
    - **Name features as activities, in the app's own words**, short
      ("plots and reminders"; the message above the question has the
      full names), with no Reboot terms and no caveats.
-     The time is "~N min", the time to build not counting time
-     waiting on the user: about 12 minutes for the foundation, plus
-     about 5 a feature with a web app alone, 4 with an MCP App alone,
-     or 7 with both, rounded to the nearest five, and never a smaller
-     option slower than a larger one.
+     The times are these typical ranges, the same for every app,
+     never an estimate for this one: the same app's build time
+     varies widely from one run to the next.
    - **What every option leaves for later goes above the question,**
      in the message, once: production sign-in and deployment come
      after the build.
