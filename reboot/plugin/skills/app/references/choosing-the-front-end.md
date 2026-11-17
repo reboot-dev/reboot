@@ -41,9 +41,8 @@ CRM" and "a tool I can use from Claude" still get the question. Domain
 words never settle it (a CRM, a booking app, "login").
 
 Otherwise ask, whatever the session's autonomy settings, and **as
-the first thing in the session**: before the plan, before reading
-anything, with no more thought than it takes to pick a
-recommendation.
+the first thing in the session**: before you read any other file or
+plan the app.
 
 **Say nothing about how you decided to ask.** No rule, trigger or
 skill term before the question ("no verbatim trigger in your
