@@ -2,6 +2,8 @@ from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.types import StateRef
 from tests.reboot.pydantic.protobuf_fields.servicer_api import (
+    ReceiptResponse,
+    ReceiveRequest,
     RememberRequest,
     RunResponse,
     StartResponse,
@@ -41,3 +43,13 @@ class ReportServicer(Report.Servicer):
                 for task_id in self.state.remembered_task_ids
             },
         )
+
+    async def receive(
+        self,
+        context: WriterContext,
+        request: ReceiveRequest,
+    ) -> None:
+        self.state.receipt = request.receipt
+
+    async def receipt(self, context: ReaderContext) -> ReceiptResponse:
+        return ReceiptResponse(receipt=self.state.receipt)

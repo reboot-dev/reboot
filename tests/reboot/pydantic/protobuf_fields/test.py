@@ -3,6 +3,7 @@ from rbt.v1alpha1.tasks_pb2 import TaskId
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef
+from tests.reboot.pydantic.protobuf_fields.receipt_pb2 import Receipt
 from tests.reboot.pydantic.protobuf_fields.servicer import ReportServicer
 from tests.reboot.pydantic.protobuf_fields.servicer_api_rbt import Report
 
@@ -47,6 +48,17 @@ class ProtobufFieldsTestCase(unittest.IsolatedAsyncioTestCase):
         task = Report.RunTask.retrieve(context, task_id=task_id)
         self.assertEqual(task.task_id, task_id)
         self.assertEqual((await task).state_id, 'report-1')
+
+    async def test_message_declared_by_the_application(self) -> None:
+        context = self.rbt.create_external_context(name=self.id())
+
+        report, _ = await Report.start(context, 'report-1')
+
+        # A message from the application's own `.proto` is carried
+        # like one of Reboot's.
+        receipt = Receipt(note='received')
+        await report.receive(context, receipt=receipt)
+        self.assertEqual((await report.receipt(context)).receipt, receipt)
 
 
 if __name__ == '__main__':

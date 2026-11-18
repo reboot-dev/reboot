@@ -76,6 +76,7 @@ def py_reboot_library_from_pydantic(
         name,
         pydantic,
         py_deps,
+        proto_deps = [],
         visibility = ["//visibility:public"]):
     """Generates a py_reboot_library from a Pydantic API definition.
 
@@ -84,6 +85,10 @@ def py_reboot_library_from_pydantic(
         pydantic: The Pydantic API definition file.
         py_deps: Python dependencies, expecting at least a `py_library`
                  of the `pydantic` file.
+        proto_deps: `proto_library` targets declaring the protobuf
+                    messages the API uses as field types, beyond
+                    Reboot's own and the well-known `empty` and
+                    `struct`, which are always included.
         visibility: Bazel visibility.
     """
 
@@ -108,7 +113,7 @@ def py_reboot_library_from_pydantic(
             "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
             "@com_google_protobuf//:empty_proto",
             "@com_google_protobuf//:struct_proto",
-        ],
+        ] + proto_deps,
     )
 
     py_reboot_library(
@@ -262,6 +267,7 @@ def js_reboot_react_library_from_pydantic(
         package_json,
         js_deps = [],
         py_deps = [],
+        proto_deps = [],
         zod_srcs = [],
         visibility = ["//visibility:public"]):
     """Generates a js_reboot_react_library from a Pydantic API definition.
@@ -277,6 +283,10 @@ def js_reboot_react_library_from_pydantic(
         js_deps: Additional JavaScript dependencies.
         py_deps: Python dependencies whose transitive sources must be
                  available when importing the pydantic file.
+        proto_deps: `proto_library` targets declaring the protobuf
+                    messages the API uses as field types, beyond
+                    Reboot's own and the well-known `empty` and
+                    `struct`, which are always included.
         zod_srcs: Additional Zod source files to include in the compilation.
         visibility: Bazel visibility.
     """
@@ -318,7 +328,7 @@ def js_reboot_react_library_from_pydantic(
             "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
             "@com_google_protobuf//:empty_proto",
             "@com_google_protobuf//:struct_proto",
-        ],
+        ] + proto_deps,
     )
 
     # Create a filegroup alias so the proto file can be referenced by its
@@ -328,19 +338,27 @@ def js_reboot_react_library_from_pydantic(
         srcs = [":" + name + "_zod_proto_file"],
     )
 
+    # The proto dependencies `protoc-gen-es` always needs.
+    js_proto_deps = [
+        ":" + name + "_zod_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ]
+
     js_proto_library(
         name = name + "_js_zod_proto",
         package_json = package_json,
         proto = ":" + zod_proto_filename,
-        proto_deps = [
-            ":" + name + "_zod_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
-            "@com_google_protobuf//:any_proto",
-            "@com_google_protobuf//:descriptor_proto",
-            "@com_google_protobuf//:empty_proto",
-            "@com_google_protobuf//:struct_proto",
-            "@com_google_protobuf//:timestamp_proto",
+        # A label may be listed only once.
+        proto_deps = js_proto_deps + [
+            proto_dep
+            for proto_dep in proto_deps
+            if proto_dep not in js_proto_deps
         ],
         visibility = visibility,
     )

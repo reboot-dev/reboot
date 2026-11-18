@@ -10,6 +10,7 @@ from reboot.api import (
     Workflow,
     Writer,
 )
+from tests.reboot.pydantic.protobuf_fields.receipt_pb2 import Receipt
 from typing import Annotated, Optional
 
 
@@ -23,6 +24,11 @@ class State(Model):
         tag=2,
         default_factory=list,
         description="The ids `remember` was given, in order.",
+    )
+    receipt: Optional[Annotated[Receipt, ProtobufMessage]] = Field(
+        tag=3,
+        default=None,
+        description="The receipt `receive` was last given.",
     )
 
 
@@ -70,6 +76,21 @@ class TaskIdsResponse(Model):
     )
 
 
+class ReceiveRequest(Model):
+    receipt: Annotated[Receipt, ProtobufMessage] = Field(
+        tag=1,
+        description="A receipt to keep.",
+    )
+
+
+class ReceiptResponse(Model):
+    receipt: Optional[Annotated[Receipt, ProtobufMessage]] = Field(
+        tag=1,
+        default=None,
+        description="The receipt `receive` was last given.",
+    )
+
+
 api = API(
     Report=Type(
         state=State,
@@ -98,6 +119,18 @@ api = API(
                 request=None,
                 response=TaskIdsResponse,
                 description="Every task id the state keeps.",
+                mcp=None,
+            ),
+            receive=Writer(
+                request=ReceiveRequest,
+                response=None,
+                description="Keeps a receipt.",
+                mcp=None,
+            ),
+            receipt=Reader(
+                request=None,
+                response=ReceiptResponse,
+                description="The receipt the state keeps.",
                 mcp=None,
             ),
         ),
