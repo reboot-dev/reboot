@@ -1379,6 +1379,12 @@ export function zodToProtoJson<T>(
       meta !== undefined && meta !== null && "protobuf" in meta,
       "zodToProtoJson: ZodCustom `schema` must have `meta` with 'protobuf' property"
     );
+    // An instance of a protobuf message becomes its JSON form, e.g. a
+    // `bytes` field a base64 string and a `Timestamp` a string.
+    // Anything else is expected to be in that form already.
+    if (input instanceof protobuf_es.Message) {
+      return input.toJson();
+    }
     return input;
   } else if (
     schema instanceof z.ZodLazy &&
