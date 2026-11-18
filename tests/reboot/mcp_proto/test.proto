@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package tests.reboot.mcp_proto;
+
+import "rbt/v1alpha1/options.proto";
+
+// A state defined in proto whose methods are MCP tools and resources.
+message Note {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  repeated string lines = 1;
+  map<string, string> labels = 2;
+  Priority priority = 3;
+}
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  LOW = 1;
+  HIGH = 2;
+}
+
+message AppendRequest {
+  string text = 1;
+  int32 times = 2;
+  repeated string tags = 3;
+  map<string, string> labels = 4;
+  Priority priority = 5;
+}
+
+message AppendResponse {
+  int32 count = 1;
+}
+
+message GetRequest {}
+
+message GetResponse {
+  repeated string lines = 1;
+  map<string, string> labels = 2;
+  Priority priority = 3;
+}
+
+service NoteMethods {
+  rpc Append(AppendRequest) returns (AppendResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      mcp: { tool: true },
+    };
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      mcp: { tool: true, resource: true },
+    };
+  }
+}
