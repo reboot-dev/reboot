@@ -85,6 +85,28 @@ class ProtobufMessageMarkerTestCase(unittest.TestCase):
             str(raised.exception),
         )
 
+    def test_unmarked_message(self) -> None:
+        # Each spelling of a field that leaves the marker out is
+        # refused with an error that names the field and the marker.
+        for annotation in (
+            TaskId,
+            Optional[TaskId],
+            list[TaskId],
+            dict[str, TaskId],
+        ):
+            with self.subTest(annotation=annotation):
+                with self.assertRaises(UserPydanticError) as raised:
+                    pydantic.create_model(
+                        'Unmarked',
+                        __base__=Model,
+                        task_id=(annotation, Field(tag=1)),
+                    )
+                self.assertIn('`task_id`', str(raised.exception))
+                self.assertIn(
+                    '`Annotated[TaskId, ProtobufMessage]`',
+                    str(raised.exception),
+                )
+
 
 if __name__ == '__main__':
     unittest.main()

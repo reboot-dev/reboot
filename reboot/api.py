@@ -171,6 +171,22 @@ class ProtobufMessage:
         )
 
 
+def _has_unmarked_protobuf_message(annotation: Any) -> bool:
+    """Whether `annotation` is, or holds in its type arguments, a
+    protobuf message class that `ProtobufMessage` does not annotate."""
+    if get_origin(annotation) is Annotated:
+        annotated, *metadata = get_args(annotation)
+        if ProtobufMessage in metadata:
+            return False
+        return _has_unmarked_protobuf_message(annotated)
+    if isinstance(annotation, type) and issubclass(annotation, Message):
+        return True
+    return any(
+        _has_unmarked_protobuf_message(argument)
+        for argument in get_args(annotation)
+    )
+
+
 class Model(pydantic.BaseModel):
     """
     Base class for Pydantic request/response/error in Reboot API definitions.
@@ -182,6 +198,29 @@ class Model(pydantic.BaseModel):
     # if the field value is not of the correct type, the conversion
     # will fail.
     model_config = pydantic.ConfigDict(validate_assignment=True)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source: Any,
+        handler: pydantic.GetCoreSchemaHandler,
+    ) -> pydantic_core.core_schema.CoreSchema:
+        # Pydantic has no schema for a protobuf message class, and its
+        # error for one suggests `arbitrary_types_allowed`, which
+        # yields a field that has no JSON form. The fields are checked
+        # here, before pydantic reads them, to say what to write.
+        for field_name, field_info in cls.model_fields.items():
+            if ProtobufMessage in field_info.metadata:
+                continue
+            if _has_unmarked_protobuf_message(field_info.annotation):
+                raise UserPydanticError(
+                    f'Field `{field_name}` in model `{cls.__name__}` uses a '
+                    'protobuf message as its type. Annotate the message '
+                    'class with `ProtobufMessage` from `reboot.api`, e.g. '
+                    '`Annotated[TaskId, ProtobufMessage]`, also inside '
+                    '`Optional[...]`, `list[...]` and `dict[str, ...]`.'
+                )
+        return super().__get_pydantic_core_schema__(source, handler)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
