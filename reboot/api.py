@@ -14,6 +14,7 @@ from reboot.settings import (
     SET_CLAIMS_METHOD,
 )
 from typing import (
+    Annotated,
     Any,
     Dict,
     List,
@@ -74,6 +75,100 @@ ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE: dict[type, type] = {
 class UserPydanticError(Exception):
     """Exception raised in case of a malformed user-provided Pydantic schema."""
     pass
+
+
+# The JSON Schema `type` of each protobuf message whose JSON form is
+# something other than a JSON object, e.g. a `Timestamp` is a string
+# and a `ListValue` is an array. Where the form parses from more than
+# one JSON type, each is listed: a 64-bit integer is written as a
+# string and read from a string or a number, and a floating point
+# number is written as a string when it is `NaN` or infinite. A `Value`
+# is any JSON value, so it has no `type`.
+_JSON_TYPE_BY_PROTOBUF_MESSAGE_WITH_NON_JSON_OBJECT_FORM: dict[
+    str, Optional[Union[str, list[str]]]] = {
+        'google.protobuf.BoolValue': 'boolean',
+        'google.protobuf.BytesValue': 'string',
+        'google.protobuf.DoubleValue': ['number', 'string'],
+        'google.protobuf.Duration': 'string',
+        'google.protobuf.FieldMask': 'string',
+        'google.protobuf.FloatValue': ['number', 'string'],
+        'google.protobuf.Int32Value': 'integer',
+        'google.protobuf.Int64Value': ['string', 'integer'],
+        'google.protobuf.ListValue': 'array',
+        'google.protobuf.StringValue': 'string',
+        'google.protobuf.Timestamp': 'string',
+        'google.protobuf.UInt32Value': 'integer',
+        'google.protobuf.UInt64Value': ['string', 'integer'],
+        'google.protobuf.Value': None,
+    }
+
+
+class ProtobufMessage:
+    """Marks a protobuf message class as a field type of a `Model`:
+
+        task_id: Annotated[TaskId, ProtobufMessage] = Field(tag=1)
+
+    A value of such a field is an instance of the message class or its
+    JSON form, it serializes to JSON in that form, and it describes
+    itself to JSON Schema as that form."""
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source: Any,
+        handler: pydantic.GetCoreSchemaHandler,
+    ) -> pydantic_core.core_schema.CoreSchema:
+        if not (isinstance(source, type) and issubclass(source, Message)):
+            raise UserPydanticError(
+                f'`ProtobufMessage` annotates `{source}`, which is not a '
+                'protobuf message class.'
+            )
+
+        message: typing.Type[Message] = source
+        full_name = message.DESCRIPTOR.full_name
+
+        def validate(value: Any) -> Message:
+            if isinstance(value, message):
+                return value
+            try:
+                return json_format.ParseDict(value, message())
+            except json_format.ParseError as error:
+                raise ValueError(
+                    f"Expected a `{full_name}` or its JSON form: {error}"
+                )
+
+        def serialize(value: Message) -> Any:
+            # `MessageToDict` is wrapped rather than passed to
+            # `PlainSerializer` directly because pydantic reads a
+            # serializer's signature to decide whether it takes a
+            # `SerializationInfo`, and the keyword arguments of
+            # `MessageToDict` fit neither of the shapes it accepts.
+            return json_format.MessageToDict(value)
+
+        json_schema: dict[str, Any] = {
+            'title':
+                full_name,
+            'description':
+                f'A `{full_name}` protobuf message in its JSON form.',
+        }
+        json_type = _JSON_TYPE_BY_PROTOBUF_MESSAGE_WITH_NON_JSON_OBJECT_FORM.get(
+            full_name,
+            'object',
+        )
+        if json_type is not None:
+            json_schema['type'] = json_type
+
+        # `PlainValidator` is the whole validation of whatever it
+        # annotates, so the annotations describe `Any`: pydantic has
+        # no schema of its own for a protobuf message class.
+        return handler.generate_schema(
+            Annotated[
+                Any,
+                pydantic.PlainValidator(validate),
+                pydantic.PlainSerializer(serialize, when_used='json'),
+                pydantic.WithJsonSchema(json_schema),
+            ]
+        )
 
 
 class Model(pydantic.BaseModel):
