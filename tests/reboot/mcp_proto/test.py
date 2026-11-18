@@ -110,6 +110,31 @@ class McpProtoTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_resource_returns_the_response_as_json(self) -> None:
+        await self.session.call_tool(
+            "note_append", {
+                "note_id": "n",
+                "text": "first"
+            }
+        )
+        listed = await self.session.list_resource_templates()
+        self.assertEqual(
+            {
+                template.name: template.uriTemplate
+                for template in listed.resourceTemplates
+            },
+            {
+                "note_get": "note://{note_id}",
+                "note_line": "note://{note_id}/line/{index}",
+            },
+        )
+        line = await self.session.read_resource("note://n/line/0")
+        self.assertEqual(json.loads(line.contents[0].text), {"line": "first"})
+        note = await self.session.read_resource("note://n")
+        self.assertEqual(
+            json.loads(note.contents[0].text), {"lines": ["first"]}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,14 @@ message GetResponse {
   Priority priority = 3;
 }
 
+message LineRequest {
+  int32 index = 1;
+}
+
+message LineResponse {
+  string line = 1;
+}
+
 service NoteMethods {
   rpc Append(AppendRequest) returns (AppendResponse) {
     option (rbt.v1alpha1.method) = {
@@ -52,6 +60,13 @@ service NoteMethods {
     option (rbt.v1alpha1.method) = {
       reader: {},
       mcp: { tool: true, resource: true },
+    };
+  }
+
+  rpc Line(LineRequest) returns (LineResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      mcp: { resource: true },
     };
   }
 }
