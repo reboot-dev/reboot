@@ -32,3 +32,10 @@ class NoteServicer(Note.Servicer):
             labels=self.state.labels,
             priority=self.state.priority,
         )
+
+    async def line(
+        self,
+        context: ReaderContext,
+        request: Note.LineRequest,
+    ) -> Note.LineResponse:
+        return Note.LineResponse(line=self.state.lines[request.index])
