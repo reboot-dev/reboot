@@ -83,6 +83,7 @@ import rbt.v1alpha1.nodejs_pb2 as IMPORT_rbt_v1alpha1_nodejs_pb2
 import google.protobuf.any_pb2 as IMPORT_google_protobuf_any_pb2
 import sys as IMPORT_sys
 import mcp.server.fastmcp as IMPORT_mcp_server_fastmcp
+import pydantic as IMPORT_pydantic
 import reboot.mcp.context as IMPORT_reboot_mcp_context
 import reboot.mcp.ui as IMPORT_reboot_mcp_ui
 
@@ -146,7 +147,6 @@ class Unset:
 UNSET = Unset()
 
 
-import pydantic as IMPORT_pydantic
 from reboot.ping.ping_api import api as IMPORT_api
 import reboot.api as IMPORT_reboot_api
 
