@@ -2964,10 +2964,16 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             )
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id, request)
-            return response
 {% else %}
             ref = {{ state.proto.name }}.ref({{ mcp_name_prefix }}id)
-            return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+            response = await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+{% endif %}
+{% if options.proto.pydantic %}
+            return response
+{% else %}
+            # A protobuf message is not JSON to FastMCP, which would
+            # hand the model its text form; a dict is.
+            return IMPORT_google_protobuf_json_format.MessageToDict(response)
 {% endif %}
 {% else %}
         @mcp.resource(
@@ -2999,7 +3005,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% else %}
             response = await {{ state.proto.name }}.ref({{ mcp_name_prefix }}id).{{ method.proto.name | to_snake }}(reboot_context)
 {% endif %}
+{% if options.proto.pydantic %}
             return response
+{% else %}
+            # A protobuf message is not JSON to FastMCP, which would
+            # hand the model its text form; a dict is.
+            return IMPORT_google_protobuf_json_format.MessageToDict(response)
+{% endif %}
 {% endif %}
 
 {% endif %}
