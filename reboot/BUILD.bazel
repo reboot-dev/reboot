@@ -357,6 +357,7 @@ py_library(
         ":api_py",
         ":fail_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:schema_py_proto",
+        requirement("protobuf"),
         requirement("pydantic"),
     ],
 )
