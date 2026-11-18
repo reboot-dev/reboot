@@ -127,6 +127,19 @@ def ongoing_transaction_state_key(
         f"{context.transaction_root_id}"
     )
 
+
+# Updates `target` in place to hold every field value of `source`,
+# leaving `target` the same object, so that an existing reference to it
+# keeps working. Pydantic has no method that updates a model in place
+# (`model_copy(update=...)` and `model_validate()` both return a new
+# object), so we assign each field ourselves.
+def _update_ongoing_transaction_state(
+    target: IMPORT_reboot_api.Model,
+    source: IMPORT_reboot_api.Model,
+) -> None:
+    for field in type(source).model_fields:
+        setattr(target, field, getattr(source, field))
+
 class Unset:
     pass
 
@@ -1583,13 +1596,30 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.PingDoPingResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+            if context.nested else None
+        )
         try:
             typed_state: Ping.State = PingFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            # TODO: assert that there are no ongoing transactions for this state.
-            #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
+
+            # While we run, our model is the one that the readers,
+            # writers and transactions we call on this state continue
+            # from and hand their writes back to. The `typed_state`
+            # should already be validated above, so we can just store
+            # it here.
             ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             response = (
                 await self._servicer._DoPing(
@@ -1599,6 +1629,21 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             )
 
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             PingToProto(typed_state, state)
 
@@ -1716,8 +1761,16 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 message=f"unhandled (in 'reboot.ping.Ping.DoPing') {type(exception).__name__}: {exception}"
             )
         finally:
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            # Our caller's model is the ongoing one again, so that a
+            # writer the caller runs after us continues from it. The
+            # outermost transaction on this state has no caller, and
+            # removes the entry.
+            if ongoing_transaction_typed_state is not None:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = ongoing_transaction_typed_state
+            else:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
 
     @IMPORT_reboot_aio_tracing.function_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -2454,11 +2507,23 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.PingDescribeResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Ping.State = PingFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Describe(
                     context=context,
@@ -2912,11 +2977,23 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.PingNumPingsResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Ping.State = PingFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._NumPings(
                     context=context,
@@ -4032,11 +4109,23 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> Pong.DoPongEffects:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Pong.State = PongFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._DoPong(
                     context=context,
@@ -4045,15 +4134,21 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             )
 
-            # TODO: it's premature to overwrite the state now given that the
-            # writer might still "fail" and an error will get propagated back
-            # to the ongoing transaction which will still see the effects of
-            # this writer. What we should be doing instead is creating a
-            # callback API that we invoke only after a writer completes
-            # that lets us update the state _reference_ then.
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             PongToProto(typed_state, state)
 
@@ -4526,11 +4621,23 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.PongNumPongsResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Pong.State = PongFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._NumPongs(
                     context=context,
@@ -6173,13 +6280,30 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.UserCreateCounterResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+            if context.nested else None
+        )
         try:
             typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            # TODO: assert that there are no ongoing transactions for this state.
-            #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
+
+            # While we run, our model is the one that the readers,
+            # writers and transactions we call on this state continue
+            # from and hand their writes back to. The `typed_state`
+            # should already be validated above, so we can just store
+            # it here.
             ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             response = (
                 await self._servicer._CreateCounter(
@@ -6189,6 +6313,21 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             )
 
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             UserToProto(typed_state, state)
 
@@ -6306,8 +6445,16 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 message=f"unhandled (in 'reboot.ping.User.CreateCounter') {type(exception).__name__}: {exception}"
             )
         finally:
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            # Our caller's model is the ongoing one again, so that a
+            # writer the caller runs after us continues from it. The
+            # outermost transaction on this state has no caller, and
+            # removes the entry.
+            if ongoing_transaction_typed_state is not None:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = ongoing_transaction_typed_state
+            else:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
 
     @IMPORT_reboot_aio_tracing.function_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -6663,11 +6810,23 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.UserListCountersResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._ListCounters(
                     context=context,
@@ -7121,11 +7280,23 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.UserWhoamiResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Whoami(
                     context=context,
@@ -7579,14 +7750,31 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> google.protobuf.empty_pb2.Empty:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+            if context.nested else None
+        )
         try:
             states_being_constructed.add(context.state_id)
             typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            # TODO: assert that there are no ongoing transactions for this state.
-            #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
+
+            # While we run, our model is the one that the readers,
+            # writers and transactions we call on this state continue
+            # from and hand their writes back to. The `typed_state`
+            # should already be validated above, so we can just store
+            # it here.
             ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             response = (
                 await self._servicer._Create(
@@ -7596,6 +7784,21 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             )
 
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             UserToProto(typed_state, state)
 
@@ -7714,8 +7917,16 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             )
         finally:
             states_being_constructed.remove(context.state_id)
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            # Our caller's model is the ongoing one again, so that a
+            # writer the caller runs after us continues from it. The
+            # outermost transaction on this state has no caller, and
+            # removes the entry.
+            if ongoing_transaction_typed_state is not None:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = ongoing_transaction_typed_state
+            else:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
 
     @IMPORT_reboot_aio_tracing.function_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -8070,13 +8281,30 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         *,
         validating_effects: bool,
     ) -> google.protobuf.empty_pb2.Empty:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+            if context.nested else None
+        )
         try:
             typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            # TODO: assert that there are no ongoing transactions for this state.
-            #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
+
+            # While we run, our model is the one that the readers,
+            # writers and transactions we call on this state continue
+            # from and hand their writes back to. The `typed_state`
+            # should already be validated above, so we can just store
+            # it here.
             ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             response = (
                 await self._servicer._SetClaims(
@@ -8086,6 +8314,21 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 )
             )
 
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             UserToProto(typed_state, state)
 
@@ -8203,8 +8446,16 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 message=f"unhandled (in 'reboot.ping.User.SetClaims') {type(exception).__name__}: {exception}"
             )
         finally:
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            # Our caller's model is the ongoing one again, so that a
+            # writer the caller runs after us continues from it. The
+            # outermost transaction on this state has no caller, and
+            # removes the entry.
+            if ongoing_transaction_typed_state is not None:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = ongoing_transaction_typed_state
+            else:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
 
     @IMPORT_reboot_aio_tracing.function_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -9580,12 +9831,24 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         *,
         validating_effects: bool,
     ) -> Counter.CreateEffects:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             states_being_constructed.add(context.state_id)
             typed_state: Counter.State = CounterFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Create(
                     context=context,
@@ -9594,15 +9857,21 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             )
 
-            # TODO: it's premature to overwrite the state now given that the
-            # writer might still "fail" and an error will get propagated back
-            # to the ongoing transaction which will still see the effects of
-            # this writer. What we should be doing instead is creating a
-            # callback API that we invoke only after a writer completes
-            # that lets us update the state _reference_ then.
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             CounterToProto(typed_state, state)
 
@@ -10076,11 +10345,23 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         *,
         validating_effects: bool,
     ) -> Counter.IncrementEffects:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Counter.State = CounterFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Increment(
                     context=context,
@@ -10089,15 +10370,21 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 )
             )
 
-            # TODO: it's premature to overwrite the state now given that the
-            # writer might still "fail" and an error will get propagated back
-            # to the ongoing transaction which will still see the effects of
-            # this writer. What we should be doing instead is creating a
-            # callback API that we invoke only after a writer completes
-            # that lets us update the state _reference_ then.
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
 
             CounterToProto(typed_state, state)
 
@@ -10570,11 +10857,23 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.CounterValueResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Counter.State = CounterFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Value(
                     context=context,
@@ -11028,11 +11327,23 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
         *,
         validating_effects: bool,
     ) -> reboot.ping.ping_api_pb2.CounterDescriptionResponse:
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+        )
         try:
             typed_state: Counter.State = CounterFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
             response = (
                 await self._servicer._Description(
                     context=context,
