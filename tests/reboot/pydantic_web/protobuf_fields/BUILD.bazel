@@ -1,0 +1,145 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library")
+load(
+    "//reboot:pydantic_to_proto.bzl",
+    "js_reboot_react_library_from_pydantic",
+    "py_reboot_library_from_pydantic",
+)
+load("//reboot:rules.bzl", "js_proto_library")
+load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
+
+# A protobuf message that the application declares itself.
+proto_library(
+    name = "receipt_proto",
+    srcs = ["receipt.proto"],
+)
+
+py_proto_library(
+    name = "receipt_py_proto",
+    deps = [":receipt_proto"],
+)
+
+js_proto_library(
+    name = "receipt_js_proto",
+    package_json = ":package.json",
+    proto = "receipt.proto",
+    proto_deps = [
+        ":receipt_proto",
+    ],
+)
+
+py_library(
+    name = "servicer_api_py",
+    srcs = ["servicer_api.py"],
+    deps = [
+        ":receipt_py_proto",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "servicer_py_reboot",
+    proto_deps = [
+        ":receipt_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+py_library(
+    name = "servicer_py",
+    srcs = ["servicer.py"],
+    deps = [
+        ":servicer_api_py",
+        ":servicer_py_reboot",
+    ],
+)
+
+js_reboot_react_library_from_pydantic(
+    name = "servicer_js_reboot_react",
+    js_deps = [
+        ":receipt_js_proto",
+    ],
+    package_json = ":package.json",
+    proto_deps = [
+        ":receipt_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+ts_project(
+    name = "index_ts",
+    srcs = [
+        "index.tsx",
+    ],
+    tsconfig = "//tests/reboot/pydantic_web:tsconfig",
+    deps = [
+        ":receipt_js_proto",
+        ":servicer_js_reboot_react",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/zod",
+        "//rbt/v1alpha1:tasks_js_proto",
+    ],
+)
+
+esbuild(
+    name = "bundle",
+    srcs = [
+        ":index_ts",
+    ],
+    entry_point = "index.js",
+    format = "esm",
+    platform = "browser",
+)
+
+py_library(
+    name = "test_py",
+    testonly = True,
+    srcs = ["test.py"],
+    data = [
+        ":bundle",
+    ],
+    deps = [
+        ":servicer_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
+        "//tests/reboot/react:web_driver_runner",
+    ],
+)
+
+py_web_test_suite_env(
+    name = "test_against_local_envoy_py",
+    srcs = ["test_against_local_envoy.py"],
+    browsers = [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ],
+    main = "test_against_local_envoy.py",
+    py_test_tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    deps = [
+        ":test_py",
+        "//tests/reboot/react:test_against_local_envoy_py",
+    ],
+)
