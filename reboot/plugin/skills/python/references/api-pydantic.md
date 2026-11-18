@@ -406,6 +406,38 @@ class GameState(Model):
 `list[str]`, `list[int]`, `list[float]`, `list[bool]`,
 `dict[str, str]`, `list[<Model>]`, and `dict[str, <Model>]` all work.
 
+## Protobuf Messages Are Field Types
+
+Any protobuf message is a field type once its class is annotated with
+`ProtobufMessage` from `reboot.api`: `Annotated[TaskId, ProtobufMessage]`,
+on its own or in a `list` or `dict`. A bare message class is refused when
+the model is defined. The same rules as a nested `Model` apply: on its
+own the field is required or `Optional[...]` with `default=None`. The one
+you will meet is the `TaskId` that `schedule()` returns, kept in state so
+the task can be retrieved later.
+
+```python
+from rbt.v1alpha1.tasks_pb2 import TaskId
+from reboot.api import Field, Model, ProtobufMessage
+from typing import Annotated, Optional
+
+
+class ReportState(Model):
+    generate_task_id: Optional[Annotated[TaskId, ProtobufMessage]] = Field(
+        tag=1,
+        default=None,
+        description="The id of the scheduled `generate` task.",
+    )
+    retry_task_ids: list[Annotated[TaskId, ProtobufMessage]] = Field(
+        tag=2,
+        default_factory=list,
+        description="The ids of the scheduled retries, oldest first.",
+    )
+```
+
+In JSON, e.g. as an MCP tool's argument, the field takes the message's
+JSON form.
+
 ## State Class Is a Separate `Model`
 
 State is a plain `Model` class. Bind it to its method set and a public
