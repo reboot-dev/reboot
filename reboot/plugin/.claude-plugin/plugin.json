@@ -1,0 +1,15 @@
+{
+  "name": "reboot",
+  "displayName": "Reboot",
+  "version": "1.7.2",
+  "description": "Build Reboot apps (MCP Apps and standalone web apps) from Claude Code. In Reboot projects, its hooks put pinned tool shims first on PATH and remind Claude to read the skills. They also auto-approve this plugin's own skills, reads of its files, and the Reboot dev commands it runs inside a Reboot project. On first use the shims download pinned uv, Node.js, Envoy, cloudflared and portless, and the Reboot CLI from PyPI. The plugin sends no telemetry.",
+  "author": {
+    "name": "Reboot",
+    "email": "team@reboot.dev",
+    "url": "https://reboot.dev"
+  },
+  "homepage": "https://reboot.dev",
+  "repository": "https://github.com/reboot-dev/reboot-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["reboot", "mcp", "mcp-app", "web-app", "python", "agents"]
+}
