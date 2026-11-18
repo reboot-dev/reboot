@@ -752,6 +752,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
           ? call.context.transactionRootId
           : null
       ),
+      nested: call.context.transactionNested,
       cancelled,
     });
 

@@ -8098,6 +8098,9 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                             None if context.transaction_root_id is None
                             else str(context.transaction_root_id)
                         ),
+                        {% if method.options.proto.kind == 'transaction' %}
+                        transaction_nested=context.nested,
+                        {% endif %}
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),

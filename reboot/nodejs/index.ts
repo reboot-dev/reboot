@@ -430,8 +430,13 @@ export class TransactionContext extends Context {
   // context type that structurally looks equivalent.
   #kind = "transaction";
 
+  // Whether or not this transaction is nested within another
+  // transaction.
+  readonly nested: boolean;
+
   constructor(options) {
     super(options);
+    this.nested = options.nested;
   }
   // TODO: implement transaction specific properties/methods.
 }
