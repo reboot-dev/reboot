@@ -7,6 +7,7 @@ import {
   nodejs_pb,
   parse,
   protobuf_es,
+  protobufToZodSchema,
   stringify,
   tasks_pb,
   toCamelCase,
@@ -1762,37 +1763,12 @@ reboot_native.initialize(callback, launchSubprocessServer);
 // for all protobuf messages, which might be easier after we've moved
 // to protobuf-es v2 which has more natural TypeScript types.
 
-function protobufToZodSchema<T extends protobuf_es.Message<T>>(
-  type: protobuf_es.MessageType<T>
-) {
-  return z
-    .custom<protobuf_es.PartialMessage<T>>((t: any) => {
-      // TODO: replace this with `protobuf_es.isMessage` after upgrading
-      // '@bufbuild/protobuf'.
-      if (t instanceof type) {
-        return true;
-      }
-
-      if (typeof t === "object" && "getType" in t) {
-        if (typeof t.getType === "function") {
-          const actualType = t.getType();
-          if (typeof actualType === "function" && "typeName" in actualType) {
-            return actualType.typeName === type.typeName;
-          }
-        }
-      }
-
-      try {
-        type.fromJson(t);
-        return true;
-      } catch (e) {
-        return false;
-      }
-    })
-    .meta({ protobuf: type.typeName });
-}
-
-export const zod = {
+export const zod: {
+  tasks: {
+    TaskId: ReturnType<typeof protobufToZodSchema<tasks_pb.TaskId>>;
+  };
+  bytes: z.ZodCustom<Uint8Array, Uint8Array>;
+} = {
   tasks: {
     TaskId: protobufToZodSchema(tasks_pb.TaskId),
   },
