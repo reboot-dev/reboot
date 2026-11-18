@@ -129,6 +129,11 @@ class DatabaseServer final {
 // This should only be used in tests.
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
 
+// Function to store actors the way persistence version 4 did, and to
+// mark the database as being of that version, for testing. This
+// should only be used in tests.
+void TestOnly_StoreActorsAsOfPersistenceVersion4(grpc::Service* service);
+
 // Identifies the exact call site where the test-only hook fires.
 enum class TestOnlyLongRunningRPCHookSite {
   // `_Export`: immediately after `NewIterator()` captures the implicit

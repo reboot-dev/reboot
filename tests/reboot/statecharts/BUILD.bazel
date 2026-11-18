@@ -1,0 +1,54 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot:rules.bzl", "py_reboot_library")
+
+py_test(
+    name = "validation_test",
+    srcs = ["validation_test.py"],
+    deps = [
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/statecharts:validation_py",
+        requirement("protobuf"),
+    ],
+)
+
+proto_library(
+    name = "order_proto",
+    srcs = ["order.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "order_py_reboot",
+    proto = "order.proto",
+    proto_library = ":order_proto",
+)
+
+py_test(
+    name = "servicer_test",
+    srcs = ["servicer_test.py"],
+    deps = [
+        ":order_py_reboot",
+        "//reboot/aio:contexts_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_test(
+    name = "statechart_test",
+    srcs = ["statechart_test.py"],
+    deps = [
+        ":order_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:authorizers_py",
+        requirement("protobuf"),
+    ],
+)

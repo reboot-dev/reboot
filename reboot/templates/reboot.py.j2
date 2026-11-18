@@ -1130,6 +1130,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 response=response,
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
+                {% if state.has_statechart %}
+                statechart_status=context._statechart_status,
+                {% endif %}
             )
             {% else %}
             return response
@@ -1458,6 +1461,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     IMPORT_reboot_aio_state_managers.Effects(
                         state=state,
                         response=response,
+                        {% if state.has_statechart %}
+                        statechart_status=context._statechart_status,
+                        {% endif %}
                     )
                 )
                 return response
@@ -3368,6 +3374,117 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             servicer=self,
         )
 
+{% if state.has_statechart %}
+    class Statechart:
+        """The statechart of a `{{ state.proto.name }}`."""
+
+        def __init__(
+            self,
+            *,
+            servicer: {{ state.proto.name }}BaseServicer,
+        ):
+            self._servicer = servicer
+
+        def status(
+            self,
+            context: (
+                IMPORT_reboot_aio_contexts.ReaderContext |
+                IMPORT_reboot_aio_contexts.WriterContext |
+                IMPORT_reboot_aio_contexts.TransactionContext
+            ),
+        ) -> rbt.v1alpha1.statecharts.statechart_pb2.Status:
+            """Returns a copy of where the statechart of the state that
+            `context` is for is. It is empty for a state whose
+            statechart has not started."""
+            IMPORT_reboot_aio_types.assert_type(
+                context,
+                [
+                    IMPORT_reboot_aio_contexts.ReaderContext,
+                    IMPORT_reboot_aio_contexts.WriterContext,
+                    IMPORT_reboot_aio_contexts.TransactionContext,
+                ],
+                error_message_supplement=(
+                    "the status of a statechart is read by a reader, a "
+                    "writer or a transaction, which have the state"
+                ),
+            )
+
+            status = rbt.v1alpha1.statecharts.statechart_pb2.Status()
+
+            if context._statechart_status is not None:
+                # The method has enqueued an event, so the status is
+                # the one that it has changed.
+                status.CopyFrom(context._statechart_status)
+                return status
+
+            assert self._servicer._middleware is not None
+
+            stored_status = self._servicer._middleware._state_manager.statechart_status(
+                context,
+            )
+
+            if stored_status is not None:
+                status.CopyFrom(stored_status)
+
+            return status
+
+        def enqueue(
+            self,
+            context: (
+                IMPORT_reboot_aio_contexts.WriterContext |
+                IMPORT_reboot_aio_contexts.TransactionContext
+            ),
+            event: {{ state.statechart_event_types | join(' | ') }},
+        ) -> None:
+            """Enqueues `event` for the statechart of the state that
+            `context` is for, behind every event that is waiting. The
+            event is stored with the effects of the method, so it is
+            enqueued only if the method completes."""
+            IMPORT_reboot_aio_types.assert_type(
+                context,
+                [
+                    IMPORT_reboot_aio_contexts.WriterContext,
+                    IMPORT_reboot_aio_contexts.TransactionContext,
+                ],
+                error_message_supplement=(
+                    "an event is enqueued by a writer or a transaction, "
+                    "which can change the state"
+                ),
+            )
+            IMPORT_reboot_aio_types.assert_type(
+                event,
+                [
+                    {% for event_type in state.statechart_event_types %}
+                    {{ event_type }},
+                    {% endfor %}
+                ],
+                error_message_supplement=(
+                    "an event that is enqueued is one of the `events` of "
+                    "the statechart"
+                ),
+            )
+
+            if context._statechart_status is None:
+                context._statechart_status = self.status(context)
+
+            status_event = context._statechart_status.queue.add(
+                event=event.DESCRIPTOR.full_name,
+            )
+
+            # An event without fields has no value.
+            if len(event.DESCRIPTOR.fields) > 0:
+                status_event.value.update(
+                    IMPORT_google_protobuf_json_format.MessageToDict(
+                        event,
+                        preserving_proto_field_name=True,
+                    ),
+                )
+
+    @property
+    def statechart(self) -> {{ state.proto.name }}BaseServicer.Statechart:
+        return {{ state.proto.name }}BaseServicer.Statechart(servicer=self)
+
+{% endif %}
     class Effects(IMPORT_reboot_aio_state_managers.Effects):
         def __init__(
             self,
@@ -3376,10 +3493,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             response: IMPORT_typing.Optional[IMPORT_google_protobuf_message.Message] = None,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
+            {% if state.has_statechart %}
+            statechart_status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status] = None,
+            {% endif %}
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts{% if state.has_statechart %}, statechart_status=statechart_status{% endif %})
 
     {% for service in state.services %}
     {% for method in service.methods %}
@@ -3395,11 +3515,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             response: {{ method.output_type }},
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
+            {% if state.has_statechart %}
+            statechart_status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status] = None,
+            {% endif %}
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
             IMPORT_reboot_aio_types.assert_type(response, [{{ method.output_type }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts{% if state.has_statechart %}, statechart_status=statechart_status{% endif %})
 
     {% endif %}
 
@@ -3737,6 +3860,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 typed_state = {{ state.proto.name }}FromProto(protobuf_state)
 
+                                {# TODO: let `writer` take `statechart` as well as `state`, so that a workflow can enqueue an event. #}
                                 result = await writer(state=typed_state)
 
                                 {{ state.proto.name }}ToProto(typed_state, protobuf_state)
@@ -3905,6 +4029,69 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     {% endif %}
 
     {% endfor %}
+    {% endfor %}
+    {% for method, event_types in state.statechart_guards.items() %}
+    # Whether a transition of the statechart that has this guard may
+    # fire, given the state and the event that the transition is on.
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+        event: {{ event_types | join(' | ') }},
+    ) -> bool:
+        raise NotImplementedError
+
+    {% endfor %}
+    {% for method in state.statechart_conditions %}
+    # Whether this condition of the statechart holds, given the state.
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+    ) -> bool:
+        raise NotImplementedError
+
+    {% endfor %}
+    {% for method, call in state.statechart_calls.items() %}
+    # A call of the statechart, which may change the state.
+    {% if call.event_types %}
+    # It is given the event of the transition that it is an action of.
+    {% endif %}
+    {% if call.inject_types %}
+    # An event that it returns is injected.
+    {% endif %}
+    @IMPORT_abc_abstractmethod
+    def {{ method }}(
+        self,
+        state: {{ state.proto.name }}.State,
+        {% if call.event_types %}
+        event: {{ call.event_types | join(' | ') }},
+        {% endif %}
+    {% if call.inject_types %}
+    ) -> IMPORT_typing.Optional[{{ call.inject_types | join(' | ') }}]:
+    {% else %}
+    ) -> None:
+    {% endif %}
+        raise NotImplementedError
+
+    {% endfor %}
+    {% for method, enqueue_types in state.statechart_schedules.items() %}
+    # A schedule of the statechart, which is given what a workflow is.
+    {% if enqueue_types %}
+    # An event that it returns is enqueued.
+    {% endif %}
+    @classmethod
+    @IMPORT_abc_abstractmethod
+    async def {{ method }}(
+        cls,
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+    {% if enqueue_types %}
+    ) -> IMPORT_typing.Optional[{{ enqueue_types | join(' | ') }}]:
+    {% else %}
+    ) -> None:
+    {% endif %}
+        raise NotImplementedError
+
     {% endfor %}
 
 

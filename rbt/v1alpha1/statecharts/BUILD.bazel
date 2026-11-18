@@ -1,0 +1,33 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+# `options.proto` imports this file, so `//rbt/v1alpha1:protos` ships
+# it for `rbt generate`.
+exports_files(["statechart.proto"])
+
+proto_library(
+    name = "statechart_proto",
+    srcs = [":statechart.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "statechart_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":statechart_proto"],
+)
+
+js_proto_library(
+    name = "statechart_js_proto",
+    package_json = ":package.json",
+    proto = ":statechart.proto",
+    proto_deps = [
+        ":statechart_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

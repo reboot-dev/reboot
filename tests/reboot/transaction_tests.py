@@ -13,6 +13,7 @@ from collections import defaultdict, namedtuple
 from google.protobuf.empty_pb2 import Empty
 from rbt.v1alpha1 import errors_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio.aborted import SystemAborted
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
@@ -3015,6 +3016,220 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             # load finished too.
             self.assertTrue(commit_done.is_set())
             self.assertTrue(load_done.is_set())
+
+    async def test_transaction_stores_statechart_status_with_state(
+        self,
+    ) -> None:
+        """Tests that a transaction that changes a state stores the
+        statechart status that the state has with it, since storing an
+        actor replaces what is stored for it.
+        """
+        account_type = AccountServicer.__state_type_name__
+        ben = StateRef.from_id(account_type, 'ben')
+
+        statechart_status = statechart_pb2.Status(active="OPEN")
+
+        # The state manager that has `ben`.
+        state_managers: list[SidecarStateManager] = []
+
+        def remember_state_manager(
+            state_manager, context, transaction, exception
+        ):
+            if context._state_ref == ben:
+                state_managers.append(state_manager)
+
+        with self.get_transactionally_patch(remember_state_manager):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer])
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='ben', initial_deposit=42)
+            await bank.SignUp(
+                context,
+                account_id='jonathan',
+                initial_deposit=42,
+            )
+
+            # Nothing sets a statechart status yet, so we give `ben`
+            # one where the state manager keeps it.
+            state_manager = state_managers[-1]
+            state_manager._statechart_statuses[account_type][ben] = (
+                statechart_status
+            )
+
+            await bank.Transfer(
+                context,
+                from_account_id='ben',
+                to_account_id='jonathan',
+                amount=10,
+            )
+
+            # A call returns once its transaction has prepared, which
+            # may be before it has committed. Reading the balance waits
+            # for it to have.
+            balance_response = await Account.ref('ben').Balance(context)
+            self.assertEqual(balance_response.amount, 32)
+
+            self.assertEqual(
+                state_manager._statechart_statuses[account_type].get(ben),
+                statechart_status,
+            )
+
+            actor = await state_manager._database_client.load_actor(
+                account_type,
+                ben,
+            )
+
+            assert actor is not None
+            self.assertEqual(
+                bank_pb2.Account.FromString(actor.state).balance,
+                32,
+            )
+            self.assertEqual(actor.statechart_status, statechart_status)
+
+    async def test_aborted_transaction_leaves_statechart_status(
+        self,
+    ) -> None:
+        """Tests that a transaction that aborts leaves the statechart
+        status of a state that it changed as it was, and that what
+        stores the state next stores that statechart status with it.
+        """
+        account_type = AccountServicer.__state_type_name__
+        ben = StateRef.from_id(account_type, 'ben')
+
+        statechart_status = statechart_pb2.Status(active="OPEN")
+
+        # The state manager that has `ben`.
+        state_managers: list[SidecarStateManager] = []
+
+        def remember_state_manager(
+            state_manager, context, transaction, exception
+        ):
+            if context._state_ref == ben:
+                state_managers.append(state_manager)
+
+        with self.get_transactionally_patch(remember_state_manager):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer])
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='ben', initial_deposit=42)
+            await bank.SignUp(
+                context,
+                account_id='jonathan',
+                initial_deposit=42,
+            )
+
+            # Nothing sets a statechart status yet, so we give `ben`
+            # one where the state manager keeps it.
+            state_manager = state_managers[-1]
+            state_manager._statechart_statuses[account_type][ben] = (
+                statechart_status
+            )
+
+            # `ben` does not have this much, so the transfer aborts
+            # after the withdrawal has changed `ben` in the
+            # transaction.
+            with self.assertRaises(Bank.TransferAborted):
+                await bank.Transfer(
+                    context,
+                    from_account_id='ben',
+                    to_account_id='jonathan',
+                    amount=1000,
+                )
+
+            self.assertEqual(
+                state_manager._statechart_statuses[account_type].get(ben),
+                statechart_status,
+            )
+
+            await Account.ref('ben').Deposit(context, amount=1)
+
+            actor = await state_manager._database_client.load_actor(
+                account_type,
+                ben,
+            )
+
+            assert actor is not None
+            self.assertEqual(
+                bank_pb2.Account.FromString(actor.state).balance,
+                43,
+            )
+            self.assertEqual(actor.statechart_status, statechart_status)
+
+    async def test_statechart_status_is_read_within_transaction(
+        self,
+    ) -> None:
+        """Tests that within a transaction the state manager returns
+        the statechart status that the transaction has for a state.
+        """
+        account_type = AccountServicer.__state_type_name__
+        ben = StateRef.from_id(account_type, 'ben')
+
+        statechart_status = statechart_pb2.Status(active="OPEN")
+
+        # The state manager that has `ben`, and each statechart status
+        # that it returned for `ben` at the end of a call on `ben`
+        # that was within a transaction.
+        state_managers: list[SidecarStateManager] = []
+        statechart_statuses: list[Optional[statechart_pb2.Status]] = []
+
+        def read_statechart_status(
+            state_manager, context, transaction, exception
+        ):
+            if context._state_ref != ben:
+                return
+            state_managers.append(state_manager)
+            if transaction is not None:
+                statechart_statuses.append(
+                    state_manager.statechart_status(context)
+                )
+
+        with self.get_transactionally_patch(read_statechart_status):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer])
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='ben', initial_deposit=42)
+            await bank.SignUp(
+                context,
+                account_id='jonathan',
+                initial_deposit=42,
+            )
+
+            # Nothing sets a statechart status yet, so we give `ben`
+            # one where the state manager keeps it.
+            state_manager = state_managers[-1]
+            state_manager._statechart_statuses[account_type][ben] = (
+                statechart_status
+            )
+            statechart_statuses.clear()
+
+            await bank.Transfer(
+                context,
+                from_account_id='ben',
+                to_account_id='jonathan',
+                amount=10,
+            )
+
+        self.assertGreater(len(statechart_statuses), 0)
+        for statechart_status_within_transaction in statechart_statuses:
+            self.assertEqual(
+                statechart_status_within_transaction,
+                statechart_status,
+            )
 
     async def test_simple_transaction_failure(self):
         """Test simple transaction failure.

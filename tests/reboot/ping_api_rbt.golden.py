@@ -94,6 +94,7 @@ import google.protobuf.empty_pb2
 import google.protobuf.struct_pb2
 import google.protobuf.timestamp_pb2
 import rbt.v1alpha1.options_pb2
+import rbt.v1alpha1.statecharts.statechart_pb2
 import rbt.v1alpha1.tasks_pb2
 import rbt.v1alpha1.tasks_pb2_grpc
 import reboot.ping.ping_api_pb2

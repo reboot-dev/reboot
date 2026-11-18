@@ -13,7 +13,11 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
-from reboot.options import get_field_options, get_method_options
+from reboot.options import (
+    get_field_options,
+    get_method_options,
+    get_statechart_options,
+)
 from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,
@@ -27,6 +31,12 @@ from reboot.protoc_gen_reboot_generic import (
     ProtoType,
     RebootProtocPlugin,
     UserProtoError,
+)
+from reboot.statecharts.validation import (
+    calls,
+    on_transitions,
+    schedules,
+    when_transitions,
 )
 from typing import Optional, Sequence
 
@@ -88,6 +98,15 @@ class PythonService(BaseService):
 
 
 @dataclass
+class PythonStatechartCall:
+    # The type of every event that an `on` transition with the call as
+    # an action is on. Empty for a call that is given no event.
+    event_types: list[PythonType]
+    # The type of every event that the call may inject.
+    inject_types: list[PythonType]
+
+
+@dataclass
 class PythonState(BaseState):
     services: Sequence[PythonService]
     pb2_name: str
@@ -97,6 +116,24 @@ class PythonState(BaseState):
     # cannot derive a schema from a protobuf class. Empty for an API
     # defined in pydantic, whose request is a model.
     proto_ui_request_fields: dict[str, dict[str, str]]
+    # Whether the state has a statechart.
+    has_statechart: bool
+    # For a state with a statechart, the type of each of its events.
+    statechart_event_types: list[PythonType]
+    # For a state with a statechart, each method that a guard of the
+    # statechart names, with the type of every event that a transition
+    # with that guard is on.
+    statechart_guards: dict[str, list[PythonType]]
+    # For a state with a statechart, each method that a condition of
+    # the statechart names.
+    statechart_conditions: list[str]
+    # For a state with a statechart, each method that a call of the
+    # statechart names.
+    statechart_calls: dict[str, PythonStatechartCall]
+    # For a state with a statechart, each method that a schedule of
+    # the statechart names, with the type of every event that the
+    # schedule may enqueue.
+    statechart_schedules: dict[str, list[PythonType]]
 
 
 @dataclass
@@ -176,6 +213,75 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
     def _py_state(self, file: BaseFile, state: BaseState) -> PythonState:
         from_pydantic = file.options.proto.pydantic is not None
+
+        statechart_event_types: list[PythonType] = []
+        statechart_guards: dict[str, list[PythonType]] = {}
+        statechart_conditions: list[str] = []
+        statechart_calls: dict[str, PythonStatechartCall] = {}
+        statechart_schedules: dict[str, list[PythonType]] = {}
+
+        statechart = get_statechart_options(
+            file.proto._descriptor.message_types_by_name[state.proto.name],
+        )
+
+        if statechart is not None:
+            statechart_event_types = [
+                self._python_type_from_proto_type(
+                    self.pool.FindMessageTypeByName(event),
+                ) for event in statechart.events
+            ]
+
+            for on in on_transitions(statechart):
+                if on.HasField("guard"):
+                    event_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(on.event),
+                    )
+                    event_types = statechart_guards.setdefault(
+                        on.guard.inline.method,
+                        [],
+                    )
+                    if event_type not in event_types:
+                        event_types.append(event_type)
+
+            for when in when_transitions(statechart):
+                if when.condition.inline.method not in statechart_conditions:
+                    statechart_conditions.append(when.condition.inline.method)
+
+            for call in calls(statechart):
+                statechart_call = statechart_calls.setdefault(
+                    call.inline.method,
+                    PythonStatechartCall(event_types=[], inject_types=[]),
+                )
+                for inject in call.inline.injects:
+                    inject_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(inject),
+                    )
+                    if inject_type not in statechart_call.inject_types:
+                        statechart_call.inject_types.append(inject_type)
+
+            for on in on_transitions(statechart):
+                event_type = self._python_type_from_proto_type(
+                    self.pool.FindMessageTypeByName(on.event),
+                )
+                for action in on.actions:
+                    if action.WhichOneof("action") == "call":
+                        statechart_call = statechart_calls[
+                            action.call.inline.method]
+                        if event_type not in statechart_call.event_types:
+                            statechart_call.event_types.append(event_type)
+
+            for schedule in schedules(statechart):
+                enqueue_types = statechart_schedules.setdefault(
+                    schedule.inline.method,
+                    [],
+                )
+                for enqueue in schedule.inline.enqueues:
+                    enqueue_type = self._python_type_from_proto_type(
+                        self.pool.FindMessageTypeByName(enqueue),
+                    )
+                    if enqueue_type not in enqueue_types:
+                        enqueue_types.append(enqueue_type)
+
         return PythonState(
             proto=state.proto,
             services=[
@@ -190,6 +296,12 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                             ui.request_message]
                     ) for ui in state.proto.uis if ui.request_message
             },
+            has_statechart=statechart is not None,
+            statechart_event_types=statechart_event_types,
+            statechart_guards=statechart_guards,
+            statechart_conditions=statechart_conditions,
+            statechart_calls=statechart_calls,
+            statechart_schedules=statechart_schedules,
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

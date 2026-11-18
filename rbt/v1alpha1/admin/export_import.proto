@@ -16,13 +16,26 @@ message ExportRequest {
 }
 
 message ExportImportItem {
+  // What is exported of an actor.
+  message Actor {
+    google.protobuf.Struct state = 1;
+
+    // Where the actor's statechart is, if its state type has one and
+    // it has started: a `rbt.v1alpha1.statecharts.Status`.
+    optional google.protobuf.Struct statechart_status = 2;
+  }
+
   string state_type = 1;
   string state_ref = 2;
   oneof item {
+    // The state of an actor, which is all that was exported of an
+    // actor before `actor`. It is still imported, as an actor that
+    // has no statechart status: it is from before there was one.
     google.protobuf.Struct state = 3;
     bytes sorted_map_entry = 4;
     google.protobuf.Struct task = 5;
     google.protobuf.Struct idempotent_mutation = 6;
+    Actor actor = 7;
   }
 }
 

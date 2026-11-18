@@ -96,9 +96,9 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
 
                 expected_export_import_items = actual[state_type_name][
                     state_ref]
-                if item.get('state') is not None:
+                if item.get('actor') is not None:
                     self.assertIsNone(expected_export_import_items.state)
-                    expected_export_import_items.state = item['state']
+                    expected_export_import_items.state = item['actor']['state']
                 elif item.get('task') is not None:
                     expected_export_import_items.task_count += 1
                 else:

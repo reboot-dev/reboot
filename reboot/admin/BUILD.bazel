@@ -28,6 +28,7 @@ py_library(
         "//reboot/aio/internals:middleware_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
     ],
 )
 

@@ -56,6 +56,8 @@ class GreeterProtoDescriptorSetTest(unittest.TestCase):
             'google/rpc/error_details.proto',
             'rbt/v1alpha1/errors.proto',
             "google/protobuf/descriptor.proto",
+            "google/protobuf/struct.proto",
+            "rbt/v1alpha1/statecharts/statechart.proto",
             "rbt/v1alpha1/options.proto",
             "tests/test_reboot_proto_desc_set/beans.proto",
             "tests/test_reboot_proto_desc_set/tests.proto",

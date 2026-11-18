@@ -447,6 +447,7 @@ py_test(
     deps = [
         ":greeter_servicers_py",
         ":test_helpers_py",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
         "//reboot:uuidv7_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:tests_py",
@@ -533,9 +534,11 @@ js_proto_library(
         # the `proto_libraries` here.
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -751,6 +754,7 @@ py_test(
     deps = [
         ":bank_py",
         ":general_boilerplate_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
         "//reboot:uuidv7_py",
         "//reboot/aio:tests_py",
         "//reboot/std/collections/v1:sorted_map_py",
@@ -891,9 +895,11 @@ js_proto_library(
         # the `proto_libraries` here.
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
         "@googleapis//google/api:annotations_proto",
         "@googleapis//google/api:http_proto",
         "@com_google_protobuf//:timestamp_proto",

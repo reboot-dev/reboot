@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "validation_py",
+    srcs = ["validation.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+    ],
+)

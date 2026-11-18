@@ -133,6 +133,7 @@ def js_reboot_library_from_zod(
         proto_deps = [
             "//rbt/v1alpha1:options_proto",
             "//rbt/v1alpha1:tasks_proto",
+            "//rbt/v1alpha1/statecharts:statechart_proto",
             "@com_google_protobuf//:any_proto",
             "@com_google_protobuf//:descriptor_proto",
             "@com_google_protobuf//:empty_proto",

@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package tests.reboot.statecharts;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
+
+message Paid {
+  uint32 cents = 1;
+}
+
+message Refunded {
+  uint32 cents = 1;
+}
+
+message Settled {}
+
+message Order {
+  option (rbt.v1alpha1.state) = {
+  };
+  option (rbt.v1alpha1.statechart) = {
+    events: "tests.reboot.statecharts.Paid"
+    events: "tests.reboot.statecharts.Refunded"
+    events: "tests.reboot.statecharts.Settled"
+    initial: "OPEN"
+    states {
+      name: "OPEN"
+      entry { schedule { inline { method: "send_reminders" } } }
+      entry {
+        schedule {
+          inline {
+            method: "charge_card"
+            enqueues: "tests.reboot.statecharts.Paid"
+            enqueues: "tests.reboot.statecharts.Refunded"
+          }
+        }
+      }
+      exit {
+        call {
+          description: "Stop the reminders"
+          inline { method: "stop_reminders" }
+        }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Paid"
+          actions {
+            call {
+              description: "Record the payment"
+              inline {
+                method: "record_payment"
+                injects: "tests.reboot.statecharts.Settled"
+              }
+            }
+          }
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Settled" to: "CLOSED" }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Paid"
+          guard { inline { method: "is_settled" } }
+          to: "CLOSED"
+        }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Refunded"
+          guard { inline { method: "is_settled" } }
+          to: "CLOSED"
+        }
+      }
+      transitions {
+        when {
+          description: "cancelled"
+          condition { inline { method: "is_cancelled" } }
+          actions {
+            call {
+              description: "Void the order"
+              inline { method: "void" }
+            }
+          }
+          to: "CLOSED"
+        }
+      }
+    }
+    states {
+      name: "CLOSED"
+      entry {
+        call {
+          description: "Send the receipt"
+          inline { method: "send_receipt" }
+        }
+      }
+    }
+  };
+  uint32 owed_cents = 1;
+  bool cancelled = 2;
+  bool receipt_sent = 3;
+}
+
+service OrderMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  // Enqueues the request.
+  rpc Pay(Paid) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues the request.
+  rpc Refund(Refunded) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      exclusive: {}
+    };
+  }
+
+  // Enqueues a `Settled`, which has no fields.
+  rpc Settle(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and then a `Refunded`.
+  rpc PayThenRefund(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and then fails.
+  rpc PayThenFail(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and returns the status that it then reads.
+  rpc PayThenStatus(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc StatusFromReader(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc StatusFromWriter(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc StatusFromTransaction(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).transaction = {
+      shared: {}
+    };
+  }
+}
