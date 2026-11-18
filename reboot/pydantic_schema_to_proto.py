@@ -4,6 +4,7 @@ import aiofiles
 import importlib
 import os
 import typing
+from google.protobuf import descriptor_pool, message_factory
 from rbt.v1alpha1.api import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
 from reboot.fail import fail
@@ -21,6 +22,50 @@ _PER_USER_ID = "PER_USER_ID"
 def _escape_string_for_proto(string: str) -> str:
     """Escape a string for embedding as a proto string literal."""
     return string.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _protobuf_message_class(
+    protobuf_message: schema_pb2.ProtobufMessage,
+) -> typing.Type:
+    """The Python class of a protobuf message, from the default
+    descriptor pool, which knows every message whose generated module
+    the API file imported."""
+    return message_factory.GetMessageClass(
+        descriptor_pool.Default().FindMessageTypeByName(protobuf_message.name)
+    )
+
+
+def _protobuf_message_proto_type_name(
+    protobuf_message: schema_pb2.ProtobufMessage,
+) -> str:
+    """The message's name as a proto field type: fully qualified, so
+    that it resolves the same from any package."""
+    return f".{protobuf_message.name}"
+
+
+def _protobuf_message_files(
+    schemas: Schemas,
+) -> set[str]:
+    """The `.proto` files declaring every protobuf message the schemas
+    use as a type."""
+    files: set[str] = set()
+
+    def visit(type_: schema_pb2.Type) -> None:
+        kind = type_.WhichOneof('type')
+        if kind == 'protobuf_message':
+            files.add(type_.protobuf_message.file)
+        elif kind == 'optional':
+            visit(type_.optional.inner)
+        elif kind == 'array':
+            visit(type_.array.item)
+        elif kind == 'map':
+            visit(type_.map.value)
+
+    for schema in schemas.values():
+        for property_ in schema.properties:
+            visit(property_.type)
+
+    return files
 
 
 def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
@@ -60,6 +105,11 @@ def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
     elif kind == 'reference':
         # A reference's name is the model's module and class.
         return field_type.reference.name
+    elif kind == 'protobuf_message':
+        # A protobuf message is spelled by its generated class, e.g.
+        # `rbt.v1alpha1.tasks_pb2.TaskId`.
+        message_class = _protobuf_message_class(field_type.protobuf_message)
+        return f'{message_class.__module__}.{message_class.__qualname__}'
     elif kind == 'array':
         # Recurse into the item since an inner type must be
         # rendered using `IMPORT_typing` prefix, while a `Model`
@@ -361,6 +411,17 @@ async def generate_from_schema(
                     required,
                     field_type_string,
                 )
+            elif inner_type.WhichOneof('type') == 'protobuf_message':
+                await _write_field_maybe_with_type_string_annotation(
+                    proto,
+                    proto_field_name,
+                    _protobuf_message_proto_type_name(
+                        inner_type.protobuf_message
+                    ),
+                    tag,
+                    required,
+                    field_type_string,
+                )
             else:
                 raise AssertionError(
                     "Unexpected schema with a property "
@@ -402,6 +463,10 @@ async def generate_from_schema(
                 schemas[value_type.reference.name],
                 name=type_name,
                 schemas=schemas,
+            )
+        elif value_type.WhichOneof('type') == 'protobuf_message':
+            type_name = _protobuf_message_proto_type_name(
+                value_type.protobuf_message
             )
         elif value_type.WhichOneof('type') == 'literals':
             type_name = "Value"
@@ -455,6 +520,10 @@ async def generate_from_schema(
                 schemas[item_type.reference.name],
                 name=type_name,
                 schemas=schemas,
+            )
+        elif item_type.WhichOneof('type') == 'protobuf_message':
+            type_name = _protobuf_message_proto_type_name(
+                item_type.protobuf_message
             )
         elif item_type.WhichOneof('type') == 'literals':
             type_name = "Item"
@@ -569,10 +638,16 @@ async def generate_from_api(
 
     await proto.write('syntax = "proto3";\n')
     await proto.write(f'package {api.package};\n')
-    await proto.write('import "google/protobuf/empty.proto";\n')
-    await proto.write('import "google/protobuf/struct.proto";\n')
-    await proto.write('import "rbt/v1alpha1/options.proto";\n')
-    await proto.write('import "rbt/v1alpha1/tasks.proto";\n')
+    imports = [
+        'google/protobuf/empty.proto',
+        'google/protobuf/struct.proto',
+        'rbt/v1alpha1/options.proto',
+        'rbt/v1alpha1/tasks.proto',
+    ]
+    # The files declaring the protobuf messages the API uses as types.
+    imports += sorted(_protobuf_message_files(schemas) - set(imports))
+    for file in imports:
+        await proto.write(f'import "{file}";\n')
     await proto.write(
         f"option (rbt.v1alpha1.file).pydantic = \"{api.module}\";\n"
     )

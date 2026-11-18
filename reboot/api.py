@@ -14,6 +14,7 @@ from reboot.settings import (
     SET_CLAIMS_METHOD,
 )
 from typing import (
+    Annotated,
     Any,
     Dict,
     List,
@@ -76,6 +77,127 @@ class UserPydanticError(Exception):
     pass
 
 
+# The JSON Schema `type` of each protobuf message whose JSON form is
+# something other than a JSON object, e.g. a `Timestamp` is a string
+# and a `ListValue` is an array. Where the form parses from more than
+# one JSON type, each is listed: a 64-bit integer is written as a
+# string and read from a string or a number, and a floating point
+# number is written as a string when it is `NaN` or infinite. A `Value`
+# is any JSON value, so it has no `type`.
+_JSON_TYPE_BY_PROTOBUF_MESSAGE_WITH_NON_JSON_OBJECT_FORM: dict[
+    str, Optional[Union[str, list[str]]]] = {
+        'google.protobuf.BoolValue': 'boolean',
+        'google.protobuf.BytesValue': 'string',
+        'google.protobuf.DoubleValue': ['number', 'string'],
+        'google.protobuf.Duration': 'string',
+        'google.protobuf.FieldMask': 'string',
+        'google.protobuf.FloatValue': ['number', 'string'],
+        'google.protobuf.Int32Value': 'integer',
+        'google.protobuf.Int64Value': ['string', 'integer'],
+        'google.protobuf.ListValue': 'array',
+        'google.protobuf.StringValue': 'string',
+        'google.protobuf.Timestamp': 'string',
+        'google.protobuf.UInt32Value': 'integer',
+        'google.protobuf.UInt64Value': ['string', 'integer'],
+        'google.protobuf.Value': None,
+    }
+
+
+class ProtobufMessage:
+    """Marks a protobuf message class as a field type of a `Model`:
+
+        task_id: Annotated[TaskId, ProtobufMessage] = Field(tag=1)
+
+    A value of such a field is an instance of the message class or its
+    JSON form, it serializes to JSON in that form, and it describes
+    itself to JSON Schema as that form."""
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source: Any,
+        handler: pydantic.GetCoreSchemaHandler,
+    ) -> pydantic_core.core_schema.CoreSchema:
+        if not (isinstance(source, type) and issubclass(source, Message)):
+            raise UserPydanticError(
+                f'`ProtobufMessage` annotates `{source}`, which is not a '
+                'protobuf message class.'
+            )
+
+        message: typing.Type[Message] = source
+        full_name = message.DESCRIPTOR.full_name
+
+        def validate(value: Any) -> Message:
+            if isinstance(value, message):
+                return value
+            try:
+                return json_format.ParseDict(value, message())
+            except json_format.ParseError as error:
+                raise ValueError(
+                    f"Expected a `{full_name}` or its JSON form: {error}"
+                )
+
+        def serialize(value: Message) -> Any:
+            # `MessageToDict` is wrapped rather than passed to
+            # `PlainSerializer` directly because pydantic reads a
+            # serializer's signature to decide whether it takes a
+            # `SerializationInfo`, and the keyword arguments of
+            # `MessageToDict` fit neither of the shapes it accepts.
+            return json_format.MessageToDict(value)
+
+        json_schema: dict[str, Any] = {
+            'title':
+                full_name,
+            'description':
+                f'A `{full_name}` protobuf message in its JSON form.',
+        }
+        json_type = _JSON_TYPE_BY_PROTOBUF_MESSAGE_WITH_NON_JSON_OBJECT_FORM.get(
+            full_name,
+            'object',
+        )
+        if json_type is not None:
+            json_schema['type'] = json_type
+
+        # `PlainValidator` is the whole validation of whatever it
+        # annotates, so the annotations describe `Any`: pydantic has
+        # no schema of its own for a protobuf message class.
+        return handler.generate_schema(
+            Annotated[
+                Any,
+                pydantic.PlainValidator(validate),
+                pydantic.PlainSerializer(serialize, when_used='json'),
+                pydantic.WithJsonSchema(json_schema),
+            ]
+        )
+
+
+def _has_unmarked_protobuf_message(annotation: Any) -> bool:
+    """Whether `annotation` is, or holds in its type arguments, a
+    protobuf message class that `ProtobufMessage` does not annotate."""
+    if get_origin(annotation) is Annotated:
+        annotated, *metadata = get_args(annotation)
+        if ProtobufMessage in metadata:
+            return False
+        return _has_unmarked_protobuf_message(annotated)
+    if isinstance(annotation, type) and issubclass(annotation, Message):
+        return True
+    return any(
+        _has_unmarked_protobuf_message(argument)
+        for argument in get_args(annotation)
+    )
+
+
+def without_protobuf_message_marker(annotation: Any) -> Any:
+    """The protobuf message class of an
+    `Annotated[<message class>, ProtobufMessage]` annotation, and any
+    other annotation as it is."""
+    if get_origin(annotation) is Annotated:
+        annotated, *metadata = get_args(annotation)
+        if ProtobufMessage in metadata:
+            return annotated
+    return annotation
+
+
 class Model(pydantic.BaseModel):
     """
     Base class for Pydantic request/response/error in Reboot API definitions.
@@ -87,6 +209,29 @@ class Model(pydantic.BaseModel):
     # if the field value is not of the correct type, the conversion
     # will fail.
     model_config = pydantic.ConfigDict(validate_assignment=True)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source: Any,
+        handler: pydantic.GetCoreSchemaHandler,
+    ) -> pydantic_core.core_schema.CoreSchema:
+        # Pydantic has no schema for a protobuf message class, and its
+        # error for one suggests `arbitrary_types_allowed`, which
+        # yields a field that has no JSON form. The fields are checked
+        # here, before pydantic reads them, to say what to write.
+        for field_name, field_info in cls.model_fields.items():
+            if ProtobufMessage in field_info.metadata:
+                continue
+            if _has_unmarked_protobuf_message(field_info.annotation):
+                raise UserPydanticError(
+                    f'Field `{field_name}` in model `{cls.__name__}` uses a '
+                    'protobuf message as its type. Annotate the message '
+                    'class with `ProtobufMessage` from `reboot.api`, e.g. '
+                    '`Annotated[TaskId, ProtobufMessage]`, also inside '
+                    '`Optional[...]`, `list[...]` and `dict[str, ...]`.'
+                )
+        return super().__get_pydantic_core_schema__(source, handler)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -131,6 +276,7 @@ class Model(pydantic.BaseModel):
 
             is_optional = False
             is_model = False
+            is_protobuf_message = False
             is_discriminated_union = False
 
             if field_type_origin is Union or field_type_origin is types.UnionType:
@@ -143,11 +289,18 @@ class Model(pydantic.BaseModel):
                     # but for the purpose of default value checking,
                     # we just need to know that it is `Optional`.
                     is_optional = True
-                    nested_optional_type = get_origin(non_none_args[0]
-                                                     ) or non_none_args[0]
+                    nested_optional_type = without_protobuf_message_marker(
+                        non_none_args[0]
+                    )
+                    nested_optional_type = get_origin(
+                        nested_optional_type
+                    ) or nested_optional_type
                     is_model = isinstance(
                         nested_optional_type, type
                     ) and issubclass(nested_optional_type, Model)
+                    is_protobuf_message = isinstance(
+                        nested_optional_type, type
+                    ) and issubclass(nested_optional_type, Message)
                 else:
                     is_discriminated_union = True
             else:
@@ -155,6 +308,9 @@ class Model(pydantic.BaseModel):
                     field_type_origin,
                     Model,
                 )
+                is_protobuf_message = isinstance(
+                    field_type_origin, type
+                ) and issubclass(field_type_origin, Message)
 
             has_default = field_info.default is not pydantic_core.PydanticUndefined
 
@@ -177,6 +333,13 @@ class Model(pydantic.BaseModel):
                         'is a non-optional `Model` type and cannot have a '
                         '`default` value. Use `Optional` for `Model` types '
                         'with empty default.'
+                    )
+                elif is_protobuf_message and not is_optional:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is a non-optional protobuf message type and cannot '
+                        'have a `default` value. Use `Optional` for protobuf '
+                        'message types with empty default.'
                     )
                 elif field_info.default is None and not is_optional:
                     raise UserPydanticError(
@@ -287,7 +450,7 @@ def _get_discriminated_union_info(
 
 
 def _pydantic_to_proto(
-    input: Model | PRIMITIVE | COLLECTION | None,
+    input: Model | Message | PRIMITIVE | COLLECTION | None,
     input_type: Optional[typing.Type],
     # We always will return lists, dicts and BaseModels as proto messages.
     output_type: typing.Type[Message] | PRIMITIVE_TYPE,
@@ -315,6 +478,7 @@ def _pydantic_to_proto(
     # Model has the same structure as expected by the 'output_type' and
     # if 'input' is 'Model' it should be validated.
     """
+    input_type = without_protobuf_message_marker(input_type)
     input_type_or_origin = get_origin(input_type)
     if input_type_or_origin is None:
         # If the type has no origin, it is either a primitive type
@@ -521,6 +685,10 @@ def _pydantic_to_proto(
                 assert isinstance(nested_output, Message)
                 output_value.CopyFrom(nested_output)
         return output
+    elif issubclass(input_type_or_origin, Message):
+        # A protobuf message is carried as it is.
+        assert isinstance(input, input_type_or_origin), type(input)
+        return input
     elif issubclass(input_type_or_origin, Model):
         assert isinstance(output_type, type(Message))
         assert isinstance(input, Model)
@@ -593,8 +761,9 @@ def _pydantic_to_proto(
     else:
         raise ValueError(
             f"Unexpected input type in '_pydantic_to_proto'. "
-            f"Expected 'Model', 'list', 'dict' or primitive type for output '{output_type}' "
-            f"but got '{input}' of type '{input_type}'."
+            "Expected 'Model', protobuf 'Message', 'list', 'dict' or "
+            f"primitive type for output '{output_type}' but got '{input}' "
+            f"of type '{input_type}'."
         )
 
 
@@ -621,9 +790,10 @@ def pydantic_to_proto(
 
 def _proto_to_pydantic(
     input: Message | PRIMITIVE,
-    output_type: typing.Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+    output_type: typing.Type[Model] | typing.Type[Message] | PRIMITIVE_TYPE |
+    COLLECTION_TYPE | None,
     field_info: Optional[FieldInfo] = None,
-) -> Model | PRIMITIVE | COLLECTION | None:
+) -> Model | Message | PRIMITIVE | COLLECTION | None:
     """Converts a Protobuf 'input' message or primitive type to the
     'output_type' Model, list, dict or primitive type.
 
@@ -657,6 +827,7 @@ def _proto_to_pydantic(
         assert isinstance(input, Value)
         return json_format.MessageToDict(input)
 
+    output_type = without_protobuf_message_marker(output_type)
     output_type_or_origin = get_origin(output_type)
 
     if output_type_or_origin is None:
@@ -800,6 +971,13 @@ def _proto_to_pydantic(
                 dict_value_type,
             )
         return output
+    elif issubclass(output_type_or_origin, Message):
+        # A protobuf message is carried as it is, copied so that the
+        # model does not share it with the message it was read from.
+        assert isinstance(input, output_type_or_origin), type(input)
+        output_message = output_type_or_origin()
+        output_message.CopyFrom(input)
+        return output_message
     elif issubclass(output_type_or_origin, Model):
         # Ensure 'output_type' is a class (not a Union of primitive
         # types), so we can safely call 'output_type' as a class inside
@@ -851,8 +1029,8 @@ def _proto_to_pydantic(
     else:
         raise ValueError(
             f"Unexpected output type in '_proto_to_pydantic'. "
-            f"Expected 'Model', 'list', 'dict' or primitive type for input '{input}' "
-            f"but got '{output_type}'."
+            "Expected 'Model', protobuf 'Message', 'list', 'dict' or "
+            f"primitive type for input '{input}' but got '{output_type}'."
         )
 
 
@@ -1106,6 +1284,7 @@ class Type(pydantic.BaseModel):
             method_name,
             field_info: Optional[FieldInfo] = None,
         ):
+            field_type = without_protobuf_message_marker(field_type)
             field_type_origin = get_origin(field_type)
             if field_type_origin is Union or field_type_origin is types.UnionType:
                 discriminated_union_info = _get_discriminated_union_info(
@@ -1183,6 +1362,9 @@ class Type(pydantic.BaseModel):
                 # `dict[str, Any]` becomes a Protobuf `map<string,
                 # google.protobuf.Value>` carrying arbitrary JSON
                 # values; the value type needs no further validation.
+                pass
+            elif issubclass(field_type, Message):
+                # A protobuf message is carried as it is.
                 pass
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):

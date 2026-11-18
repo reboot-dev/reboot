@@ -76,6 +76,7 @@ def py_reboot_library_from_pydantic(
         name,
         pydantic,
         py_deps,
+        proto_deps = [],
         visibility = ["//visibility:public"]):
     """Generates a py_reboot_library from a Pydantic API definition.
 
@@ -84,6 +85,10 @@ def py_reboot_library_from_pydantic(
         pydantic: The Pydantic API definition file.
         py_deps: Python dependencies, expecting at least a `py_library`
                  of the `pydantic` file.
+        proto_deps: `proto_library` targets declaring the protobuf
+                    messages the API uses as field types, beyond
+                    Reboot's own and the well-known `empty` and
+                    `struct`, which are always included.
         visibility: Bazel visibility.
     """
 
@@ -108,7 +113,7 @@ def py_reboot_library_from_pydantic(
             "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
             "@com_google_protobuf//:empty_proto",
             "@com_google_protobuf//:struct_proto",
-        ],
+        ] + proto_deps,
     )
 
     py_reboot_library(
