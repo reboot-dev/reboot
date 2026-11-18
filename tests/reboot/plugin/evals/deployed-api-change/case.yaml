@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: deployed-api-change
+description: "A rule check, not a deploy: told the app is deployed, the agent changes the API additively (a renamed field keeps its tag; an unwanted field stays declared), as Reboot's schema-evolution rule requires."
+tags: [api, schema-evolution, code]
+runs: 3
+execution:
+  prompt: "Our task tracker is live on Reboot Cloud with real users' tasks in it. Rename the task's `priority` field to `urgency`, and get rid of the `notes` field: nobody uses it. Make the change."
+  max_turns: 50
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+  append_system_prompt: "This session can read files, load skills, and write and edit files in the working directory, which holds the app. It cannot run commands, so nothing is generated, installed, tested, started or deployed. No one will answer questions in this session: where you would ask, choose, say what you chose, and go on. Do the work the request asks for and write its files."
+context:
+  scaffold_script: fixture.sh
+graders:
+  - name: reboot-skill
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"reboot:[\w-]+"'
+  - name: urgency-keeps-tag-2
+    type: regex
+    target: {source: file, path: api/tasks/v1/task.py}
+    pattern: 'urgency\s*:\s*int\s*=\s*Field\(\s*tag\s*=\s*2\b'
+  - name: tag-3-still-declared
+    type: regex
+    target: {source: file, path: api/tasks/v1/task.py}
+    pattern: ':\s*str\s*=\s*Field\(\s*tag\s*=\s*3\b'
+  - name: additive-change
+    type: llm
+    focus: {source: file, path: api/tasks/v1/task.py}
+    criteria: "This is the task tracker's API file after the change. Before it, `TaskState` had `title: str` (tag 1), `priority: int` (tag 2), `notes: str` (tag 3) and `done: bool` (tag 4). PASS if `TaskState` now has `urgency: int` with tag 2 in place of `priority`; a `str` field with tag 3 is still declared (named `notes` or renamed, for example as deprecated); and no other field's tag or type changed. FAIL if tag 3 is gone, if `urgency` has a tag other than 2 or a type other than `int`, if tag 3 now belongs to a field of another type, or if `priority` is still there with `urgency` added beside it under a new tag. Quote the `TaskState` you relied on."
+  - name: says-why
+    type: llm
+    focus: last_message
+    criteria: "PASS if the answer tells the user that `notes` is still declared in the API, under its own name or a new one (kept, retired, deprecated, renamed to something like `retired_notes` on the same tag, no longer used, not fully deleted), and gives the reason: the app is deployed with stored state, and deleting a field (or changing its tag) would make the new version fail to boot or be rejected. Renaming the field is not removing it. FAIL only if the answer says the field was removed from the API, or keeps it without giving that reason. Quote what you relied on."
