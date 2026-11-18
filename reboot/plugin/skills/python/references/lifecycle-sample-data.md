@@ -14,8 +14,8 @@ With sample data, write `backend/src/seed.py` at the build's `main.py`
 step, through the real methods, each call with its own
 `.idempotently("<alias>")`: `initialize` replays a call it has made
 before instead of making it again, so a restart adds nothing. Seed
-enough that every page in the page map and every state it shows has
-something in it, with real-sounding names. `initialize` calls `seed` only under `rbt dev run`, which sets
+enough that every page and every state it shows has something in
+it, with real-sounding names. `initialize` calls `seed` only under `rbt dev run`, which sets
 `RBT_DEV=true`; `rbt serve` and Reboot Cloud do not, so a deployed app
 starts empty:
 
