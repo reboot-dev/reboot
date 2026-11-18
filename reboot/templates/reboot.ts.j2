@@ -603,6 +603,18 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     bytesState: Uint8Array | undefined,  // `undefined` for a workflow.
     bytesRequest: Uint8Array
   ): Promise<Uint8Array> {
+    {% if method.options.proto.kind in ['reader', 'writer', 'transaction'] %}
+    // The state that the transaction ongoing on this same state is
+    // using when we are called, or `undefined` when there is none.
+    {% if method.options.proto.kind == 'transaction' %}
+    const ongoingTransactionState = context.nested
+      ? ongoingTransactionStates[ongoingTransactionStateKey(context)]
+      : undefined;
+    {% else %}
+    const ongoingTransactionState =
+      ongoingTransactionStates[ongoingTransactionStateKey(context)];
+    {% endif %}
+    {% endif %}
     try {
       {% if method.options.proto.constructor %}
       statesBeingConstructed.add(context.stateId);
@@ -616,19 +628,28 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         { validate: !(statesBeingConstructed.has(context.stateId)) },
       );
       {% endif %}
-      {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
-      if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
+      {% if method.options.proto.kind in ['reader', 'writer', 'transaction'] %}
+      // A reader, a writer or a transaction called within a
+      // transaction on this same state continues from the state its
+      // caller is using, because the caller's writes only reach the
+      // stored state once the caller returns. It works on a copy, so
+      // that aborting drops its writes, and a writer or a transaction
+      // hands them back to the caller below once it has returned
+      // successfully.
+      if (ongoingTransactionState !== undefined) {
         {% if options.proto.zod %}
-        state = structuredClone(ongoingTransactionStates[ongoingTransactionStateKey(context)]);
+        state = structuredClone(ongoingTransactionState);
         {% else %}
-        state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+        state = ongoingTransactionState.clone();
         {% endif %}
       }
-      {% elif method.options.proto.kind == 'transaction' %}
-      // TODO: assert that there are no ongoing transactions for this state.
-      //
-      // The `state` should be already validated above, so we can
-      // just store it here.
+      {% endif %}
+      {% if method.options.proto.kind == 'transaction' %}
+
+      // While we run, our state is the one that the readers, writers
+      // and transactions we call on this state continue from and hand
+      // their writes back to. The `state` should already be validated
+      // above, so we can just store it here.
       ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
       {% endif %}
 
@@ -646,18 +667,22 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
       const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
-      {% if method.options.proto.kind == 'writer' %}
-      // TODO: it's premature to overwrite the state now given that the
-      // writer might still "fail" and an error will get propagated back
-      // to the ongoing transaction which will still see the effects of
-      // this writer. What we should be doing instead is creating a
-      // callback API that we invoke only after a writer completes
-      // that lets us update the state _reference_ then.
-      if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
+      {% if method.options.proto.kind in ['writer', 'transaction'] %}
+      // We have returned successfully, so hand what we wrote to the
+      // transaction we were called within, which is still holding the
+      // state we copied ours from.
+      //
+      // TODO: it's premature to overwrite the caller's state now given
+      // that we might still "fail" and an error will get propagated
+      // back to the caller which will still see our effects. What we
+      // should be doing instead is creating a callback API that we
+      // invoke only after we complete that lets us update the state
+      // _reference_ then.
+      if (ongoingTransactionState !== undefined) {
         {% if options.proto.zod %}
-        Object.assign(ongoingTransactionStates[ongoingTransactionStateKey(context)], state);
+        Object.assign(ongoingTransactionState, state);
         {% else %}
-        ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+        ongoingTransactionState.copyFrom(state);
         {% endif %}
       }
       {% endif %}
@@ -706,7 +731,15 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       throw error;
     } finally {
       {% if method.options.proto.kind == 'transaction' %}
-      delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+      // Our caller's state is the ongoing one again, so that a writer
+      // the caller runs after us continues from it. The outermost
+      // transaction on this state has no caller, and removes the
+      // entry.
+      if (ongoingTransactionState !== undefined) {
+        ongoingTransactionStates[ongoingTransactionStateKey(context)] = ongoingTransactionState;
+      } else {
+        delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+      }
       {% endif %}
 
       {% if method.options.proto.constructor %}

@@ -164,6 +164,19 @@ def ongoing_transaction_state_key(
         f"{context.state_type_name}/{context.state_id}/"
         f"{context.transaction_root_id}"
     )
+
+
+# Updates `target` in place to hold every field value of `source`,
+# leaving `target` the same object, so that an existing reference to it
+# keeps working. Pydantic has no method that updates a model in place
+# (`model_copy(update=...)` and `model_validate()` both return a new
+# object), so we assign each field ourselves.
+def _update_ongoing_transaction_state(
+    target: IMPORT_reboot_api.Model,
+    source: IMPORT_reboot_api.Model,
+) -> None:
+    for field in type(source).model_fields:
+        setattr(target, field, getattr(source, field))
 {% endif %}
 
 {# Since Pydantic model fields might be 'Optional' or have defaults, we
@@ -1059,6 +1072,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     {% elif method.options.proto.kind == 'writer' %}
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Effects:
     {% endif %}
+        {% if options.proto.pydantic and method.options.proto.kind in ['reader', 'writer', 'transaction'] %}
+        # The model that the transaction ongoing on this same state is
+        # using when we are called, or `None` when there is none.
+        ongoing_transaction_typed_state: IMPORT_typing.Optional[IMPORT_reboot_api.Model] = (
+            ongoing_transaction_states.get(ongoing_transaction_state_key(context))
+            {% if method.options.proto.kind == 'transaction' %}
+            if context.nested else None
+            {% endif %}
+        )
+        {% endif %}
         try:
             {% if method.options.proto.constructor %}
             states_being_constructed.add(context.state_id)
@@ -1067,14 +1090,22 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             typed_state: {{ state.proto.name }}.State = {{ state.proto.name }}FromProto(state, is_initial_state=(context.state_id in states_being_constructed))
 
             {% if options.proto.pydantic %}
-            {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
-            {% elif method.options.proto.kind == 'transaction' %}
-            # TODO: assert that there are no ongoing transactions for this state.
-            #
-            # The `typed_state` should be already validated above, so we can
-            # just store it here.
+            # A reader, a writer or a transaction called within a
+            # transaction on this same state continues from the model
+            # its caller is using, because the caller's writes only
+            # reach the protobuf state once the caller returns. It
+            # works on a copy, so that aborting drops its writes, and a
+            # writer or a transaction hands them back to the caller
+            # below once it has returned successfully.
+            if ongoing_transaction_typed_state is not None:
+                typed_state = ongoing_transaction_typed_state.model_copy(deep=True)
+            {% if method.options.proto.kind == 'transaction' %}
+
+            # While we run, our model is the one that the readers,
+            # writers and transactions we call on this state continue
+            # from and hand their writes back to. The `typed_state`
+            # should already be validated above, so we can just store
+            # it here.
             ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             {% endif %}
             {% endif %}
@@ -1097,16 +1128,22 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 )
             )
 
-            {% if options.proto.pydantic and method.options.proto.kind == 'writer' %}
-            # TODO: it's premature to overwrite the state now given that the
-            # writer might still "fail" and an error will get propagated back
-            # to the ongoing transaction which will still see the effects of
-            # this writer. What we should be doing instead is creating a
-            # callback API that we invoke only after a writer completes
-            # that lets us update the state _reference_ then.
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
+            {% if options.proto.pydantic and method.options.proto.kind in ['writer', 'transaction'] %}
+            # We have returned successfully, so hand what we wrote to
+            # the transaction we were called within, which is still
+            # holding the model we copied ours from.
+            #
+            # TODO: it's premature to overwrite the caller's state now
+            # given that we might still "fail" and an error will get
+            # propagated back to the caller which will still see our
+            # effects. What we should be doing instead is creating a
+            # callback API that we invoke only after we complete that
+            # lets us update the state _reference_ then.
+            if ongoing_transaction_typed_state is not None:
+                _update_ongoing_transaction_state(
+                    ongoing_transaction_typed_state,
+                    typed_state,
+                )
             {% endif %}
 
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
@@ -1279,8 +1316,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             states_being_constructed.remove(context.state_id)
             {% endif %}
             {% if options.proto.pydantic and method.options.proto.kind == 'transaction' %}
-            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
-                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+            # Our caller's model is the ongoing one again, so that a
+            # writer the caller runs after us continues from it. The
+            # outermost transaction on this state has no caller, and
+            # removes the entry.
+            if ongoing_transaction_typed_state is not None:
+                ongoing_transaction_states[ongoing_transaction_state_key(context)] = ongoing_transaction_typed_state
+            else:
+                ongoing_transaction_states.pop(
+                    ongoing_transaction_state_key(context), None
+                )
             {% endif %}
             {% if method.options.proto.kind == 'workflow' %}
             self._servicer.__servicer__.set(None)

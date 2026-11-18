@@ -924,28 +924,42 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _Create(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             statesBeingConstructed.add(context.stateId);
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterCreateRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__Create(context, state, request);
             });
             const response = GreeterCreateResponseToProtobuf(partialResponse);
-            // TODO: it's premature to overwrite the state now given that the
-            // writer might still "fail" and an error will get propagated back
-            // to the ongoing transaction which will still see the effects of
-            // this writer. What we should be doing instead is creating a
-            // callback API that we invoke only after a writer completes
-            // that lets us update the state _reference_ then.
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
             }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
@@ -977,13 +991,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _Greet(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterGreetRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1018,27 +1042,41 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _SetAdjective(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterSetAdjectiveRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__SetAdjective(context, state, request);
             });
             const response = GreeterSetAdjectiveResponseToProtobuf(partialResponse);
-            // TODO: it's premature to overwrite the state now given that the
-            // writer might still "fail" and an error will get propagated back
-            // to the ongoing transaction which will still see the effects of
-            // this writer. What we should be doing instead is creating a
-            // callback API that we invoke only after a writer completes
-            // that lets us update the state _reference_ then.
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
             }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
@@ -1069,21 +1107,49 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _TransactionSetAdjective(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = context.nested
+            ? ongoingTransactionStates[ongoingTransactionStateKey(context)]
+            : undefined;
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            // TODO: assert that there are no ongoing transactions for this state.
-            //
-            // The `state` should be already validated above, so we can
-            // just store it here.
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
+            }
+            // While we run, our state is the one that the readers, writers
+            // and transactions we call on this state continue from and hand
+            // their writes back to. The `state` should already be validated
+            // above, so we can just store it here.
             ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
             const request = GreeterTransactionSetAdjectiveRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__TransactionSetAdjective(context, state, request);
             });
             const response = GreeterTransactionSetAdjectiveResponseToProtobuf(partialResponse);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
+            }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
             result.response = response.toBinary();
@@ -1109,18 +1175,37 @@ export class GreeterBaseServicer extends reboot.Servicer {
             throw error;
         }
         finally {
-            delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            // Our caller's state is the ongoing one again, so that a writer
+            // the caller runs after us continues from it. The outermost
+            // transaction on this state has no caller, and removes the
+            // entry.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)] = ongoingTransactionState;
+            }
+            else {
+                delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            }
         }
     }
     async _TryToConstructContext(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterTryToConstructContextRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1155,13 +1240,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _TryToConstructExternalContext(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterTryToConstructExternalContextRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1196,13 +1291,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _TestLongRunningFetch(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterTestLongRunningFetchRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1237,27 +1342,41 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _TestLongRunningWriter(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterTestLongRunningWriterRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__TestLongRunningWriter(context, state, request);
             });
             const response = GreeterTestLongRunningWriterResponseToProtobuf(partialResponse);
-            // TODO: it's premature to overwrite the state now given that the
-            // writer might still "fail" and an error will get propagated back
-            // to the ongoing transaction which will still see the effects of
-            // this writer. What we should be doing instead is creating a
-            // callback API that we invoke only after a writer completes
-            // that lets us update the state _reference_ then.
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
             }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
@@ -1288,13 +1407,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _GetWholeState(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterGetWholeStateRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1329,13 +1458,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _FailWithException(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterFailWithExceptionRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1370,13 +1509,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _FailWithAborted(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterFailWithAbortedRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1445,27 +1594,41 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _DangerousFields(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterDangerousFieldsRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__DangerousFields(context, state, request);
             });
             const response = GreeterDangerousFieldsResponseToProtobuf(partialResponse);
-            // TODO: it's premature to overwrite the state now given that the
-            // writer might still "fail" and an error will get propagated back
-            // to the ongoing transaction which will still see the effects of
-            // this writer. What we should be doing instead is creating a
-            // callback API that we invoke only after a writer completes
-            // that lets us update the state _reference_ then.
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
             }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
@@ -1496,27 +1659,41 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _StoreRecursiveMessage(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterStoreRecursiveMessageRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__StoreRecursiveMessage(context, state, request);
             });
             const response = GreeterStoreRecursiveMessageResponseToProtobuf(partialResponse);
-            // TODO: it's premature to overwrite the state now given that the
-            // writer might still "fail" and an error will get propagated back
-            // to the ongoing transaction which will still see the effects of
-            // this writer. What we should be doing instead is creating a
-            // callback API that we invoke only after a writer completes
-            // that lets us update the state _reference_ then.
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
             }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
@@ -1547,13 +1724,23 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _ReadRecursiveMessage(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = ongoingTransactionStates[ongoingTransactionStateKey(context)];
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
-                state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
             }
             const request = GreeterReadRecursiveMessageRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
@@ -1588,21 +1775,49 @@ export class GreeterBaseServicer extends reboot.Servicer {
     }
     async _ConstructAndStoreRecursiveMessage(context, bytesState, // `undefined` for a workflow.
     bytesRequest) {
+        // The state that the transaction ongoing on this same state is
+        // using when we are called, or `undefined` when there is none.
+        const ongoingTransactionState = context.nested
+            ? ongoingTransactionStates[ongoingTransactionStateKey(context)]
+            : undefined;
         try {
             let state = GreeterFromBinary(bytesState, 
             // Don't validate if we're constructing because non-optional
             // fields that this method might be setting will be invalid.
             { validate: !(statesBeingConstructed.has(context.stateId)) });
-            // TODO: assert that there are no ongoing transactions for this state.
-            //
-            // The `state` should be already validated above, so we can
-            // just store it here.
+            // A reader, a writer or a transaction called within a
+            // transaction on this same state continues from the state its
+            // caller is using, because the caller's writes only reach the
+            // stored state once the caller returns. It works on a copy, so
+            // that aborting drops its writes, and a writer or a transaction
+            // hands them back to the caller below once it has returned
+            // successfully.
+            if (ongoingTransactionState !== undefined) {
+                state = ongoingTransactionState.clone();
+            }
+            // While we run, our state is the one that the readers, writers
+            // and transactions we call on this state continue from and hand
+            // their writes back to. The `state` should already be validated
+            // above, so we can just store it here.
             ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
             const request = GreeterConstructAndStoreRecursiveMessageRequestFromBinary(bytesRequest);
             let partialResponse = await reboot.runWithContext(context, () => {
                 return this.__ConstructAndStoreRecursiveMessage(context, state, request);
             });
             const response = GreeterConstructAndStoreRecursiveMessageResponseToProtobuf(partialResponse);
+            // We have returned successfully, so hand what we wrote to the
+            // transaction we were called within, which is still holding the
+            // state we copied ours from.
+            //
+            // TODO: it's premature to overwrite the caller's state now given
+            // that we might still "fail" and an error will get propagated
+            // back to the caller which will still see our effects. What we
+            // should be doing instead is creating a callback API that we
+            // invoke only after we complete that lets us update the state
+            // _reference_ then.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionState.copyFrom(state);
+            }
             const result = new reboot_api.nodejs_pb.TrampolineResult();
             result.state = state.toBinary();
             result.response = response.toBinary();
@@ -1628,7 +1843,16 @@ export class GreeterBaseServicer extends reboot.Servicer {
             throw error;
         }
         finally {
-            delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            // Our caller's state is the ongoing one again, so that a writer
+            // the caller runs after us continues from it. The outermost
+            // transaction on this state has no caller, and removes the
+            // entry.
+            if (ongoingTransactionState !== undefined) {
+                ongoingTransactionStates[ongoingTransactionStateKey(context)] = ongoingTransactionState;
+            }
+            else {
+                delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
+            }
         }
     }
     async __dispatch(external, cancelled, bytesCall) {
