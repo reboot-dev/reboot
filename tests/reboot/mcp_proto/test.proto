@@ -2,6 +2,10 @@ syntax = "proto3";
 
 package tests.reboot.mcp_proto;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 import "rbt/v1alpha1/options.proto";
 
 // A state defined in proto whose methods are MCP tools and resources.
@@ -40,6 +44,36 @@ message GetResponse {
   Priority priority = 3;
 }
 
+message Author {
+  string name = 1;
+}
+
+// A request and a response with the same fields, so that the
+// response shows what the method received.
+message EchoRequest {
+  Author author = 1;
+  repeated Author reviewers = 2;
+  map<string, Author> editors = 3;
+  google.protobuf.Timestamp when = 4;
+  google.protobuf.Duration took = 5;
+  google.protobuf.Value extra = 6;
+  google.protobuf.Struct metadata = 7;
+  google.protobuf.Int32Value rating = 8;
+  bytes data = 9;
+}
+
+message EchoResponse {
+  Author author = 1;
+  repeated Author reviewers = 2;
+  map<string, Author> editors = 3;
+  google.protobuf.Timestamp when = 4;
+  google.protobuf.Duration took = 5;
+  google.protobuf.Value extra = 6;
+  google.protobuf.Struct metadata = 7;
+  google.protobuf.Int32Value rating = 8;
+  bytes data = 9;
+}
+
 message LineRequest {
   int32 index = 1;
 }
@@ -60,6 +94,13 @@ service NoteMethods {
     option (rbt.v1alpha1.method) = {
       reader: {},
       mcp: { tool: true, resource: true },
+    };
+  }
+
+  rpc Echo(EchoRequest) returns (EchoResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      mcp: { tool: true },
     };
   }
 

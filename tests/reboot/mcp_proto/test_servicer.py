@@ -39,3 +39,12 @@ class NoteServicer(Note.Servicer):
         request: Note.LineRequest,
     ) -> Note.LineResponse:
         return Note.LineResponse(line=self.state.lines[request.index])
+
+    async def echo(
+        self,
+        context: ReaderContext,
+        request: Note.EchoRequest,
+    ) -> Note.EchoResponse:
+        response = Note.EchoResponse()
+        response.ParseFromString(request.SerializeToString())
+        return response
