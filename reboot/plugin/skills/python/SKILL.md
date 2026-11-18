@@ -1,6 +1,6 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
 license: Apache-2.0
 metadata:
   author: reboot
@@ -15,6 +15,16 @@ metadata:
 > **Version notices:** if `rbt` reports a version mismatch or that a
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
+
+> **Plugin tools:** the plugin's pinned tools (`rbt`, `uv`, `uvx`,
+> `node`, `npm`, `envoy`, `cloudflared`, `portless`,
+> `mcpjam-inspector`) are in `../../bin` relative to this file. If
+> that directory is not the first entry on PATH, put it first in
+> every command, for example `PATH="<plugin>/bin:$PATH" rbt dev run`.
+> Calling `<plugin>/bin/rbt` alone is not enough, because
+> `rbt dev run` looks up `envoy` and `npm` on PATH. Under Codex on
+> Linux, ask to run `rbt` commands outside the sandbox; inside it they
+> hang (openai/codex#24933).
 
 Guide for building transactional microservices in Python with the Reboot
 framework. Reboot APIs are defined in pydantic Python

@@ -14,9 +14,13 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Reboot",
-    "shortDescription": "Build Reboot apps (MCP Apps and Web Apps)",
+    "shortDescription": "Build MCP Apps and web apps",
+    "longDescription": "Build, run, inspect and deploy Reboot apps (MCP Apps and standalone web apps) from Codex. Skills route a description to the right kind of app, scaffold it, run it locally, start the developer dashboard, deploy to Reboot Cloud, upgrade Reboot, and give a full Reboot Python reference. On first use the plugin's tools download pinned uv, Node.js, Envoy, cloudflared and portless, and the Reboot CLI from PyPI. The plugin sends no telemetry.",
     "developerName": "Reboot",
-    "category": "Productivity",
-    "defaultPrompt": ["Build a Reboot app", "Run my Reboot app"]
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": ["Build a Reboot app", "Run my Reboot app"],
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png"
   }
 }
