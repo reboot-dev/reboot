@@ -100,6 +100,7 @@ The imports, so you don't have to go looking for them:
 
 ```python
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth import OAuth
 from reboot.aio.auth.oauth_providers import (
     Development,
     Google,                       # or GitHub, Auth0, …
@@ -147,10 +148,14 @@ Recommended sequence:
 
    Add `claims=[...]` when you need identity fields such as the
    user's email, and `store_tokens=True` only when you will call
-   that provider's own API as the user. **Choose deliberately
-   before real users exist**: `context.auth.user_id` is namespaced
-   per provider, so switching providers after launch strands every
-   existing user's state. Only reach for
+   that provider's own API as the user. **Don't ask for the
+   production provider during the design.** `prod=None` stays until
+   the user names one, which they can do at any time, or until
+   deploy, where the [`deploy` skill](../deploy/SKILL.md) requires
+   one. Choose deliberately, before real users exist:
+   `context.auth.user_id` is namespaced per provider, so switching
+   providers after launch strands every existing user's state. Only
+   reach for
    [mcp-app/references/auth-oauth-providers.md](../mcp-app/references/auth-oauth-providers.md)
    if you need to write a custom provider or debug a specific
    provider's flow.

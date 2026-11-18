@@ -7,14 +7,15 @@ tags: servicer, reader, ReaderContext, state, async
 
 ## Implement Reader Methods
 
-> **Critical:** `self.state` is **read-only** inside a reader. Mutating
-> it raises at runtime. Multiple readers on the same actor run
+> **Critical:** `self.state` is **read-only** inside a reader. Changing
+> it raises nothing, and the change is silently thrown away: each reader
+> gets its own copy of the state. Multiple readers on the same actor run
 > concurrently — they're blocked only by an in-flight writer/transaction.
 
 A method declared with `Reader(...)` in the API file receives a
 `ReaderContext` and must return its declared response type (or `None`
-if `response=None`). Inside a reader, `self.state` is read-only —
-mutations are not allowed and will fail.
+if `response=None`). Inside a reader, `self.state` is read-only — a
+change looks like it worked, and is lost when the reader returns.
 
 **Incorrect (mutating state in a reader):**
 
@@ -23,7 +24,7 @@ async def messages(
     self,
     context: ReaderContext,
 ) -> ChatRoom.MessagesResponse:
-    self.state.messages.append("seen")  # NEVER mutate in a reader
+    self.state.messages.append("seen")  # Lost when the reader returns
     return ChatRoom.MessagesResponse(messages=self.state.messages)
 ```
 

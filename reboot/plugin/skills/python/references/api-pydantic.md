@@ -13,7 +13,9 @@ tags: pydantic, api, Model, Methods, Reader, Writer, Transaction, factory
 >    → `AttributeError` at first access (codegen uses
 >    `model_construct()` which skips undeclared defaults).
 > 2. `default=` **must be the type's zero value** (`""`, `0`, `0.0`,
->    `False`, empty list/dict). Non-zero defaults raise
+>    `False`; `default_factory=list` or `dict` for a list or dict,
+>    since `default=[]` is refused; for a `Literal`, its first value).
+>    Non-zero defaults raise
 >    `UserPydanticError` at import. Set domain defaults inside the
 >    constructor or a `start`-style writer, not on the Field.
 > 3. Every `Field(tag=N)` gets a `description=` saying what the value
