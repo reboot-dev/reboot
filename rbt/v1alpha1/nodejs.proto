@@ -18,6 +18,9 @@ message Context {
   optional bytes auth = 7;
   optional string workflow_id = 8;
   optional string transaction_root_id = 9;
+  // Whether the method is a transaction that is nested within another
+  // transaction.
+  bool transaction_nested = 10;
 }
 
 ////////////////////////////////////////////////////////////////////////

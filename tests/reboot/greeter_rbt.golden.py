@@ -33304,6 +33304,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                             None if context.transaction_root_id is None
                             else str(context.transaction_root_id)
                         ),
+                        transaction_nested=context.nested,
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -34630,6 +34631,7 @@ class GreeterServicerNodeAdaptor(Greeter.singleton.Servicer):
                             None if context.transaction_root_id is None
                             else str(context.transaction_root_id)
                         ),
+                        transaction_nested=context.nested,
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
