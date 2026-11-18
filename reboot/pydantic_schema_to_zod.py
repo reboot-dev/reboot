@@ -6,6 +6,7 @@ import os
 import pydantic_core
 import reboot.api
 import types
+from google.protobuf.message import Message
 from importlib import import_module
 from pydantic.fields import FieldInfo
 from reboot.api import (
@@ -20,6 +21,7 @@ from reboot.api import (
     get_field_tag,
     is_annotation_any,
     snake_to_camel,
+    without_protobuf_message_marker,
 )
 from reboot.fail import fail
 from typing import (
@@ -123,6 +125,7 @@ def _collect_external_references(
     if field_type is None:
         return
 
+    field_type = without_protobuf_message_marker(field_type)
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -208,6 +211,28 @@ def defines_models(filename: str) -> bool:
     return len(_collect_models_in_module(module, module_path)) > 0
 
 
+def _protobuf_meta(message: type[Message]) -> str:
+    """The `protobuf` meta entry naming a protobuf message type."""
+    return f'protobuf: "{message.DESCRIPTOR.full_name}"'
+
+
+def _protobuf_message_of(field_type: Any) -> Optional[type[Message]]:
+    """The protobuf message a field is typed with, on its own or as an
+    `Optional[...]`, if any."""
+    if get_origin(field_type
+                 ) is Union or get_origin(field_type) is types.UnionType:
+        non_none_args = [
+            arg for arg in get_args(field_type) if arg is not type(None)
+        ]
+        if len(non_none_args) != 1:
+            return None
+        field_type = non_none_args[0]
+    field_type = without_protobuf_message_marker(field_type)
+    if isinstance(field_type, type) and issubclass(field_type, Message):
+        return field_type
+    return None
+
+
 def pydantic_to_zod(
     input: (
         Type[Model] | type[str] | type[int] | type[float] | type[bool] |
@@ -236,6 +261,7 @@ def pydantic_to_zod(
             output += f'.meta({{ tag: {tag} }})'
         return output
 
+    input = without_protobuf_message_marker(input)
     origin = get_origin(input)
     args = get_args(input)
 
@@ -295,6 +321,14 @@ def pydantic_to_zod(
             if tag is not None:
                 output += f'.meta({{ tag: {tag} }})'
             return output
+
+    if isinstance(input, type) and issubclass(input, Message):
+        # A protobuf message is carried as it is: `zod-to-proto`
+        # declares the field by the `protobuf` meta's type name.
+        meta = [_protobuf_meta(input)]
+        if tag is not None:
+            meta.append(f'tag: {tag}')
+        return f'z.custom<unknown>().meta({{ {", ".join(meta)} }})'
 
     if isinstance(input, type) and issubclass(input, Model):
         # Check if this is an external model that should be referenced.
@@ -375,7 +409,13 @@ def pydantic_to_zod(
 
                 # Add the `tag` metadata after setting defaults, since
                 # the converters expect it on the outermost schema.
-                zod_object_field += f'.meta({{ tag: {field_tag} }})'
+                meta = [f'tag: {field_tag}']
+                protobuf_message = _protobuf_message_of(field_type)
+                if protobuf_message is not None:
+                    # `zod-to-proto` reads a field's `protobuf` meta
+                    # from its outermost schema too.
+                    meta.append(_protobuf_meta(protobuf_message))
+                zod_object_field += f'.meta({{ {", ".join(meta)} }})'
                 output_fields.append(
                     f'{output_field_name}: {zod_object_field}'
                 )

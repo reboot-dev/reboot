@@ -398,6 +398,7 @@ py_library(
     deps = [
         ":api_py",
         ":fail_py",
+        requirement("protobuf"),
         requirement("pydantic"),
         requirement("aiofiles"),
     ],
@@ -423,6 +424,9 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":pydantic_schema_to_zod_py",
+        # So that an API file can import Reboot's own messages, e.g.
+        # the `TaskId` of `tasks.proto`, as field types.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
     ],
 )
 
