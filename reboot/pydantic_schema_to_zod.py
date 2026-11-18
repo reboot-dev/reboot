@@ -6,6 +6,7 @@ import os
 import pydantic_core
 import reboot.api
 import types
+from google.protobuf.message import Message
 from importlib import import_module
 from pydantic.fields import FieldInfo
 from reboot.api import (
@@ -20,10 +21,12 @@ from reboot.api import (
     get_field_tag,
     is_annotation_any,
     snake_to_camel,
+    without_protobuf_message_marker,
 )
 from reboot.fail import fail
 from typing import (
     Any,
+    Iterator,
     Literal,
     Optional,
     Type,
@@ -123,6 +126,7 @@ def _collect_external_references(
     if field_type is None:
         return
 
+    field_type = without_protobuf_message_marker(field_type)
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -208,6 +212,88 @@ def defines_models(filename: str) -> bool:
     return len(_collect_models_in_module(module, module_path)) > 0
 
 
+# The `.proto` files of `rbt/v1alpha1` whose generated modules
+# `@reboot-dev/reboot-api` exports, by the name it exports each under.
+_REBOOT_API_EXPORT_BY_PROTO_FILE = {
+    'rbt/v1alpha1/auth.proto': 'auth_pb',
+    'rbt/v1alpha1/errors.proto': 'errors_pb',
+    'rbt/v1alpha1/nodejs.proto': 'nodejs_pb',
+    'rbt/v1alpha1/react.proto': 'react_pb',
+    'rbt/v1alpha1/tasks.proto': 'tasks_pb',
+}
+
+
+def _protobuf_module_import_alias(proto_file: str) -> str:
+    """The alias a `.proto` file's generated TypeScript module is
+    imported under, e.g. `shop/v1/orders_pb` as `shop_v1_orders_pb`."""
+    return ''.join(
+        character if character.isalnum() else '_'
+        for character in proto_file.removesuffix('.proto')
+    ) + '_pb'
+
+
+def _protobuf_module_import_path(
+    from_module: str,
+    proto_file: str,
+    js_extension: bool,
+) -> str:
+    """The relative import path from a module's generated file to a
+    `.proto` file's generated TypeScript module, e.g. from
+    `shop.v1.servicer_api` to `shop/v1/orders.proto` it is
+    `./orders_pb`."""
+    from_directory = os.path.dirname(from_module.replace('.', os.sep))
+    relative_path = os.path.relpath(
+        proto_file.removesuffix('.proto') + '_pb',
+        from_directory,
+    )
+    if not relative_path.startswith('../'):
+        relative_path = './' + relative_path
+    return relative_path + ('.js' if js_extension else '')
+
+
+def _imported_protobuf_module(message: type[Message]) -> Optional[str]:
+    """The `.proto` file whose generated TypeScript module declares
+    `message` and has to be imported, and `None` for a message that
+    `@reboot-dev/reboot-api` exports: Reboot's own and the well-known
+    types."""
+    proto_file = message.DESCRIPTOR.file.name
+    if (
+        proto_file in _REBOOT_API_EXPORT_BY_PROTO_FILE or
+        proto_file.startswith('google/protobuf/')
+    ):
+        return None
+    return proto_file
+
+
+def _protobuf_message_typescript_class(message: type[Message]) -> str:
+    """The generated TypeScript class of a protobuf message, as an
+    expression: `reboot_api.tasks_pb.TaskId` for one of Reboot's own,
+    `reboot_api.protobuf_es.Timestamp` for a well-known type, and
+    `<import alias>.<class>` for any other."""
+    descriptor = message.DESCRIPTOR
+    proto_file = descriptor.file.name
+    # A nested message `Outer.Inner` is the class `Outer_Inner`.
+    name = descriptor.full_name.removeprefix(f'{descriptor.file.package}.'
+                                            ).replace('.', '_')
+    if proto_file in _REBOOT_API_EXPORT_BY_PROTO_FILE:
+        export = _REBOOT_API_EXPORT_BY_PROTO_FILE[proto_file]
+        return f'reboot_api.{export}.{name}'
+    if proto_file.startswith('google/protobuf/'):
+        return f'reboot_api.protobuf_es.{name}'
+    return f'{_protobuf_module_import_alias(proto_file)}.{name}'
+
+
+def _protobuf_messages_in(annotation: Any) -> Iterator[type[Message]]:
+    """Every protobuf message class an annotation names, on its own or
+    in its type arguments."""
+    annotation = without_protobuf_message_marker(annotation)
+    if isinstance(annotation, type) and issubclass(annotation, Message):
+        yield annotation
+        return
+    for argument in get_args(annotation):
+        yield from _protobuf_messages_in(argument)
+
+
 def pydantic_to_zod(
     input: (
         Type[Model] | type[str] | type[int] | type[float] | type[bool] |
@@ -236,6 +322,7 @@ def pydantic_to_zod(
             output += f'.meta({{ tag: {tag} }})'
         return output
 
+    input = without_protobuf_message_marker(input)
     origin = get_origin(input)
     args = get_args(input)
 
@@ -295,6 +382,19 @@ def pydantic_to_zod(
             if tag is not None:
                 output += f'.meta({{ tag: {tag} }})'
             return output
+
+    if isinstance(input, type) and issubclass(input, Message):
+        # A protobuf message is carried as it is, typed and validated
+        # by its generated class. `protobufToZodSchema` names the
+        # message in the schema's `protobuf` meta, which a `tag` set on
+        # the same schema is merged into.
+        output = (
+            'reboot_api.protobufToZodSchema('
+            f'{_protobuf_message_typescript_class(input)})'
+        )
+        if tag is not None:
+            output += f'.meta({{ tag: {tag} }})'
+        return output
 
     if isinstance(input, type) and issubclass(input, Model):
         # Check if this is an external model that should be referenced.
@@ -627,6 +727,25 @@ async def generate_zod_file_from_api(
             import_alias = _module_to_ts_import_alias(external_module)
             await zod.write(
                 f'import * as {import_alias} from "{relative_path}";\n'
+            )
+
+        # The generated modules of the protobuf messages that the
+        # `Model`s use as field types and Reboot does not export.
+        for proto_file in sorted(
+            {
+                proto_file for model_type in models_in_module
+                for field_info in model_type.model_fields.values()
+                for message in _protobuf_messages_in(field_info.annotation)
+                if (proto_file := _imported_protobuf_module(message)
+                   ) is not None
+            }
+        ):
+            import_alias = _protobuf_module_import_alias(proto_file)
+            import_path = _protobuf_module_import_path(
+                module_path, proto_file, js_extension
+            )
+            await zod.write(
+                f'import * as {import_alias} from "{import_path}";\n'
             )
 
         await zod.write('\n')
