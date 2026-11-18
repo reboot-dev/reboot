@@ -116,6 +116,8 @@ class PythonState(BaseState):
     # cannot derive a schema from a protobuf class. Empty for an API
     # defined in pydantic, whose request is a model.
     proto_ui_request_fields: dict[str, dict[str, str]]
+    # Whether the state has a statechart.
+    has_statechart: bool
     # For a state with a statechart, each method that a guard of the
     # statechart names, with the type of every event that a transition
     # with that guard is on.
@@ -285,6 +287,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                             ui.request_message]
                     ) for ui in state.proto.uis if ui.request_message
             },
+            has_statechart=statechart is not None,
             statechart_guards=statechart_guards,
             statechart_conditions=statechart_conditions,
             statechart_calls=statechart_calls,

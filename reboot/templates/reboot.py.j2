@@ -3368,6 +3368,57 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             servicer=self,
         )
 
+{% if state.has_statechart %}
+    class Statechart:
+        """The statechart of a `{{ state.proto.name }}`."""
+
+        def __init__(
+            self,
+            *,
+            servicer: {{ state.proto.name }}BaseServicer,
+        ):
+            self._servicer = servicer
+
+        def status(
+            self,
+            context: (
+                IMPORT_reboot_aio_contexts.ReaderContext |
+                IMPORT_reboot_aio_contexts.WriterContext |
+                IMPORT_reboot_aio_contexts.TransactionContext
+            ),
+        ) -> rbt.v1alpha1.statecharts.statechart_pb2.Status:
+            """Returns a copy of where the statechart of the state that
+            `context` is for is. It is empty for a state whose
+            statechart has not started."""
+            IMPORT_reboot_aio_types.assert_type(
+                context,
+                [
+                    IMPORT_reboot_aio_contexts.ReaderContext,
+                    IMPORT_reboot_aio_contexts.WriterContext,
+                    IMPORT_reboot_aio_contexts.TransactionContext,
+                ],
+                error_message_supplement=(
+                    "the status of a statechart is read by a reader, a "
+                    "writer or a transaction, which have the state"
+                ),
+            )
+
+            assert self._servicer._middleware is not None
+
+            status = self._servicer._middleware._state_manager.statechart_status(
+                context,
+            )
+
+            if status is None:
+                return rbt.v1alpha1.statecharts.statechart_pb2.Status()
+
+            return status
+
+    @property
+    def statechart(self) -> {{ state.proto.name }}BaseServicer.Statechart:
+        return {{ state.proto.name }}BaseServicer.Statechart(servicer=self)
+
+{% endif %}
     class Effects(IMPORT_reboot_aio_state_managers.Effects):
         def __init__(
             self,

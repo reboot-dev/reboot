@@ -176,6 +176,27 @@ class ServicerTest(unittest.TestCase):
             ).return_annotation,
         )
 
+    def test_status_is_not_read_with_context_of_workflow(self) -> None:
+        # The context of a workflow, which a servicer is only given
+        # by an application that is running.
+        context = WorkflowContext.__new__(WorkflowContext)
+
+        with self.assertRaises(TypeError) as raised:
+            OrderServicer().statechart.status(
+                context,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(
+            "reboot.aio.contexts.WorkflowContext is not an instance or "
+            "subclass of one of the expected type(s): "
+            "['reboot.aio.contexts.ReaderContext', "
+            "'reboot.aio.contexts.WriterContext', "
+            "'reboot.aio.contexts.TransactionContext']; the status of a "
+            "statechart is read by a reader, a writer or a transaction, "
+            "which have the state",
+            str(raised.exception),
+        )
+
     def test_servicer_without_a_method_is_not_instantiated(self) -> None:
         for method in [
             "is_settled",
