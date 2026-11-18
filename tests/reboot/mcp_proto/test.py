@@ -110,6 +110,82 @@ class McpProtoTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_tool_takes_message_fields_as_json(self) -> None:
+        tools = {
+            tool.name: tool for tool in (await self.session.list_tools()).tools
+        }
+        properties = tools["note_echo"].inputSchema["properties"]
+
+        # A message is any JSON value, since a well-known type has a
+        # JSON form of its own; a repeated field or a map of messages
+        # is an array or an object of them.
+        for name in ["author", "when", "took", "extra", "metadata", "rating"]:
+            self.assertEqual(properties[name]["anyOf"][0], {})
+        self.assertEqual(properties["reviewers"]["anyOf"][0]["type"], "array")
+        self.assertEqual(properties["editors"]["anyOf"][0]["type"], "object")
+        # The schema says that `bytes` are base64 in a string.
+        self.assertEqual(
+            properties["data"]["anyOf"][0],
+            {
+                "type": "string",
+                "contentEncoding": "base64"
+            },
+        )
+
+        await self.session.call_tool(
+            "note_append", {
+                "note_id": "n",
+                "text": "first"
+            }
+        )
+
+        # Each field is in the protobuf JSON mapping, which is also
+        # how the tool returns the response.
+        request = {
+            "author": {
+                "name": "Ada"
+            },
+            "reviewers": [{
+                "name": "Bob"
+            }, {
+                "name": "Cy"
+            }],
+            "editors": {
+                "chief": {
+                    "name": "Di"
+                }
+            },
+            "when": "2026-11-09T12:00:00Z",
+            "took": "1.500s",
+            "extra": ["one", True, None],
+            "metadata": {
+                "nested": {
+                    "key": "value"
+                }
+            },
+            "rating": 5,
+            "data": "aGVsbG8=",
+        }
+        result = await self.session.call_tool(
+            "note_echo", {
+                "note_id": "n",
+                **request
+            }
+        )
+        self.assertFalse(result.isError, str(result))
+        self.assertEqual(json.loads(result.content[0].text), request)
+
+        # A value that is not the JSON form of the field's type is an
+        # error for the caller to correct.
+        result = await self.session.call_tool(
+            "note_echo", {
+                "note_id": "n",
+                "when": "yesterday"
+            }
+        )
+        self.assertTrue(result.isError, str(result))
+        self.assertIn("Failed to parse when field", result.content[0].text)
+
     async def test_resource_returns_the_response_as_json(self) -> None:
         await self.session.call_tool(
             "note_append", {
