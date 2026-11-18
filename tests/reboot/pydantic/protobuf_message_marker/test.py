@@ -107,6 +107,24 @@ class ProtobufMessageMarkerTestCase(unittest.TestCase):
                     str(raised.exception),
                 )
 
+    def test_default_on_required_message(self) -> None:
+        # Like a nested `Model`, a message field has a default only as
+        # `Optional[...]` with `default=None`.
+        with self.assertRaises(UserPydanticError) as raised:
+            pydantic.create_model(
+                'Defaulted',
+                __base__=Model,
+                task_id=(
+                    Annotated[TaskId, ProtobufMessage],
+                    Field(tag=1, default=TaskId()),
+                ),
+            )
+        self.assertIn(
+            'is a non-optional protobuf message type and cannot have a '
+            '`default` value',
+            str(raised.exception),
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

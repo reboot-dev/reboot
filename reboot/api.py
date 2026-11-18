@@ -187,6 +187,17 @@ def _has_unmarked_protobuf_message(annotation: Any) -> bool:
     )
 
 
+def without_protobuf_message_marker(annotation: Any) -> Any:
+    """The protobuf message class of an
+    `Annotated[<message class>, ProtobufMessage]` annotation, and any
+    other annotation as it is."""
+    if get_origin(annotation) is Annotated:
+        annotated, *metadata = get_args(annotation)
+        if ProtobufMessage in metadata:
+            return annotated
+    return annotation
+
+
 class Model(pydantic.BaseModel):
     """
     Base class for Pydantic request/response/error in Reboot API definitions.
@@ -265,6 +276,7 @@ class Model(pydantic.BaseModel):
 
             is_optional = False
             is_model = False
+            is_protobuf_message = False
             is_discriminated_union = False
 
             if field_type_origin is Union or field_type_origin is types.UnionType:
@@ -277,11 +289,18 @@ class Model(pydantic.BaseModel):
                     # but for the purpose of default value checking,
                     # we just need to know that it is `Optional`.
                     is_optional = True
-                    nested_optional_type = get_origin(non_none_args[0]
-                                                     ) or non_none_args[0]
+                    nested_optional_type = without_protobuf_message_marker(
+                        non_none_args[0]
+                    )
+                    nested_optional_type = get_origin(
+                        nested_optional_type
+                    ) or nested_optional_type
                     is_model = isinstance(
                         nested_optional_type, type
                     ) and issubclass(nested_optional_type, Model)
+                    is_protobuf_message = isinstance(
+                        nested_optional_type, type
+                    ) and issubclass(nested_optional_type, Message)
                 else:
                     is_discriminated_union = True
             else:
@@ -289,6 +308,9 @@ class Model(pydantic.BaseModel):
                     field_type_origin,
                     Model,
                 )
+                is_protobuf_message = isinstance(
+                    field_type_origin, type
+                ) and issubclass(field_type_origin, Message)
 
             has_default = field_info.default is not pydantic_core.PydanticUndefined
 
@@ -311,6 +333,13 @@ class Model(pydantic.BaseModel):
                         'is a non-optional `Model` type and cannot have a '
                         '`default` value. Use `Optional` for `Model` types '
                         'with empty default.'
+                    )
+                elif is_protobuf_message and not is_optional:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is a non-optional protobuf message type and cannot '
+                        'have a `default` value. Use `Optional` for protobuf '
+                        'message types with empty default.'
                     )
                 elif field_info.default is None and not is_optional:
                     raise UserPydanticError(
