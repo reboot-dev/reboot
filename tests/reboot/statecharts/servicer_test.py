@@ -1,6 +1,7 @@
 import inspect
 import unittest
-from reboot.aio.contexts import WorkflowContext
+from google.protobuf.empty_pb2 import Empty
+from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from tests.reboot.statecharts import order_pb2
 from tests.reboot.statecharts.order_rbt import Order
 from typing import Optional
@@ -194,6 +195,48 @@ class ServicerTest(unittest.TestCase):
             "'reboot.aio.contexts.TransactionContext']; the status of a "
             "statechart is read by a reader, a writer or a transaction, "
             "which have the state",
+            str(raised.exception),
+        )
+
+    def test_event_is_not_enqueued_with_context_of_reader(self) -> None:
+        # The context of a reader, which a servicer is only given by
+        # an application that is running.
+        context = ReaderContext.__new__(ReaderContext)
+
+        with self.assertRaises(TypeError) as raised:
+            OrderServicer().statechart.enqueue(
+                context,  # type: ignore[arg-type]
+                order_pb2.Paid(cents=500),
+            )
+
+        self.assertEqual(
+            "reboot.aio.contexts.ReaderContext is not an instance or "
+            "subclass of one of the expected type(s): "
+            "['reboot.aio.contexts.WriterContext', "
+            "'reboot.aio.contexts.TransactionContext']; an event is "
+            "enqueued by a writer or a transaction, which can change the "
+            "state",
+            str(raised.exception),
+        )
+
+    def test_event_that_is_enqueued_is_event_of_statechart(self) -> None:
+        # The context of a writer, which a servicer is only given by
+        # an application that is running.
+        context = WriterContext.__new__(WriterContext)
+
+        with self.assertRaises(TypeError) as raised:
+            OrderServicer().statechart.enqueue(
+                context,
+                Empty(),  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(
+            "google.protobuf.empty_pb2.Empty is not an instance or "
+            "subclass of one of the expected type(s): "
+            "['tests.reboot.statecharts.order_pb2.Paid', "
+            "'tests.reboot.statecharts.order_pb2.Refunded', "
+            "'tests.reboot.statecharts.order_pb2.Settled']; an event that "
+            "is enqueued is one of the `events` of the statechart",
             str(raised.exception),
         )
 

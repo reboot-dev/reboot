@@ -118,6 +118,8 @@ class PythonState(BaseState):
     proto_ui_request_fields: dict[str, dict[str, str]]
     # Whether the state has a statechart.
     has_statechart: bool
+    # For a state with a statechart, the type of each of its events.
+    statechart_event_types: list[PythonType]
     # For a state with a statechart, each method that a guard of the
     # statechart names, with the type of every event that a transition
     # with that guard is on.
@@ -212,6 +214,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
     def _py_state(self, file: BaseFile, state: BaseState) -> PythonState:
         from_pydantic = file.options.proto.pydantic is not None
 
+        statechart_event_types: list[PythonType] = []
         statechart_guards: dict[str, list[PythonType]] = {}
         statechart_conditions: list[str] = []
         statechart_calls: dict[str, PythonStatechartCall] = {}
@@ -222,6 +225,12 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         )
 
         if statechart is not None:
+            statechart_event_types = [
+                self._python_type_from_proto_type(
+                    self.pool.FindMessageTypeByName(event),
+                ) for event in statechart.events
+            ]
+
             for on in on_transitions(statechart):
                 if on.HasField("guard"):
                     event_type = self._python_type_from_proto_type(
@@ -288,6 +297,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                     ) for ui in state.proto.uis if ui.request_message
             },
             has_statechart=statechart is not None,
+            statechart_event_types=statechart_event_types,
             statechart_guards=statechart_guards,
             statechart_conditions=statechart_conditions,
             statechart_calls=statechart_calls,

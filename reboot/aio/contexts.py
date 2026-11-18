@@ -14,6 +14,7 @@ from enum import Enum
 from google.protobuf.message import Message
 from logging import Logger
 from rbt.v1alpha1 import database_pb2, errors_pb2, react_pb2, react_pb2_grpc
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from reboot.aio.auth import Auth
 from reboot.aio.backoff import Backoff
@@ -896,6 +897,11 @@ class Context(ABC, IdempotencyManager):
     # usage in the `StateManager` class.
     _colocated_upserts: Optional[list[tuple[str, Optional[bytes]]]]
 
+    # Where the statechart of the state is after the method, if the
+    # method changed that, which we need to include as part of the
+    # effects.
+    _statechart_status: Optional[statechart_pb2.Status]
+
     def __init__(
         self,
         *,
@@ -943,6 +949,8 @@ class Context(ABC, IdempotencyManager):
         self._tasks = []
 
         self._colocated_upserts = None
+
+        self._statechart_status = None
 
         # Store the context as an asyncio contextvar for access via
         # APIs where we don't pass a `context` but we know one has

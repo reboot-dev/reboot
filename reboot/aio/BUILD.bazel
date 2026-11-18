@@ -128,6 +128,7 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
     ],
 )
 
