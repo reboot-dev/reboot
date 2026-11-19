@@ -49,6 +49,18 @@ py_test(
         "//reboot/aio:contexts_py",
         "//reboot/aio:tests_py",
         "//reboot/aio/auth:authorizers_py",
+        "//reboot/statecharts:events_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_test(
+    name = "events_test",
+    srcs = ["events_test.py"],
+    deps = [
+        ":order_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/statecharts:events_py",
         requirement("protobuf"),
     ],
 )

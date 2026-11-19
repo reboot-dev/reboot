@@ -110,6 +110,9 @@ import reboot.aio.auth.authorizers as IMPORT_reboot_aio_auth_authorizers
 import reboot.aio.auth.token_verifiers as IMPORT_reboot_aio_auth_token_verifiers
 import reboot.aio.aborted as IMPORT_reboot_aio_aborted
 import reboot.settings as IMPORT_reboot_settings
+{% if states | selectattr('has_statechart') | list | length > 0 %}
+import reboot.statecharts.events as IMPORT_reboot_statecharts_events
+{% endif %}
 import reboot.nodejs.python as IMPORT_reboot_nodejs_python
 from reboot.time import DateTimeWithTimeZone as IMPORT_reboot_time_DateTimeWithTimeZone
 import rbt.v1alpha1 as IMPORT_rbt_v1alpha1
@@ -3478,18 +3481,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 ),
             )
 
-            status_event = self._status.queue.add(
-                event=event.DESCRIPTOR.full_name,
+            self._status.queue.append(
+                IMPORT_reboot_statecharts_events.status_event_from_message(
+                    event,
+                ),
             )
-
-            # An event without fields has no value.
-            if len(event.DESCRIPTOR.fields) > 0:
-                status_event.value.update(
-                    IMPORT_google_protobuf_json_format.MessageToDict(
-                        event,
-                        preserving_proto_field_name=True,
-                    ),
-                )
 
             self._status_modified = True
 

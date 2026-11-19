@@ -1,7 +1,5 @@
 import unittest
 from google.protobuf.empty_pb2 import Empty
-from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
 from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
@@ -12,6 +10,7 @@ from reboot.aio.contexts import (
     WriterContext,
 )
 from reboot.aio.tests import Reboot
+from reboot.statecharts.events import status_event_from_message
 from tests.reboot.statecharts import order_pb2
 from tests.reboot.statecharts.order_rbt import Order
 from typing import Optional
@@ -188,16 +187,6 @@ class OrderServicer(Order.Servicer):
         return None
 
 
-def event(message: Message) -> statechart_pb2.Status.Event:
-    """Returns `message`, which is an event, as it is in a queue."""
-    event = statechart_pb2.Status.Event(event=message.DESCRIPTOR.full_name)
-    if len(message.DESCRIPTOR.fields) > 0:
-        event.value.update(
-            MessageToDict(message, preserving_proto_field_name=True),
-        )
-    return event
-
-
 class StatechartTest(unittest.IsolatedAsyncioTestCase):
     """Tests the `statechart` of a servicer, with the `Order` of
     `order.proto`. Each of `StatusFromReader`, `StatusFromWriter` and
@@ -238,7 +227,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         ]:
             self.assertEqual(
                 statechart_pb2.Status(
-                    queue=[event(order_pb2.Paid(cents=500))],
+                    queue=[
+                        status_event_from_message(order_pb2.Paid(cents=500))
+                    ],
                 ),
                 status,
             )
@@ -248,7 +239,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             statechart_pb2.Status(
-                queue=[event(order_pb2.Refunded(cents=200))],
+                queue=[
+                    status_event_from_message(order_pb2.Refunded(cents=200))
+                ],
             ),
             await self.order.StatusFromReader(self.context),
         )
@@ -275,10 +268,10 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             statechart_pb2.Status(
                 queue=[
-                    event(order_pb2.Paid(cents=500)),
-                    event(order_pb2.Paid(cents=1)),
-                    event(order_pb2.Refunded(cents=2)),
-                    event(order_pb2.Refunded(cents=200))
+                    status_event_from_message(order_pb2.Paid(cents=500)),
+                    status_event_from_message(order_pb2.Paid(cents=1)),
+                    status_event_from_message(order_pb2.Refunded(cents=2)),
+                    status_event_from_message(order_pb2.Refunded(cents=200))
                 ],
             ),
             await self.order.StatusFromReader(self.context),
@@ -291,7 +284,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
             await self.order.PayThenFail(self.context)
 
         self.assertEqual(
-            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            statechart_pb2.Status(
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
+            ),
             await self.order.StatusFromReader(self.context),
         )
 
@@ -301,8 +296,8 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             statechart_pb2.Status(
                 queue=[
-                    event(order_pb2.Paid(cents=500)),
-                    event(order_pb2.Paid(cents=1))
+                    status_event_from_message(order_pb2.Paid(cents=500)),
+                    status_event_from_message(order_pb2.Paid(cents=1))
                 ],
             ),
             await self.order.PayThenStatus(self.context),
@@ -312,7 +307,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         await (await self.order.spawn().Charge(self.context))
 
         self.assertEqual(
-            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            statechart_pb2.Status(
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
+            ),
             await self.order.StatusFromReader(self.context),
         )
 
@@ -322,7 +319,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         await (await self.order.spawn().ChargeThenFail(self.context))
 
         self.assertEqual(
-            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            statechart_pb2.Status(
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
+            ),
             await self.order.StatusFromReader(self.context),
         )
 
@@ -335,7 +334,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         await self.order.Pay(self.context, cents=500)
 
         self.assertEqual(
-            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            statechart_pb2.Status(
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
+            ),
             await (await self.order.spawn().StatusFromWorkflow(self.context)),
         )
 
@@ -350,7 +351,7 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
 
         async for status, _ in statuses:
             if status == statechart_pb2.Status(
-                queue=[event(order_pb2.Paid(cents=500))],
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
             ):
                 break
 
