@@ -25,8 +25,10 @@ async def create_zod_file(args):
     )
 
     # Add workspace root to sys.path so we can import pydantic API files
-    # from the current workspace.
+    # from the current workspace, and the output root so that they can
+    # import generated modules, e.g. a `py_proto_library`'s `_pb2`.
     sys.path.insert(0, str(WORKSPACE_ROOT))
+    sys.path.insert(1, str(output_folder))
 
     # Collect error models from all specified pydantic files.
     all_pydantic_files = [relative_path]

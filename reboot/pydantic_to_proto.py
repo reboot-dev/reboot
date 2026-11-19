@@ -23,8 +23,10 @@ async def create_proto_file(args):
     )
 
     # Add workspace root to sys.path so we can import pydantic API files
-    # from the current workspace.
+    # from the current workspace, and the output root so that they can
+    # import generated modules, e.g. a `py_proto_library`'s `_pb2`.
     sys.path.insert(0, str(WORKSPACE_ROOT))
+    sys.path.insert(1, str(output_folder))
 
     # The generator always creates a proto file with the same name
     # as the pydantic file (e.g., `servicer_api.py` ->
