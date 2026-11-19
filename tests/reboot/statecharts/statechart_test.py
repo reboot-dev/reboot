@@ -17,6 +17,10 @@ from tests.reboot.statecharts.order_rbt import Order
 from typing import Optional
 
 
+class ChargeFailed(Exception):
+    """What the inline writer of `ChargeThenFail` fails with."""
+
+
 class OrderServicer(Order.Servicer):
 
     def authorizer(self):
@@ -77,6 +81,53 @@ class OrderServicer(Order.Servicer):
     ) -> statechart_pb2.Status:
         await self.statechart(context).enqueue(order_pb2.Paid(cents=1))
         return self.statechart(context).status()
+
+    @classmethod
+    async def charge(
+        cls,
+        context: WorkflowContext,
+        request: Empty,
+    ) -> Empty:
+
+        async def record_charge(
+            state: Order.State,
+            statechart: Order.Statechart,
+        ) -> None:
+            state.owed_cents = 0
+            await statechart.enqueue(order_pb2.Paid(cents=500))
+
+        await Order.ref().write(context, record_charge)
+        return Empty()
+
+    @classmethod
+    async def charge_then_fail(
+        cls,
+        context: WorkflowContext,
+        request: Empty,
+    ) -> Empty:
+
+        async def record_charge_then_fail(
+            state: Order.State,
+            statechart: Order.Statechart,
+        ) -> None:
+            await statechart.enqueue(order_pb2.Paid(cents=500))
+            raise ChargeFailed()
+
+        try:
+            await Order.ref().write(context, record_charge_then_fail)
+        except ChargeFailed:
+            pass
+
+        return Empty()
+
+    @classmethod
+    async def status_from_workflow(
+        cls,
+        context: WorkflowContext,
+        request: Empty,
+    ) -> statechart_pb2.Status:
+        state, statechart = await Order.ref().read(context)
+        return statechart.status()
 
     async def status_from_reader(
         self,
@@ -153,7 +204,9 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
     `StatusFromTransaction` returns the `status()` of the statechart
     that a method of that kind gets, and `Pay`, `Refund`, `Settle`,
     `PayThenRefund`, `PayThenFail` and `PayThenStatus` each call
-    `enqueue()` of theirs."""
+    `enqueue()` of theirs. `Charge` and `ChargeThenFail` are workflows
+    that enqueue with an inline writer, and `StatusFromWorkflow` is one
+    that returns the `status()` that an inline reader gets."""
 
     async def asyncSetUp(self) -> None:
         self.rbt = Reboot()
@@ -185,7 +238,7 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
         ]:
             self.assertEqual(
                 statechart_pb2.Status(
-                    queue=[event(order_pb2.Paid(cents=500))]
+                    queue=[event(order_pb2.Paid(cents=500))],
                 ),
                 status,
             )
@@ -195,7 +248,7 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             statechart_pb2.Status(
-                queue=[event(order_pb2.Refunded(cents=200))]
+                queue=[event(order_pb2.Refunded(cents=200))],
             ),
             await self.order.StatusFromReader(self.context),
         )
@@ -250,9 +303,40 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
                 queue=[
                     event(order_pb2.Paid(cents=500)),
                     event(order_pb2.Paid(cents=1))
-                ]
+                ],
             ),
             await self.order.PayThenStatus(self.context),
+        )
+
+    async def test_workflow_enqueues_event_with_inline_writer(self) -> None:
+        await (await self.order.spawn().Charge(self.context))
+
+        self.assertEqual(
+            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            await self.order.StatusFromReader(self.context),
+        )
+
+    async def test_inline_writer_that_fails_enqueues_nothing(self) -> None:
+        await self.order.Pay(self.context, cents=500)
+
+        await (await self.order.spawn().ChargeThenFail(self.context))
+
+        self.assertEqual(
+            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            await self.order.StatusFromReader(self.context),
+        )
+
+    async def test_workflow_reads_status_with_inline_reader(self) -> None:
+        self.assertEqual(
+            statechart_pb2.Status(),
+            await (await self.order.spawn().StatusFromWorkflow(self.context)),
+        )
+
+        await self.order.Pay(self.context, cents=500)
+
+        self.assertEqual(
+            statechart_pb2.Status(queue=[event(order_pb2.Paid(cents=500))]),
+            await (await self.order.spawn().StatusFromWorkflow(self.context)),
         )
 
     async def test_reactive_reader_gets_event_that_is_enqueued(self) -> None:
@@ -266,7 +350,7 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
 
         async for status, _ in statuses:
             if status == statechart_pb2.Status(
-                queue=[event(order_pb2.Paid(cents=500))]
+                queue=[event(order_pb2.Paid(cents=500))],
             ):
                 break
 

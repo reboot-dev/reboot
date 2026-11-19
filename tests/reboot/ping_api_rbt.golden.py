@@ -15588,9 +15588,10 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> reboot.ping.ping_api_pb2.Ping:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return PingFromProto(await read())
@@ -16711,9 +16712,10 @@ class PongBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> reboot.ping.ping_api_pb2.Pong:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return PongFromProto(await read())
@@ -17739,9 +17741,10 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> reboot.ping.ping_api_pb2.User:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return UserFromProto(await read())
@@ -19233,9 +19236,10 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> reboot.ping.ping_api_pb2.Counter:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return CounterFromProto(await read())

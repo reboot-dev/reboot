@@ -14128,9 +14128,10 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> tests.reboot.echo_pb2.Echo:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return EchoFromProto(await read())

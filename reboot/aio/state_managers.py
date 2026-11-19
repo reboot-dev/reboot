@@ -1645,8 +1645,10 @@ class StateManager(ABC):
         self,
         context: WorkflowContext,
         state_type: type[StateT],
-    ) -> StateT:
-        """Helper for reading the state within a transaction."""
+    ) -> tuple[StateT, Optional[statechart_pb2.Status]]:
+        """Helper for reading, within a workflow, the state and where
+        its statechart is, which is `None` for a state type that has
+        no statechart or whose statechart has not started."""
         raise NotImplementedError()
 
     @abstractmethod
@@ -3638,7 +3640,7 @@ class SidecarStateManager(
                             statechart_pb2.Status()
                         )
                         transaction.statechart_status.CopyFrom(
-                            statechart_status
+                            statechart_status,
                         )
                 state = cast(StateT, transaction.state)
 
@@ -3766,7 +3768,7 @@ class SidecarStateManager(
                                     statechart_pb2.Status()
                                 )
                                 transaction.statechart_status.CopyFrom(
-                                    actor.statechart_status
+                                    actor.statechart_status,
                                 )
                             state = cast(StateT, transaction.state)
 
@@ -5631,7 +5633,7 @@ class SidecarStateManager(
         self,
         context: WorkflowContext,
         state_type: type[StateT],
-    ) -> StateT:
+    ) -> tuple[StateT, Optional[statechart_pb2.Status]]:
         """Override of StateManager.read(...) for SidecarStateManager."""
         assert_type(context, [WorkflowContext])
         state = await self._load(context, state_type, authorize=None)
@@ -5639,7 +5641,10 @@ class SidecarStateManager(
         # fields it won't be seen by any other methods.
         state_copy = state_type()
         state_copy.CopyFrom(state)
-        return state_copy
+        # Loading the state loaded the statechart status that is stored
+        # with it, and we have not waited on anything since, so the two
+        # are of the same store.
+        return (state_copy, self.statechart_status(context))
 
     async def _transaction_participant_start(
         self,
@@ -6872,7 +6877,8 @@ class SidecarStateManager(
                                 state_ref] = transaction.statechart_status
                         else:
                             self._statechart_statuses[state_type].pop(
-                                state_ref, None
+                                state_ref,
+                                None,
                             )
                     else:
                         # This can occur during the recovery process, when the

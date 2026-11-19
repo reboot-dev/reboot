@@ -3608,7 +3608,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     class InlineWriterCallable(IMPORT_typing.Protocol[InlineWriterCallableResult]):
         async def __call__(
             self,
+            {% if state.has_statechart %}
+            state: {{ state.pb2_name }}.{{ state.proto.name }},
+            statechart: {{ state.proto.name }}BaseServicer.Statechart,
+            {% else %}
             state: {{ state.pb2_name }}.{{ state.proto.name }}
+            {% endif %}
         ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
             ...
 
@@ -3622,7 +3627,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         async def read(
             self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-        ) -> {{ state.proto.name }}.State:
+        ) -> {% if state.has_statechart %}tuple[{{ state.proto.name }}.State, {{ state.proto.name }}BaseServicer.ImmutableStatechart]{% else %}{{ state.proto.name }}.State{% endif %}:
             """Read the current state within a workflow."""
             return await (
                 self.always() if context.within_until()
@@ -3672,7 +3677,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def read(
                 self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-            ) -> {{ state.proto.name }}.State:
+            ) -> {% if state.has_statechart %}tuple[{{ state.proto.name }}.State, {{ state.proto.name }}BaseServicer.ImmutableStatechart]{% else %}{{ state.proto.name }}.State{% endif %}:
                 """Read the current state within a workflow."""
                 return await self._read(
                     self._servicer,
@@ -3690,7 +3695,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 servicer: {{ state.proto.name }}BaseServicer,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            ) -> {{ state.proto.name }}.State:
+            ) -> {% if state.has_statechart %}tuple[{{ state.proto.name }}.State, {{ state.proto.name }}BaseServicer.ImmutableStatechart]{% else %}{{ state.proto.name }}.State{% endif %}:
                 """Read the current state within a workflow."""
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
@@ -3700,14 +3705,30 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'are you using this class without Reboot?'
                     )
 
-                async def read() -> {{ state.pb2_name }}.{{ state.proto.name }}:
+                {% if state.has_statechart %}
+                async def read() -> tuple[{{ state.pb2_name }}.{{ state.proto.name }}, IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status]]:
                     assert servicer._middleware is not None
                     return await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
 
                 if idempotency.always:
+                    protobuf_state, statechart_status = await read()
+                    return (
+                        {{ state.proto.name }}FromProto(protobuf_state),
+                        {{ state.proto.name }}BaseServicer.ImmutableStatechart(status=statechart_status),
+                    )
+                {% else %}
+                async def read() -> {{ state.pb2_name }}.{{ state.proto.name }}:
+                    assert servicer._middleware is not None
+                    state, _ = await servicer._middleware._state_manager.read(
+                        context, servicer.__state_type__
+                    )
+                    return state
+
+                if idempotency.always:
                     return {{ state.proto.name }}FromProto(await read())
+                {% endif %}
 
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}')
 
@@ -3728,7 +3749,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     aborted_type=None,
                 ) as idempotency_key:
                     assert idempotency_key is not None
+                    {% if state.has_statechart %}
+                    protobuf_state, statechart_status = await IMPORT_reboot_aio_workflows.at_least_once(
+                    {% else %}
                     protobuf_state = await IMPORT_reboot_aio_workflows.at_least_once(
+                    {% endif %}
                         (
                             # TODO: for easier debugging include the
                             # original alias (or generated alias in
@@ -3744,10 +3769,21 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         ),
                         context,
                         read,
+                        {% if state.has_statechart %}
+                        type=tuple,
+                        {% else %}
                         type={{ state.pb2_name }}.{{ state.proto.name }},
+                        {% endif %}
                     )
 
+                    {% if state.has_statechart %}
+                    return (
+                        {{ state.proto.name }}FromProto(protobuf_state),
+                        {{ state.proto.name }}BaseServicer.ImmutableStatechart(status=statechart_status),
+                    )
+                    {% else %}
                     return {{ state.proto.name }}FromProto(protobuf_state)
+                    {% endif %}
 
             async def write(
                 self,
@@ -3934,8 +3970,20 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 typed_state = {{ state.proto.name }}FromProto(protobuf_state)
 
-                                {# TODO: let `writer` take `statechart` as well as `state`, so that a workflow can enqueue an event. #}
+                                {% if state.has_statechart %}
+                                statechart = {{ state.proto.name }}BaseServicer.Statechart(
+                                    status=servicer._middleware._state_manager.statechart_status(
+                                        writer_context,
+                                    ),
+                                )
+
+                                result = await writer(
+                                    state=typed_state,
+                                    statechart=statechart,
+                                )
+                                {% else %}
                                 result = await writer(state=typed_state)
+                                {% endif %}
 
                                 {{ state.proto.name }}ToProto(typed_state, protobuf_state)
 
@@ -3984,6 +4032,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                     response=IMPORT_google_protobuf_wrappers_pb2.BytesValue(
                                         value=IMPORT_pickle.dumps(result)
                                     ),
+                                    {% if state.has_statechart %}
+                                    statechart_status=statechart._status if statechart._status_modified else None,
+                                    {% endif %}
                                 )
 
                                 await state_manager_writer.complete(effects)
@@ -4017,7 +4068,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def read(
                 self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-            ) -> {{ state.proto.name }}.State:
+            ) -> {% if state.has_statechart %}tuple[{{ state.proto.name }}.State, {{ state.proto.name }}BaseServicer.ImmutableStatechart]{% else %}{{ state.proto.name }}.State{% endif %}:
                 return await {{ state.proto.name }}BaseServicer.WorkflowState._Idempotently(
                     servicer=self._servicer,
                     alias=None,
@@ -5830,7 +5881,7 @@ class {{ client.proto.state_name }}:
             async def read(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            ) -> {{ client.proto.state_name }}.State:
+            ) -> {% if client.state.has_statechart %}tuple[{{ client.proto.state_name }}.State, {{ client.proto.state_name }}BaseServicer.ImmutableStatechart]{% else %}{{ client.proto.state_name }}.State{% endif %}:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
                         "`read()` is currently only supported within workflows; "
@@ -6876,7 +6927,7 @@ class {{ client.proto.state_name }}:
         async def read(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        ) -> {{ client.proto.state_name }}.State:
+        ) -> {% if client.state.has_statechart %}tuple[{{ client.proto.state_name }}.State, {{ client.proto.state_name }}BaseServicer.ImmutableStatechart]{% else %}{{ client.proto.state_name }}.State{% endif %}:
             return await (
                 self.always() if context.within_until()
                 else (

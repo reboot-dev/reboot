@@ -147,6 +147,24 @@ service OrderMethods {
     };
   }
 
+  // Enqueues a `Paid` with an inline writer.
+  rpc Charge(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Enqueues a `Paid` with an inline writer that then fails.
+  rpc ChargeThenFail(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc StatusFromWorkflow(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
   rpc StatusFromReader(google.protobuf.Empty)
       returns (rbt.v1alpha1.statecharts.Status) {
     option (rbt.v1alpha1.method).reader = {

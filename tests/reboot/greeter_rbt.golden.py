@@ -15315,9 +15315,10 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                 async def read() -> tests.reboot.greeter_pb2.Greeter:
                     assert servicer._middleware is not None
-                    return await servicer._middleware._state_manager.read(
+                    state, _ = await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
+                    return state
 
                 if idempotency.always:
                     return GreeterFromProto(await read())
