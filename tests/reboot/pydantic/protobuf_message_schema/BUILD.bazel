@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//rbt/v1alpha1/api:schema_py_proto",
+        "//reboot:api_py",
+        "//reboot:pydantic_schema_py",
+    ],
+)

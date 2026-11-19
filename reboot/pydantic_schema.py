@@ -13,6 +13,9 @@ import inspect
 import json
 import types
 import typing
+from google.protobuf import message_factory
+from google.protobuf.descriptor import FieldDescriptor
+from google.protobuf.message import Message
 from pydantic_core import PydanticUndefined, to_jsonable_python
 from rbt.v1alpha1.api import schema_pb2
 from rbt.v1alpha1.api.schema_pb2 import (
@@ -53,10 +56,25 @@ from typing import (
 Schemas = Mapping[str, Schema]
 
 
-def reference_name(model: type[Model]) -> str:
-    """The name a model's schema is filed under, and a `Reference` to
-    it carries."""
-    return f'{model.__module__}.{model.__name__}'
+def _class_name(class_: typing.Union[type[Model], type[Message]]) -> str:
+    """Returns the class name of a model or of a protobuf message. A
+    nested protobuf message is returned with its parents, e.g.
+    "Outer.Inner": its class reports only "Inner", so the name is
+    taken from its descriptor."""
+    if issubclass(class_, Message):
+        descriptor = class_.DESCRIPTOR
+        return descriptor.full_name.removeprefix(f'{descriptor.file.package}.')
+    return class_.__name__
+
+
+def reference_name(
+    class_: typing.Union[type[Model], type[Message]],
+) -> str:
+    """Returns the name that identifies a model or a protobuf message:
+    its module, then its class name, e.g. "shop.v1.shop.Item" or
+    "rbt.v1alpha1.tasks_pb2.TaskId". A `Reference` holds this name,
+    and `schemas` is keyed by it."""
+    return f'{class_.__module__}.{_class_name(class_)}'
 
 
 def _property(
@@ -106,6 +124,88 @@ _CONSTRAINTS = (
     ('pattern', 'pattern'),
 )
 
+# The `Scalar` closest to each kind of protobuf field that is neither
+# a message nor an enum, keyed by the field's `cpp_type`. A `bytes`
+# field has the `cpp_type` of a string, and is a string in the JSON
+# form of its message.
+_SCALAR_BY_PROTOBUF_CPP_TYPE = {
+    FieldDescriptor.CPPTYPE_STRING: schema_pb2.STRING,
+    FieldDescriptor.CPPTYPE_BOOL: schema_pb2.BOOLEAN,
+    FieldDescriptor.CPPTYPE_INT32: schema_pb2.INTEGER,
+    FieldDescriptor.CPPTYPE_INT64: schema_pb2.INTEGER,
+    FieldDescriptor.CPPTYPE_UINT32: schema_pb2.INTEGER,
+    FieldDescriptor.CPPTYPE_UINT64: schema_pb2.INTEGER,
+    FieldDescriptor.CPPTYPE_FLOAT: schema_pb2.FLOAT,
+    FieldDescriptor.CPPTYPE_DOUBLE: schema_pb2.FLOAT,
+}
+
+
+def _schema_of_protobuf_field(
+    field: FieldDescriptor,
+    path: str,
+    *,
+    schemas: Schemas,
+) -> tuple[Type, Schemas]:
+    """Reads a protobuf field into its type, which has two parts.
+
+    The type of one value: a message is read into a `Reference`, with
+    its `Schema` filed in the returned `schemas`; an enum into the
+    `Literals` of its value names; anything else into its closest
+    `Scalar`.
+
+    How the field holds values of that type: a `repeated` field is an
+    `Array` of it, a `map` field is a `Map` of it, and a field that
+    can be unset is an `Optional` of it. A field can be unset when it
+    is declared `optional` or when it holds a single message.
+
+        string name = 1;               a `Scalar`
+        optional string name = 2;      an `Optional` of a `Scalar`
+        TaskId id = 3;                 an `Optional` of a `Reference`
+        repeated TaskId ids = 4;       an `Array` of a `Reference`
+        map<string, TaskId> ids = 5;   a `Map` of a `Reference`
+    """
+    # A `map` field is declared as a repeated entry message, whose
+    # `value` field says what the map's values are. Its `key` field is
+    # left unread: the keys of a `Map` are always strings, as the keys
+    # of a protobuf map are in JSON.
+    is_map = (
+        field.message_type is not None and
+        field.message_type.GetOptions().map_entry
+    )
+    value_field = (
+        field.message_type.fields_by_name['value'] if is_map else field
+    )
+
+    if value_field.message_type is not None:
+        value, schemas = _schema_of(
+            message_factory.GetMessageClass(value_field.message_type),
+            path,
+            schemas=schemas,
+        )
+    elif value_field.enum_type is not None:
+        value = Type(
+            literals=Literals(
+                values=[
+                    enum_value.name
+                    for enum_value in value_field.enum_type.values
+                ]
+            )
+        )
+    else:
+        assert value_field.cpp_type in _SCALAR_BY_PROTOBUF_CPP_TYPE, (
+            f"Field `{value_field.full_name}` at '{path}' has a protobuf "
+            f"type ({value_field.cpp_type}) that no `Scalar` stands for"
+        )
+        value = Type(scalar=_SCALAR_BY_PROTOBUF_CPP_TYPE[value_field.cpp_type])
+
+    if is_map:
+        return Type(map=Map(value=value)), schemas
+    if field.label == FieldDescriptor.LABEL_REPEATED:
+        return Type(array=Array(item=value)), schemas
+    if field.has_presence:
+        return Type(optional=schema_pb2.Optional(inner=value)), schemas
+    return value, schemas
+
 
 def _constraints(field_info: Any) -> Optional[Constraints]:
     """What `Field(...)` declared a value must satisfy beyond its
@@ -122,6 +222,7 @@ def _constraints(field_info: Any) -> Optional[Constraints]:
 def _schema_of(
     annotation: typing.Union[
         typing.Type[Model],
+        typing.Type[Message],
         typing.Type[dict],
         typing.Type[list],
     ],
@@ -134,25 +235,42 @@ def _schema_of(
     # Every schema reached so far, by reference name.
     schemas: Schemas = MappingProxyType({}),
 ) -> tuple[Type, Schemas]:
-    """Reads `annotation` into its type: a model into a `Reference`,
-    with its `Schema` filed in the returned `schemas`; a `list` or
-    `dict` into an `Array` or `Map`; a discriminated `Union` into a
-    `DiscriminatedUnion`."""
+    """Reads `annotation` into its type: a model or a protobuf message
+    into a `Reference`, with its `Schema` filed in the returned
+    `schemas`; a `list` or `dict` into an `Array` or `Map`; a
+    discriminated `Union` into a `DiscriminatedUnion`."""
     origin = get_origin(annotation)
     args = get_args(annotation)
 
-    if origin is None and issubclass(annotation, Model):
+    if origin is None and issubclass(annotation, (Model, Message)):
         name = reference_name(annotation)
         if name in schemas:
             # A model reached again, through another property or through
             # itself, is read once.
             return Type(reference=Reference(name=name)), schemas
-        schema = Schema(name=annotation.__name__, module=annotation.__module__)
+        schema = Schema(
+            name=_class_name(annotation), module=annotation.__module__
+        )
         if annotation.__doc__ is not None:
             schema.description = inspect.cleandoc(annotation.__doc__)
         # Filed before its properties are read, so that a model referring
         # to itself is reached once.
         schemas = MappingProxyType({**schemas, name: schema})
+
+        if issubclass(annotation, Message):
+            # A protobuf message has a property per field, tagged with
+            # the field's number. `_schema_of` reads a Python type
+            # annotation, and a protobuf field has none: it is
+            # described by a `FieldDescriptor`, which is what
+            # `_schema_of_protobuf_field` reads.
+            for field in annotation.DESCRIPTOR.fields:
+                type_, schemas = _schema_of_protobuf_field(
+                    field, f"{path}.{field.name}", schemas=schemas
+                )
+                schema.properties.append(
+                    Property(name=field.name, tag=field.number, type=type_)
+                )
+            return Type(reference=Reference(name=name)), schemas
 
         tags: Dict[int, str] = {}
 
@@ -364,8 +482,8 @@ def _schema_of(
                         constraints=constraints, deprecated=deprecated
                     )
                 )
-            elif isinstance(inner_type,
-                            type) and issubclass(inner_type, Model):
+            elif isinstance(inner_type, type
+                           ) and issubclass(inner_type, (Model, Message)):
                 type_, schemas = _schema_of(
                     inner_type,
                     f"{path}.{field_name}",
@@ -427,8 +545,8 @@ def _schema_of(
                 value, schemas = _schema_of(
                     value_type, f"{path}.[value]", schemas=schemas
                 )
-            elif isinstance(value_type,
-                            type) and issubclass(value_type, Model):
+            elif isinstance(value_type, type
+                           ) and issubclass(value_type, (Model, Message)):
                 value, schemas = _schema_of(
                     value_type,
                     f"{path}.[value]",
@@ -488,7 +606,8 @@ def _schema_of(
                 item, schemas = _schema_of(
                     item_type, f"{path}.[item]", schemas=schemas
                 )
-            elif isinstance(item_type, type) and issubclass(item_type, Model):
+            elif isinstance(item_type,
+                            type) and issubclass(item_type, (Model, Message)):
                 item, schemas = _schema_of(
                     item_type, f"{path}.[item]", schemas=schemas
                 )
