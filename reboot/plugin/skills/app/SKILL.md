@@ -341,11 +341,13 @@ Before writing code, analyze the user's request:
    guard in `python/references/state-collections.md` has the full
    rule.
 
-4. **User methods**: How are instances of application types
-   created? Each gets a `Transaction` on `User` that calls
-   `<Type>.create(context)`, then registers the new ID in the
-   appropriate container (Shape B or C, under **Container shape for
-   each collection** above).
+4. **Creation methods**: How are instances of application types
+   created? When the design includes a `User`, each gets a
+   `Transaction` on `User` that calls `<Type>.create(context)` and
+   registers the new ID in the appropriate container (Shape B or C
+   above). For anonymous or shared-state apps without `User`, put
+   creation and registration on the shared parent or front-door type
+   chosen in the design instead.
 5. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
    sub-objects** owned 1:1 by a parent state must be
