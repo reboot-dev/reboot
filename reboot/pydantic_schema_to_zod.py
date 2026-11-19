@@ -6,6 +6,8 @@ import os
 import pydantic_core
 import reboot.api
 import types
+from collections import defaultdict
+from google.protobuf.message import Message
 from importlib import import_module
 from pydantic.fields import FieldInfo
 from reboot.api import (
@@ -66,14 +68,39 @@ def collect_all_error_models(
     return error_models
 
 
+def _generated_typescript_module(module_path: str) -> str:
+    """
+    Returns the TypeScript module to import a class from, given the
+    Python module that declares the class (its `__module__`). Both are
+    spelled with dots.
+
+    A `Model` and a protobuf message are Python classes here, and each
+    has a TypeScript counterpart generated from the same source file:
+
+    - A `Model` in `shop/v1/shop.py` is in the `_rbt_types` module this
+      file writes.
+    - A protobuf message of `shop/v1/orders.proto` is in the Python
+      module `orders_pb2`, and in the `orders_pb` module that
+      `protoc-gen-es` writes.
+
+    Example:
+        "shop.v1.shop" -> "shop.v1.shop_rbt_types"
+        "shop.v1.orders_pb2" -> "shop.v1.orders_pb"
+    """
+    if module_path.endswith('_pb2'):
+        return module_path.removesuffix('_pb2') + '_pb'
+    return module_path + '_rbt_types'
+
+
 def _module_to_ts_import_alias(module_path: str) -> str:
     """
     Convert a module path to a valid TypeScript import alias.
 
     Example:
         "shared_module.shared" -> "shared_module_shared_rbt_types"
+        "shop.v1.orders_pb2" -> "shop_v1_orders_pb"
     """
-    return module_path.replace('.', '_') + '_rbt_types'
+    return _generated_typescript_module(module_path).replace('.', '_')
 
 
 def _compute_relative_import_path(
@@ -91,7 +118,7 @@ def _compute_relative_import_path(
     """
     # Convert module paths to file paths.
     from_path = from_module.replace('.', os.sep)
-    to_path = to_module.replace('.', os.sep)
+    to_path = _generated_typescript_module(to_module).replace('.', os.sep)
 
     from_dir = os.path.dirname(from_path)
     relative_path = os.path.relpath(to_path, from_dir)
@@ -102,13 +129,46 @@ def _compute_relative_import_path(
         relative_path = './' + relative_path
 
     extension = ".js" if js_extension else ""
-    return f"{relative_path}_rbt_types{extension}"
+    return f"{relative_path}{extension}"
+
+
+# The `.proto` files of `rbt/v1alpha1` whose generated modules
+# `@reboot-dev/reboot-api` exports, by the name it exports each under.
+_REBOOT_API_EXPORT_BY_PROTO_FILE = {
+    'rbt/v1alpha1/auth.proto': 'auth_pb',
+    'rbt/v1alpha1/errors.proto': 'errors_pb',
+    'rbt/v1alpha1/nodejs.proto': 'nodejs_pb',
+    'rbt/v1alpha1/react.proto': 'react_pb',
+    'rbt/v1alpha1/tasks.proto': 'tasks_pb',
+}
+
+
+def _well_known_export(message: type[Message]) -> Optional[str]:
+    """Returns the name that `@reboot-dev/reboot-api` exports the
+    generated module of `message` under, when it exports it:
+    `protobuf_es` for one of protobuf's well-known types, e.g.
+    `Timestamp`, and e.g. `tasks_pb` for one of Reboot's own messages.
+    Returns `None` for any other message, whose module the generated
+    file imports itself."""
+    proto_file = message.DESCRIPTOR.file.name
+    if proto_file.startswith('google/protobuf/'):
+        return 'protobuf_es'
+    return _REBOOT_API_EXPORT_BY_PROTO_FILE.get(proto_file)
+
+
+def _protobuf_message_typescript_class_name(message: type[Message]) -> str:
+    """Returns the name of the generated TypeScript class of
+    `message`. A nested message `Outer.Inner` is the class
+    `Outer_Inner`."""
+    descriptor = message.DESCRIPTOR
+    return descriptor.full_name.removeprefix(f'{descriptor.file.package}.'
+                                            ).replace('.', '_')
 
 
 def _collect_external_references(
     field_type: Any | None,
     current_module: str,
-    external_imports: dict[str, set[str]],
+    external_imports: defaultdict[str, set[str]],
     visited: set[type],
 ) -> None:
     """
@@ -117,7 +177,9 @@ def _collect_external_references(
     Args:
         field_type: The type annotation to analyze.
         current_module: The module being processed.
-        external_imports: Dict mapping module path to set of `Model` names.
+        external_imports: Dict mapping module path to set of `Model`
+            and protobuf message class names. A module that is not in
+            it yet starts with an empty set.
         visited: Set of already visited types to avoid infinite recursion.
     """
     if field_type is None:
@@ -151,6 +213,14 @@ def _collect_external_references(
             external_imports,
             visited,
         )
+    elif isinstance(field_type, type) and issubclass(field_type, Message):
+        # A protobuf message is imported from its generated module,
+        # like an external `Model`, unless `@reboot-dev/reboot-api`
+        # exports it.
+        if _well_known_export(field_type) is None:
+            external_imports[field_type.__module__].add(
+                _protobuf_message_typescript_class_name(field_type)
+            )
     elif isinstance(field_type, type) and issubclass(field_type, Model):
         model_type = cast(Type[Model], field_type)
 
@@ -161,8 +231,6 @@ def _collect_external_references(
         model_module = model_type.__module__
         if model_module != current_module:
             # Track for imports but don't recurse for external models.
-            if model_module not in external_imports:
-                external_imports[model_module] = set()
             external_imports[model_module].add(model_type.__name__)
         else:
             # Recurse into local model fields.
@@ -295,6 +363,26 @@ def pydantic_to_zod(
             if tag is not None:
                 output += f'.meta({{ tag: {tag} }})'
             return output
+
+    if isinstance(input, type) and issubclass(input, Message):
+        # A protobuf message becomes `protobufToZodSchema(<class>)`,
+        # where `<class>` is the message's generated TypeScript class,
+        # e.g. `reboot_api.tasks_pb.TaskId`. The field's TypeScript type
+        # is that class, and a value is validated against it.
+        #
+        # `protobufToZodSchema` already puts a `protobuf` entry in the
+        # schema's meta. The `.meta({ tag })` below adds `tag` beside
+        # it: Zod merges the two.
+        class_name = _protobuf_message_typescript_class_name(input)
+        export = _well_known_export(input)
+        module = (
+            f'reboot_api.{export}'
+            if export is not None else external_refs[class_name]
+        )
+        output = f'reboot_api.protobufToZodSchema({module}.{class_name})'
+        if tag is not None:
+            output += f'.meta({{ tag: {tag} }})'
+        return output
 
     if isinstance(input, type) and issubclass(input, Model):
         # Check if this is an external model that should be referenced.
@@ -501,7 +589,7 @@ async def generate_zod_file_from_api(
             "or any Reboot `Model`."
         )
 
-    external_imports: dict[str, set[str]] = {}
+    external_imports: defaultdict[str, set[str]] = defaultdict(set)
     visited: set[type] = set()
     for model_type in models_in_module:
         _collect_external_references(
