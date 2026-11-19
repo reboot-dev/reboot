@@ -9,3 +9,13 @@ py_test(
         "//reboot:api_py",
     ],
 )
+
+py_test(
+    name = "default_test_py",
+    srcs = ["default_test.py"],
+    main = "default_test.py",
+    deps = [
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:api_py",
+    ],
+)
