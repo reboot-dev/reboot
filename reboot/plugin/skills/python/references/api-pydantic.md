@@ -436,6 +436,11 @@ class ReportState(Model):
 In JSON, e.g. as an MCP tool's argument, the field takes the message's
 JSON form.
 
+In a React frontend the field is an instance of the message's
+generated TypeScript class, in responses and in requests alike; see
+"Protobuf Message Fields Are Message Instances" in
+`frontend/references/react-generated-client.md`.
+
 ## State Class Is a Separate `Model`
 
 State is a plain `Model` class. Bind it to its method set and a public

@@ -2,7 +2,7 @@
 title: The Generated React Client Contract
 impact: HIGH
 impactDescription: The exact hook, mutator, and error shapes `rbt generate --react=` emits — identical for web apps and MCP Apps
-tags: react, hooks, generated, codegen, errors, typescript
+tags: react, hooks, generated, codegen, errors, typescript, protobuf
 ---
 
 ## The Generated React Client Contract
@@ -96,6 +96,46 @@ if (aborted !== undefined) {
   return show(aborted);
 }
 ```
+
+## Protobuf Message Fields Are Message Instances
+
+A field the API declares with a protobuf message class as its type
+(`python/references/api-pydantic.md`) is typed
+`PartialMessage<Message>` in the generated request and response
+types, by the message's generated TypeScript class.
+
+In a response the value is an instance of that class. Read its fields
+directly, in camelCase; a `bytes` field is a `Uint8Array`, a 64-bit
+integer a `bigint`, and a `Timestamp` has `toDate()`.
+
+In a request, pass an instance: the one a response gave you, or one
+you construct with `new`. Reboot's own messages and the well-known
+types come from `@reboot-dev/reboot-api`:
+
+```tsx
+import { protobuf_es, tasks_pb } from "@reboot-dev/reboot-api";
+
+// A `TaskId` a response handed over goes back as it is.
+const { response } = await report.start();
+if (response !== undefined) {
+  await report.remember({ taskId: response.taskId });
+}
+
+// A message you make yourself is constructed, not written as an
+// object literal.
+await report.record({
+  at: protobuf_es.Timestamp.fromDate(new Date()),
+  taskId: new tasks_pb.TaskId({ stateType, stateRef, taskUuid }),
+});
+```
+
+**Do not pass an object literal for a message field.** TypeScript
+accepts `{ stateType, stateRef, taskUuid }` because the type is a
+`PartialMessage`, but at runtime a value that is not an instance is
+validated as the message's JSON form. A literal holding a
+`Uint8Array`, a `bigint` or an unformatted timestamp is not that
+form, and the call is refused with `Invalid input` before anything
+is sent. Wrapping the same fields in `new Message({...})` is the fix.
 
 ## Hook IDs Must Be Real on Every Render
 
