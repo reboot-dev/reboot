@@ -66,8 +66,8 @@ Two reasons, one per layer:
 2. **The front-door framing degenerates without this rule.** Chat
    apps and similar Reboot apps use a `User` `Type` as the AI's
    entry point. "Front door" means **entry point + delegation**, not
-   _container for all application state_ — see the `mcp-app` skill's
-   "User and Application Types" section. Without responsibility
+   _container for all application state_ — see "`User` and Application
+   Types" in `mcp-app-concepts.md`. Without responsibility
    decomposition, every new feature lands on `User` and the actor
    becomes a God actor.
 
@@ -146,5 +146,5 @@ state, transient caches, per-concern workflows — moves to its own
   principle applies here.
 - `servicer-writer.md` — the serialization contract that makes this
   a runtime rule, not just hygiene.
-- `mcp-app/SKILL.md` — "User and Application Types": **"front door"
+- `mcp-app-concepts.md` — "`User` and Application Types": **"front door"
   means entry point + delegation, not container.**

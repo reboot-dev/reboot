@@ -27,7 +27,7 @@ my-app/
     api.py
 ```
 
-**Correct (canonical layout, the one the `web-app` and `mcp-app` skills build on):**
+**Correct (canonical layout, the one the app skill builds on):**
 
 ```
 my-app/
@@ -46,7 +46,7 @@ my-app/
   tests/                 # see `testing-project-setup.md`
     <capability>.feature
     <name>_test.py
-  frontend/              # see the `web-app` and `mcp-app` skills
+  frontend/              # see the frontend skill
     api/                 # rbt generate --react output
     web/                 # the browser SPA, if the app has one
     mcp/<ui-name>/       # the MCP Apps, if the app has any
@@ -108,7 +108,7 @@ Create a project-root `.gitignore` when scaffolding the project.
 Reboot projects produce artifacts that must never be committed:
 `rbt dev run` persists application state under `.rbt/`, `rbt generate` output is recreated from the API definitions on every run,
 `.env` holds secrets (see `lifecycle-secrets.md`), and running the
-tests records every browser scenario (see `testing-web-app.md`).
+tests records every browser scenario (see `frontend/references/testing-web-app.md`).
 
 ```gitignore
 # Reboot dev-server state.

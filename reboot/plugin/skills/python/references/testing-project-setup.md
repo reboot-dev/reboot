@@ -19,7 +19,7 @@ tags: testing, pytest, layout, pyproject, conftest, uv, reboot-dev, gitignore, r
 This reference covers the project-level scaffolding every Reboot
 backend test suite shares. Writing the scenarios is
 [testing-features.md](testing-features.md); driving the web app from
-them is [testing-web-app.md](testing-web-app.md); the harness and
+them is [testing-web-app.md](../../frontend/references/testing-web-app.md); the harness and
 context patterns a custom step or a harness test uses are
 [testing-harness.md](testing-harness.md) and
 [testing-external-context.md](testing-external-context.md).
@@ -155,7 +155,7 @@ An application packaged for `rbt serve` installs plain `reboot`.
 
 Running a scenario that opens the web app records a video and
 screenshots into `<feature>.recordings/` beside the feature file
-([testing-web-app.md](testing-web-app.md)). The project-root
+([testing-web-app.md](../../frontend/references/testing-web-app.md)). The project-root
 `.gitignore` (template in
 [lifecycle-project-setup.md](lifecycle-project-setup.md)) must have:
 

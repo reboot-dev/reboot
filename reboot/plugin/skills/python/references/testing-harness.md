@@ -187,7 +187,7 @@ signing in.
   they pass `oauth=` with `Development()` for both arms of
   `OAuthProviderByEnvironment` (a test is neither `rbt dev run` nor
   `rbt serve`) and `allowed_origins=[]` (the web app is served at
-  the backend's own origin); see `testing-web-app.md`. Outside
+  the backend's own origin); see `frontend/references/testing-web-app.md`. Outside
   `rbt dev run`, an `oauth=` without `allowed_origins` refuses to
   start, which is why a test does not reuse the `Application(...)`
   of `main.py`.
@@ -278,8 +278,8 @@ The harness exercises the full RPC path — not Servicer instances
 directly. That means the same context-type rules, error semantics,
 and serialization apply. If a test passes, the wiring is correct.
 This is exactly why "write tests for each user story before
-handing the app off" is in the `mcp-app` and `web-app` build
-flows: the tests catch contract bugs that a manual click-through
+handing the app off" is in the app skill's build
+flow: the tests catch contract bugs that a manual click-through
 won't surface for several minutes.
 
 ## Asserting a Typed Error — and Keeping `mypy` Happy

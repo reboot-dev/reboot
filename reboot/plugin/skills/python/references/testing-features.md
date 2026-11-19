@@ -56,7 +56,7 @@ tests/
   the web app.
 - **Recordings** of browser scenarios land in
   `<feature>.recordings/` beside the feature file; `*.recordings/`
-  is in `.gitignore` (see `testing-web-app.md`).
+  is in `.gitignore` (see `frontend/references/testing-web-app.md`).
 
 The minimal module:
 

@@ -7,7 +7,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 1. Lifecycle (lifecycle)
 
 **Impact:** CRITICAL
-**Description:** Project setup, `.rbtrc` configuration, the `Application(...)` entry point, and the `initialize` hook. Foundation for every Reboot application.
+**Description:** Project setup, `.rbtrc` configuration, the `Application(...)` entry point, and the `initialize` hook, including the sample data it seeds under `rbt dev run`. Foundation for every Reboot application.
 
 ## 2. API (api)
 

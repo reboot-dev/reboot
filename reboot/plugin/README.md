@@ -7,10 +7,11 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 
 | Skill                            | Description                                                                                                                               |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [`app`](skills/app/)             | Build a Reboot app from a description — routes to `mcp-app` or `web-app`                                                                  |
+| [`app`](skills/app/)             | Build a Reboot app from a description — settles the front end (MCP App, web app, or both), then runs the whole build                      |
 | [`feature`](skills/feature/)     | Specify a feature in plain English, write it down as a `@wip` feature file, then iterate on its scenarios with the user                   |
-| [`mcp-app`](skills/mcp-app/)     | Build MCP Apps for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`                                                 |
-| [`web-app`](skills/web-app/)     | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python`                    |
+| [`mcp-app`](skills/mcp-app/)     | Build an MCP App for ChatGPT, Claude, VSCode, Goose, and others — starts the `app` build with the MCP front end chosen                    |
+| [`web-app`](skills/web-app/)     | Build a standalone Reboot Web App served at a URL — starts the `app` build with the web front end chosen                                  |
+| [`frontend`](skills/frontend/)   | The React side of a Reboot app: the generated client, a web app, MCP App UIs, and browser scenarios                                       |
 | [`run`](skills/run/)             | Run an existing Reboot app — detects MCP App vs. Web App and starts every process it needs                                                |
 | [`agents-md`](skills/agents-md/) | Give a Reboot app an `AGENTS.md` for coding agents and a one-line `CLAUDE.md` that imports it; kept current as the app changes            |
 | [`deploy`](skills/deploy/)       | Deploy a Reboot app to production — one container on Reboot Cloud that runs the backend and serves the built MCP Apps and web app         |
@@ -22,6 +23,17 @@ The skill files are tool-agnostic. Claude Code invokes skills by
 plugin-namespaced name (e.g. `/reboot:mcp-app`); Codex selects a
 skill automatically from its `description`. Both read the same
 `SKILL.md` files and `references/`.
+
+## How references are read
+
+Each `SKILL.md` is short and links its `references/`, saying when to
+read each one; the agent opens a reference when its step needs it.
+Nothing makes it open one. An agent that decides it already has
+enough context can skip a reference, and with it a rule written only
+there. Every reference is one link from a `SKILL.md`, never behind a
+second link, which makes a skip less likely but does not prevent it.
+A rule that must not be missed is stated in the `SKILL.md` at the step
+that needs it, not only in a reference.
 
 ## Installation
 

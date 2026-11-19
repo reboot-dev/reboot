@@ -1,11 +1,11 @@
 ---
-title: React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
+title: React Scaffolding for MCP App UIs — package.json, vite.config.ts, tsconfigs, index.css
 impact: CRITICAL
-impactDescription: The shell files for the `frontend/` tree. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP App into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs the package's `build.mjs`, which builds every UI the plugin declares; tsconfigs split into `app` and `node` halves.
+impactDescription: The `frontend/` setup for an app with MCP App UIs. `vite.config.ts` is the stock Vite file plus `reboot()` from `@reboot-dev/reboot-react/vite`, which builds each MCP App into the **nested** `frontend/dist/mcp/<name>/index.html` the server resolves. `npm run build` runs the package's `build.mjs`, which builds every UI the plugin declares; tsconfigs split into `app` and `node` halves.
 tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, build.mjs
 ---
 
-## React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
+## React Scaffolding for MCP App UIs — package.json, vite.config.ts, tsconfigs, index.css
 
 Everything below is MCP App-specific. The `frontend/` tree is
 owned by this skill — `python` knows nothing about it.
@@ -21,8 +21,8 @@ more to do calls `build()` between its own steps in that file.**
 `build.mjs` is for a frontend with more than one UI: several MCP
 Apps, or MCP Apps and the web app. A frontend declaring exactly one
 UI builds with plain `vite build` (the plugin builds the one it
-declares when no target is set), which is what the `web-app` skill's
-web-only shell does. This scaffold starts with `build.mjs` because an
+declares when no target is set), which is what the web-only shell in
+`react-client.md` does. This scaffold starts with `build.mjs` because an
 MCP frontend tends to grow UIs, and then nothing about the build
 changes when it does.
 
@@ -51,11 +51,11 @@ changes when it does.
     "@types/node": "^26.6.4",
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.1.2",
     "portless": "^0.15.7",
     "typescript": "^5.9.2",
-    "vite": "^6.3.5",
-    "vite-plugin-singlefile": "^2.0.3"
+    "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.4"
   }
 }
 ```
@@ -254,6 +254,11 @@ body {
 ```
 
 ## `frontend/mcp/<ui-name>/index.html`
+
+`npm create @reboot-dev/ui` writes this file for every `UI()` the API
+declares (after `rbt generate`); never write it yourself, as the
+desktop app previews every `.html` the Write tool writes. For
+reference, it is:
 
 ```html
 <!DOCTYPE html>

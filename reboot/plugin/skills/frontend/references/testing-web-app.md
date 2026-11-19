@@ -31,7 +31,7 @@ Scenario: Opening a first account in the web app
   Then as "alice", `balance` on the `Account` for <account id> has `amount=1000.0`
 ```
 
-`testing-features.md` covers the backend steps and the shape of a
+`python/references/testing-features.md` covers the backend steps and the shape of a
 feature; this reference covers what the browser adds. The
 [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
 example's `tests/web_test.py` and the scenarios of its
@@ -270,10 +270,18 @@ tests/opening_accounts.recordings/
 ## Running
 
 ```sh
-uv run pytest tests/web_test.py
-uv run pytest tests/web_test.py -k "first account"
 uv run pytest tests/web_test.py --recording-slowmo=0 --recording-dwell=0
+uv run pytest tests/web_test.py -k "first account" --recording-slowmo=0 --recording-dwell=0
+uv run pytest tests/web_test.py
 ```
+
+**Run without pacing while building, and paced last.** Every run
+while you write and fix takes `--recording-slowmo=0 --recording-dwell=0`: pacing only slows the browser, so it checks
+nothing more, and a paced suite takes about two thirds longer (12
+scenarios: 1:16 paced, 0:46 not). Every run writes the recordings
+the dashboard shows, so the last run before you hand off — after a
+build, a feature or a fix — is the plain, paced command, once, and
+its videos are the ones a person can follow.
 
 A CI script without a browser or `node_modules` runs the backend
 suite with `--ignore=tests/web_test.py`, as the bank's

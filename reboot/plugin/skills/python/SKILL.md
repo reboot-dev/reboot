@@ -256,13 +256,12 @@ docs would have prevented. Before writing code, load the references
 the task actually requires from the lists below. "Common gotchas"
 should be loaded for almost every task.
 
-Everything you read stays in the conversation and is re-sent on every
-later turn, so read a reference at the step that needs it rather than
-all of them up front, and read each one **once**. That cost is also
-why generated and installed source — `*_rbt.py`, `*_rbt_react.ts`,
-`site-packages/`, `node_modules/`, codegen templates — is the most
-expensive place in the system to learn a fact: the shapes worth
-knowing are written out in the references below. When something
+Read a reference at the step that needs it rather than all of them
+up front, and read each one **once**. Never learn a fact from
+generated or installed source — `*_rbt.py`, `*_rbt_react.ts`,
+`site-packages/`, `node_modules/`, codegen templates: it runs to tens
+of thousands of lines, and the shapes worth knowing are written out in
+the references below. When something
 genuinely isn't covered, bound the output hard (a targeted
 `grep -n … | head -40`, or `sed -n '<start>,<end>p'` over a known
 range), never a whole generated file.
@@ -423,7 +422,8 @@ feature in English, tag it `@wip`, iterate on scenarios) is the
   making ids up, saved values, assertions, `eventually`, attempts
   and aborts, tasks), `@wip` / `@blocked`, feature / rule / scenario
   structure, custom steps as plain Reboot code, mocks and stand-ins
-- `references/testing-web-app.md` — scenarios that open the web app:
+- `../frontend/references/testing-web-app.md` (in the `frontend`
+  skill) — scenarios that open the web app:
   the `frontend` fixture, the web app steps, the accessible markup
   the page needs, sign-in, recordings
 - `references/testing-harness.md` — the `Reboot()` harness the
@@ -466,6 +466,125 @@ optional extra:
   non-existence, and `--name` vs. `--application-name`. Read it once
   per task.
 
+## Building an MCP App
+
+What an MCP App adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Design** goes with the [Design Phase](../app/SKILL.md#design-phase),
+**Project files** with "Create `.python-version`, …", **API
+definition** with "Write the API definition", **Servicers** and
+**Authorizers** with "Write the servicer", **`main.py`** with "Write
+`main.py`", **Scenarios** with the scenarios step, and **Updates**
+with the [Update Flow](../app/SKILL.md#update-flow). The React side
+is the frontend skill's
+[Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis).
+
+**Design:**
+[`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
+— the `User` front door, tool exposure, `UI()`, `oauth=` and
+example prompts the design names.
+
+**Project files:**
+
+- [`references/lifecycle-mcp-app-project-files.md`](references/lifecycle-mcp-app-project-files.md) —
+  `.python-version`, `.rbtrc` deltas (the `portless`, `ports` and `dist` configs),
+  `pyproject.toml` extras, `main.py` shape, the `example_prompts.py`
+  module wired into `Application(example_prompts=...)`,
+  durable-state setup.
+
+**API definition:**
+
+- [`references/api-method-types.md`](references/api-method-types.md)
+  — the pydantic API file for an MCP App: `User`-type front door,
+  `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
+  props), `factory=True` on `create`, the `Workflow(...)`
+  declaration shape. Full Counter API example.
+- [`references/api-state-shapes.md`](references/api-state-shapes.md)
+  — two recurring state shapes: `list[Item]` with
+  `default_factory=list`; single nested `Model` sub-objects as
+  `Optional[X] = Field(tag=N, default=None)` hydrated in factory
+  `create` (the gotcha "Nested `Model` fields can't take
+  `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
+  The state-inside-state regression and how to compose state actors
+  via string ID + `ref(id)`.
+- [`references/patterns-mcp-app-gotchas.md`](references/patterns-mcp-app-gotchas.md)
+  — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
+  `factory=True` on app-type `create`, `MyType.ref()` not
+  `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a
+  Transaction, Optional+`default=None` for nested Models, `.read()`
+  only on a no-arg ref inside a workflow, method-name PascalCase →
+  generated `<Type>.<Method>Request`.
+
+**Servicers:**
+
+- [`references/servicer-patterns.md`](references/servicer-patterns.md)
+  — the MCP App servicer shapes: `UserServicer` calling
+  `<X>.create(context)`, a Workflow Servicer with `MyType.ref()`
+  (no-arg) magic, inline writers via
+  `.per_workflow("alias").write(context, fn)` /
+  `.per_iteration("alias").write(...)` / `.always().write(...)`,
+  scheduling a workflow from a Transaction with `.schedule()`.
+
+**`main.py`:** also write `backend/src/example_prompts.py` (the
+wizard's example prompts), which `main.py` imports and passes as
+`example_prompts=` to `Application` — see
+[`references/lifecycle-mcp-app-project-files.md`](references/lifecycle-mcp-app-project-files.md).
+
+**Authorizers:**
+
+- [`references/auth-store-tokens.md`](references/auth-store-tokens.md)
+  — **acting on the user's behalf** at an external service: when the
+  API belongs to your `Application(oauth=...)` identity provider,
+  add extra OAuth `scopes=[...]` + `store_tokens=True` (needs
+  `oauth_library()` + `ciphertext_library()` +
+  `ordered_map_library()`) and the server captures its tokens.
+  Reboot stores **the provider's own tokens only** (an `Auth0`
+  sign-in stores an Auth0 token, not the upstream Google token). The
+  full host-agnostic recipe — custom OAuth endpoints for any _other_
+  service, reading tokens back, calling the API **inside a
+  `Workflow`**, refresh tokens, erasure — is
+  [`references/auth-external-api-calls.md`](references/auth-external-api-calls.md).
+
+**Scenarios:** every action through the MCP tool surface ("create a
+new todo list", "add an item and see it listed", "rename a list") is
+a scenario, calling the methods the tools call.
+
+**Updates:** when the change adds a new user-facing capability, add
+or update an example prompt in `backend/src/example_prompts.py` so
+the wizard surfaces the new flow.
+
+## Building a web app
+
+What a web app adds to the app skill's
+[Step-by-Step Build Flow](../app/SKILL.md#step-by-step-build-flow):
+**Project files** goes with "Create `.python-version`, …", **API
+definition** with "Write the API definition", and **Authorizers**
+with "Write the servicer". The React side is the frontend skill's
+[Building a web app](../frontend/SKILL.md#building-a-web-app).
+
+**Project files:** in `.rbtrc`, point the React codegen at
+`frontend/api`:
+
+```sh
+generate --react=frontend/api
+```
+
+**API definition:** every `Reader`, `Writer`, `Transaction` and
+`Workflow` still requires the `mcp=` argument: write `mcp=None` on
+each one. Do **not** add `mcp=Tool()` or `UI()`; those are MCP App
+only.
+
+**Authorizers:** the dev-vs-prod sign-in sequence is
+[`references/auth-web-apps.md`](references/auth-web-apps.md). Calling
+an external service as the user:
+
+- `python/references/auth-external-api-calls.md` and
+  `python/references/stdlib-oauth-tokens.md` — **calling an external
+  service's API as the user**: custom OAuth endpoints (web apps use
+  Path B — no `store_tokens=True` shortcut) → `OAuthTokenManager.store`
+  → read back + call inside a `Workflow`. Never a plain `str` token
+  field.
+
 ## Available Reference Files
 
 Reference files live in `references/` and are named
@@ -479,12 +598,23 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/lifecycle-rbtrc.md`
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-sample-data.md` — test data for a new app:
+  `seed.py` through the real methods, `.idempotently()` aliases, run
+  only under `rbt dev run`
+- `references/lifecycle-mcp-app-project-files.md` — what an MCP App adds to the
+  project files: `.rbtrc` configs, `pyproject.toml`, the example
+  prompts module, `main.py`
 - `references/lifecycle-secrets.md`
 - `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
 - `references/lifecycle-signals.md` — usually nothing to do on
   `SIGTERM`/`SIGINT`; when something is, `install_cleanup()`, never a
   signal handler of your own
+
+**MCP App**:
+
+- `references/mcp-app-concepts.md` — what makes an app an MCP App: the
+  `User` front door, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
 
 **API** (`api-`):
 
@@ -493,6 +623,10 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-errors.md`
 - `references/api-schema-evolution.md` — schema evolution rules for
   deployed applications / persisted state
+- `references/api-method-types.md` — an MCP App's API file: the
+  `User` front door, `mcp=Tool()` / `mcp=None`, `UI()`
+- `references/api-state-shapes.md` — `list[Item]` and nested `Model`
+  sub-objects in state
 
 **Servicer** (`servicer-`):
 
@@ -505,6 +639,9 @@ above lists the right ones grouped by task type. The full catalog:
   `until` / `until_changes`, and workflow exit semantics)
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
+- `references/servicer-patterns.md` — an MCP App's servicers: the
+  `User` front door creating application types, workflows on
+  `MyType.ref()`
 
 **Agent** (`agent-`):
 
@@ -541,6 +678,15 @@ above lists the right ones grouped by task type. The full catalog:
   call through the application; audit in writers, never in readers
 - `references/auth-external-api-calls.md`
 - `references/auth-http-routes.md`
+- `references/auth-oauth-providers.md` — choosing the
+  `Application(oauth=...)` sign-in provider, for an MCP App or a web
+  app
+- `references/auth-custom-oauth-provider.md` — writing a provider of
+  your own
+- `references/auth-store-tokens.md` — `store_tokens=True`: calling the
+  sign-in provider's API as the user
+- `references/auth-web-apps.md` — sign-in for a web app's browser users,
+  and the order to write authorizers in
 
 **RPC** (`rpc-`):
 
@@ -558,22 +704,23 @@ above lists the right ones grouped by task type. The full catalog:
 
 - `references/testing-project-setup.md`
 - `references/testing-features.md`
-- `references/testing-web-app.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 - `references/testing-failure-recovery.md`
 
-**Frontend** (shared by `web-app` and `mcp-app`):
-
-- `references/react-generated-client.md` — what
-  `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,
-  reader/mutation return shapes, typed errors, naming rules.
+**Frontend**: the React references and the browser scenarios are in
+the `frontend` skill's `references/`. `react-generated-client.md`
+says what `rbt generate --react=` emits, and `testing-web-app.md`
+covers the browser scenarios.
 
 **Patterns** (`patterns-`):
 
 - `references/patterns-error-handling.md`
 - `references/patterns-idempotency.md`
 - `references/patterns-common-gotchas.md`
+- `references/patterns-mcp-app-gotchas.md` — the MCP App's backend gotchas:
+  `mcp=` on every method, `factory=True`, workflow refs,
+  nested `Model` defaults
 
 ## External References
 

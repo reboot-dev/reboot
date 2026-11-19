@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Specify a Reboot application's feature before and while building it, as a Gherkin `.feature` file the tests run and the dashboard shows. Use whenever the user asks for a new capability or a change to one ("add transfers", "users should be able to..."), before touching the API or code; and when converting an existing test suite to feature files. Agrees on the feature in plain English first, writes it down tagged `@wip`, builds it with the `python` / `web-app` / `mcp-app` skills, then iterates on scenarios with the user until they agree to take the tag off.
+description: Specify a Reboot application's feature before and while building it, as a Gherkin `.feature` file the tests run and the dashboard shows. Use whenever the user asks for a new capability or a change to one ("add transfers", "users should be able to..."), before touching the API or code; and when converting an existing test suite to feature files. Agrees on the feature in plain English first, writes it down tagged `@wip`, builds it with the `app`, `python` and `frontend` skills, then iterates on scenarios with the user until they agree to take the tag off.
 argument-hint: [<feature-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -26,7 +26,7 @@ skill's references; read them at the step that needs them:
 - `../python/references/testing-features.md` — **read before
   writing any scenario**: the step vocabulary, who calls, saved
   values, assertions, `@wip` / `@blocked`, custom steps.
-- `../python/references/testing-web-app.md` — read when a scenario
+- `../frontend/references/testing-web-app.md` — read when a scenario
   opens the web app: the `frontend` fixture, the web app steps, the
   accessible markup the page needs, recordings.
 - `../python/references/testing-project-setup.md` — the files a
@@ -98,7 +98,7 @@ Tell the user it is there.
 ## Step 3 — Build the feature
 
 Change the API, the servicers, and the frontend with the `python`
-skill and, for the frontend, the `web-app` or `mcp-app` skill. Two
+skill and, for the frontend, the `frontend` skill. Two
 rules of theirs matter most here:
 
 - **Every property gets a `description=`** on its `Field(...)`,
@@ -142,7 +142,8 @@ run it. Concretely:
   worth formal verification; when a scenario shows what an
   operation does and nothing more, leave it at the top level.
 - **Run the suite** (`uv run pytest`, or `-m wip` for
-  what is in progress) and `uv run mypy backend/ tests/`; fix what fails.
+  what is in progress; a web app's runs without browser pacing
+  until the last, paced one, as `testing-web-app.md` "Running" says) and `uv run mypy backend/ tests/`; fix what fails.
 - **Suggest reviewing in the dashboard** after each round: the
   feature's card, its rules, the methods it uses and the ones no
   feature uses, and the recordings.
