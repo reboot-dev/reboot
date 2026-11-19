@@ -1,3 +1,4 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
@@ -55,12 +56,45 @@ py_test(
 )
 
 py_test(
+    name = "interpreter_test",
+    srcs = ["interpreter_test.py"],
+    deps = [
+        ":order_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/statecharts:events_py",
+        "//reboot/statecharts:interpreter_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_test(
     name = "events_test",
     srcs = ["events_test.py"],
     deps = [
         ":order_py_reboot",
         "//rbt/v1alpha1/statecharts:statechart_py_proto",
         "//reboot/statecharts:events_py",
+        requirement("protobuf"),
+    ],
+)
+
+proto_library(
+    name = "shop_proto",
+    srcs = ["shop.proto"],
+)
+
+py_proto_library(
+    name = "shop_py_proto",
+    deps = [":shop_proto"],
+)
+
+py_test(
+    name = "transition_test",
+    srcs = ["transition_test.py"],
+    deps = [
+        ":shop_py_proto",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/statecharts:interpreter_py",
         requirement("protobuf"),
     ],
 )

@@ -21,6 +21,15 @@ class ChargeFailed(Exception):
 
 
 class OrderServicer(Order.Servicer):
+    """An order that owes 500 cents when it is created.
+
+    Its statechart, which is in `order.proto`, starts in `OPEN`. There,
+    a `Paid` or a `Refunded` of at least what is owed closes the order,
+    as does a `Settled`, and as does the order being cancelled; a
+    `Paid` of less is taken off what is owed. `CLOSED` has no
+    transitions. Each call of the statechart adds its name to the
+    `calls` of the order.
+    """
 
     def authorizer(self):
         return allow()
@@ -30,6 +39,7 @@ class OrderServicer(Order.Servicer):
         context: WriterContext,
         request: Empty,
     ) -> Empty:
+        self.state.owed_cents = 500
         return Empty()
 
     async def pay(
@@ -61,8 +71,8 @@ class OrderServicer(Order.Servicer):
         context: WriterContext,
         request: Empty,
     ) -> Empty:
-        await self.statechart(context).enqueue(order_pb2.Paid(cents=1))
-        await self.statechart(context).enqueue(order_pb2.Refunded(cents=2))
+        await self.statechart(context).enqueue(order_pb2.Paid(cents=200))
+        await self.statechart(context).enqueue(order_pb2.Refunded(cents=300))
         return Empty()
 
     async def pay_then_fail(
@@ -70,7 +80,7 @@ class OrderServicer(Order.Servicer):
         context: WriterContext,
         request: Empty,
     ) -> Empty:
-        await self.statechart(context).enqueue(order_pb2.Paid(cents=1))
+        await self.statechart(context).enqueue(order_pb2.Paid(cents=500))
         raise RuntimeError("Failed after enqueueing")
 
     async def pay_then_status(
@@ -78,8 +88,16 @@ class OrderServicer(Order.Servicer):
         context: WriterContext,
         request: Empty,
     ) -> statechart_pb2.Status:
-        await self.statechart(context).enqueue(order_pb2.Paid(cents=1))
+        await self.statechart(context).enqueue(order_pb2.Paid(cents=200))
         return self.statechart(context).status()
+
+    async def cancel(
+        self,
+        context: WriterContext,
+        request: Empty,
+    ) -> Empty:
+        self.state.cancelled = True
+        return Empty()
 
     @classmethod
     async def charge(
@@ -92,7 +110,6 @@ class OrderServicer(Order.Servicer):
             state: Order.State,
             statechart: Order.Statechart,
         ) -> None:
-            state.owed_cents = 0
             await statechart.enqueue(order_pb2.Paid(cents=500))
 
         await Order.ref().write(context, record_charge)
@@ -128,6 +145,13 @@ class OrderServicer(Order.Servicer):
         state, statechart = await Order.ref().read(context)
         return statechart.status()
 
+    async def get(
+        self,
+        context: ReaderContext,
+        request: Empty,
+    ) -> Order.State:
+        return self.state
+
     async def status_from_reader(
         self,
         context: ReaderContext,
@@ -154,26 +178,30 @@ class OrderServicer(Order.Servicer):
         state: Order.State,
         event: order_pb2.Paid | order_pb2.Refunded,
     ) -> bool:
-        return True
+        return event.cents >= state.owed_cents
 
     def is_cancelled(self, state: Order.State) -> bool:
-        return False
+        return state.cancelled
 
     def record_payment(
         self,
         state: Order.State,
         event: order_pb2.Paid,
     ) -> Optional[order_pb2.Settled]:
+        state.calls.append("record_payment")
+        state.owed_cents -= event.cents
         return None
 
     def void(self, state: Order.State) -> None:
-        pass
+        state.calls.append("void")
+        state.owed_cents = 0
 
     def send_receipt(self, state: Order.State) -> None:
-        pass
+        state.calls.append("send_receipt")
+        state.receipt_sent = True
 
     def stop_reminders(self, state: Order.State) -> None:
-        pass
+        state.calls.append("stop_reminders")
 
     @classmethod
     async def send_reminders(cls, context: WorkflowContext) -> None:
@@ -187,15 +215,15 @@ class OrderServicer(Order.Servicer):
         return None
 
 
+OPEN = statechart_pb2.Status(active="OPEN")
+CLOSED = statechart_pb2.Status(active="CLOSED")
+
+
 class StatechartTest(unittest.IsolatedAsyncioTestCase):
-    """Tests the `statechart` of a servicer, with the `Order` of
-    `order.proto`. Each of `StatusFromReader`, `StatusFromWriter` and
-    `StatusFromTransaction` returns the `status()` of the statechart
-    that a method of that kind gets, and `Pay`, `Refund`, `Settle`,
-    `PayThenRefund`, `PayThenFail` and `PayThenStatus` each call
-    `enqueue()` of theirs. `Charge` and `ChargeThenFail` are workflows
-    that enqueue with an inline writer, and `StatusFromWorkflow` is one
-    that returns the `status()` that an inline reader gets."""
+    """Tests the statechart of a state in an application, with the
+    order of `OrderServicer`: what a method reads of it, what a method
+    enqueues for it, and that it is run when a method that can change
+    the order returns."""
 
     async def asyncSetUp(self) -> None:
         self.rbt = Reboot()
@@ -207,152 +235,191 @@ class StatechartTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
 
-    async def test_status_is_empty_before_statechart_has_started(
-        self,
-    ) -> None:
+    async def test_constructing_state_starts_its_statechart(self) -> None:
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+
+    async def test_reader_writer_and_transaction_read_status(self) -> None:
         for status in [
             await self.order.StatusFromReader(self.context),
             await self.order.StatusFromWriter(self.context),
             await self.order.StatusFromTransaction(self.context),
         ]:
-            self.assertEqual(statechart_pb2.Status(), status)
+            self.assertEqual(OPEN, status)
 
-    async def test_writer_enqueues_event(self) -> None:
+    async def test_event_that_writer_enqueues_is_handled(self) -> None:
         await self.order.Pay(self.context, cents=500)
 
-        for status in [
-            await self.order.StatusFromReader(self.context),
-            await self.order.StatusFromWriter(self.context),
-            await self.order.StatusFromTransaction(self.context),
-        ]:
-            self.assertEqual(
-                statechart_pb2.Status(
-                    queue=[
-                        status_event_from_message(order_pb2.Paid(cents=500))
-                    ],
-                ),
-                status,
-            )
-
-    async def test_transaction_enqueues_event(self) -> None:
-        await self.order.Refund(self.context, cents=200)
-
+        # The `Paid` is of what is owed, so the order is closed, and
+        # the event is no longer in the queue.
         self.assertEqual(
-            statechart_pb2.Status(
-                queue=[
-                    status_event_from_message(order_pb2.Refunded(cents=200))
-                ],
-            ),
+            CLOSED,
             await self.order.StatusFromReader(self.context),
         )
 
-    async def test_event_without_fields_has_no_value(self) -> None:
+        order = await self.order.Get(self.context)
+        # The `exit` of `OPEN`, and then the `entry` of `CLOSED`.
+        self.assertEqual(["stop_reminders", "send_receipt"], order.calls)
+        self.assertTrue(order.receipt_sent)
+
+    async def test_guard_that_does_not_hold_leaves_next_transition(
+        self,
+    ) -> None:
+        await self.order.Pay(self.context, cents=200)
+
+        # The `Paid` is of less than is owed, so the transition that
+        # closes the order does not fire and the one that records the
+        # payment does.
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+
+        order = await self.order.Get(self.context)
+        self.assertEqual(["record_payment"], order.calls)
+        self.assertEqual(300, order.owed_cents)
+
+    async def test_event_that_transaction_enqueues_is_handled(self) -> None:
+        await self.order.Refund(self.context, cents=500)
+
+        self.assertEqual(
+            CLOSED,
+            await self.order.StatusFromReader(self.context),
+        )
+
+    async def test_event_without_fields_is_handled(self) -> None:
         await self.order.Settle(self.context)
 
         self.assertEqual(
-            statechart_pb2.Status(
-                queue=[
-                    statechart_pb2.Status.Event(
-                        event="tests.reboot.statecharts.Settled",
-                    ),
-                ],
-            ),
+            CLOSED,
             await self.order.StatusFromReader(self.context),
         )
 
-    async def test_events_are_enqueued_in_order(self) -> None:
+    async def test_event_that_no_transition_fires_for_is_dropped(
+        self,
+    ) -> None:
+        # A `Refunded` of less than is owed, which `OPEN` has no
+        # transition that fires for.
+        await self.order.Refund(self.context, cents=100)
+
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+        self.assertEqual([], (await self.order.Get(self.context)).calls)
+
         await self.order.Pay(self.context, cents=500)
-        await self.order.PayThenRefund(self.context)
-        await self.order.Refund(self.context, cents=200)
+
+        # And a `Paid` for an order that is closed.
+        await self.order.Pay(self.context, cents=1)
 
         self.assertEqual(
-            statechart_pb2.Status(
-                queue=[
-                    status_event_from_message(order_pb2.Paid(cents=500)),
-                    status_event_from_message(order_pb2.Paid(cents=1)),
-                    status_event_from_message(order_pb2.Refunded(cents=2)),
-                    status_event_from_message(order_pb2.Refunded(cents=200))
-                ],
-            ),
+            CLOSED,
             await self.order.StatusFromReader(self.context),
         )
+        self.assertEqual(
+            ["stop_reminders", "send_receipt"],
+            (await self.order.Get(self.context)).calls,
+        )
 
-    async def test_method_that_fails_enqueues_nothing(self) -> None:
-        await self.order.Pay(self.context, cents=500)
+    async def test_events_are_handled_in_order_they_were_enqueued(
+        self,
+    ) -> None:
+        # A `Paid` of 200 cents and then a `Refunded` of 300.
+        await self.order.PayThenRefund(self.context)
 
+        # The `Paid` left 300 cents owed, which the `Refunded` is of,
+        # so the order is closed. Had the `Refunded` been handled
+        # first, 500 cents would have been owed and it would have been
+        # dropped.
+        self.assertEqual(
+            CLOSED,
+            await self.order.StatusFromReader(self.context),
+        )
+        self.assertEqual(
+            ["record_payment", "stop_reminders", "send_receipt"],
+            (await self.order.Get(self.context)).calls,
+        )
+
+    async def test_method_that_fails_leaves_statechart_as_it_was(
+        self,
+    ) -> None:
         with self.assertRaises(Order.PayThenFailAborted):
             await self.order.PayThenFail(self.context)
 
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+
+        order = await self.order.Get(self.context)
+        self.assertEqual([], order.calls)
+        self.assertEqual(500, order.owed_cents)
+
+    async def test_method_reads_event_that_it_has_enqueued(self) -> None:
+        # Within the method the event is waiting, since the statechart
+        # is run when the method returns.
         self.assertEqual(
             statechart_pb2.Status(
-                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
-            ),
-            await self.order.StatusFromReader(self.context),
-        )
-
-    async def test_status_has_event_that_method_has_enqueued(self) -> None:
-        await self.order.Pay(self.context, cents=500)
-
-        self.assertEqual(
-            statechart_pb2.Status(
-                queue=[
-                    status_event_from_message(order_pb2.Paid(cents=500)),
-                    status_event_from_message(order_pb2.Paid(cents=1))
-                ],
+                active="OPEN",
+                queue=[status_event_from_message(order_pb2.Paid(cents=200))],
             ),
             await self.order.PayThenStatus(self.context),
+        )
+
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+        self.assertEqual(300, (await self.order.Get(self.context)).owed_cents)
+
+    async def test_when_transition_fires_for_change_of_method(self) -> None:
+        # `Cancel` enqueues nothing. It makes the condition of the
+        # `when` transition of `OPEN` hold.
+        await self.order.Cancel(self.context)
+
+        self.assertEqual(
+            CLOSED,
+            await self.order.StatusFromReader(self.context),
+        )
+        # The `exit` of `OPEN`, the action of the transition, and then
+        # the `entry` of `CLOSED`.
+        self.assertEqual(
+            ["stop_reminders", "void", "send_receipt"],
+            (await self.order.Get(self.context)).calls,
         )
 
     async def test_workflow_enqueues_event_with_inline_writer(self) -> None:
         await (await self.order.spawn().Charge(self.context))
 
         self.assertEqual(
-            statechart_pb2.Status(
-                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
-            ),
+            CLOSED,
             await self.order.StatusFromReader(self.context),
         )
+        # Once, however often the workflow ran.
+        self.assertEqual(
+            ["stop_reminders", "send_receipt"],
+            (await self.order.Get(self.context)).calls,
+        )
 
-    async def test_inline_writer_that_fails_enqueues_nothing(self) -> None:
-        await self.order.Pay(self.context, cents=500)
-
+    async def test_inline_writer_that_fails_leaves_statechart_as_it_was(
+        self,
+    ) -> None:
         await (await self.order.spawn().ChargeThenFail(self.context))
 
-        self.assertEqual(
-            statechart_pb2.Status(
-                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
-            ),
-            await self.order.StatusFromReader(self.context),
-        )
+        self.assertEqual(OPEN, await self.order.StatusFromReader(self.context))
+        self.assertEqual([], (await self.order.Get(self.context)).calls)
 
     async def test_workflow_reads_status_with_inline_reader(self) -> None:
         self.assertEqual(
-            statechart_pb2.Status(),
+            OPEN,
             await (await self.order.spawn().StatusFromWorkflow(self.context)),
         )
 
         await self.order.Pay(self.context, cents=500)
 
         self.assertEqual(
-            statechart_pb2.Status(
-                queue=[status_event_from_message(order_pb2.Paid(cents=500))]
-            ),
+            CLOSED,
             await (await self.order.spawn().StatusFromWorkflow(self.context)),
         )
 
-    async def test_reactive_reader_gets_event_that_is_enqueued(self) -> None:
+    async def test_reactive_reader_gets_what_statechart_does(self) -> None:
         statuses = self.order.reactively().StatusFromReader(self.context)
 
-        # The first status is from before anything is enqueued.
         status, _ = await anext(statuses)
-        self.assertEqual(statechart_pb2.Status(), status)
+        self.assertEqual(OPEN, status)
 
         await self.order.Pay(self.context, cents=500)
 
         async for status, _ in statuses:
-            if status == statechart_pb2.Status(
-                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
-            ):
+            if status == CLOSED:
                 break
 
 

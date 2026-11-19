@@ -112,6 +112,7 @@ import reboot.aio.aborted as IMPORT_reboot_aio_aborted
 import reboot.settings as IMPORT_reboot_settings
 {% if states | selectattr('has_statechart') | list | length > 0 %}
 import reboot.statecharts.events as IMPORT_reboot_statecharts_events
+import reboot.statecharts.interpreter as IMPORT_reboot_statecharts_interpreter
 {% endif %}
 import reboot.nodejs.python as IMPORT_reboot_nodejs_python
 from reboot.time import DateTimeWithTimeZone as IMPORT_reboot_time_DateTimeWithTimeZone
@@ -1117,6 +1118,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 )
             )
 
+            {% if state.has_statechart and method.options.proto.kind in ['writer', 'transaction'] %}
+            statechart._run(servicer=self._servicer, state=typed_state)
+
+            {% endif %}
             {% if options.proto.pydantic and method.options.proto.kind == 'writer' %}
             # TODO: it's premature to overwrite the state now given that the
             # writer might still "fail" and an error will get propagated back
@@ -3422,6 +3427,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         )
 
 {% if state.has_statechart %}
+    # The statechart of a `{{ state.proto.name }}`, as its message
+    # declares it.
+    __statechart__: rbt.v1alpha1.statecharts.statechart_pb2.Statechart = (
+        {{ state.pb2_name }}.{{ state.proto.name }}.DESCRIPTOR.GetOptions().Extensions[
+            rbt.v1alpha1.options_pb2.statechart
+        ]
+    )
+
     class ImmutableStatechart:
         """The statechart of a `{{ state.proto.name }}`, for one call of
         a method."""
@@ -3488,6 +3501,27 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             )
 
             self._status_modified = True
+
+        def _run(
+            self,
+            *,
+            servicer: {{ state.proto.name }}BaseServicer,
+            state: {{ state.proto.name }}.State,
+        ) -> None:
+            """Runs the statechart, with the methods of `servicer`, on
+            `state` as the method has left it, until the statechart has
+            nothing left to do: every event that is waiting is handled,
+            and every transition that fires is taken."""
+            status = IMPORT_reboot_statecharts_interpreter.run(
+                {{ state.proto.name }}BaseServicer.__statechart__,
+                servicer=servicer,
+                state=state,
+                status=self._status,
+            )
+
+            if status is not None:
+                self._status = status
+                self._status_modified = True
 
     # The statechart for the method that is being called in the current
     # asyncio context.
@@ -3976,6 +4010,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                 result = await writer(
                                     state=typed_state,
                                     statechart=statechart,
+                                )
+
+                                statechart._run(
+                                    servicer=servicer,
+                                    state=typed_state,
                                 )
                                 {% else %}
                                 result = await writer(state=typed_state)

@@ -19,7 +19,7 @@ from typing import Iterable, Iterator, Optional, overload
 _HIERARCHICAL_STATE_NAME_SEPARATOR = "/"
 
 
-def _hierarchical_state_name(
+def make_hierarchical_state_name(
     state_name: str,
     *,
     hierarchical_superstate_name: Optional[str],
@@ -49,7 +49,7 @@ def _hierarchical_state_names(
     hierarchical_state_names: list[str] = []
 
     for state in states:
-        hierarchical_state_name = _hierarchical_state_name(
+        hierarchical_state_name = make_hierarchical_state_name(
             state.name,
             hierarchical_superstate_name=hierarchical_superstate_name,
         )
@@ -222,7 +222,7 @@ def _check_initial(
         problems.extend(
             _check_initial(
                 state=substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -296,7 +296,7 @@ def _check_state_names(
         problems.extend(
             _check_state_names(
                 state=substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -474,7 +474,7 @@ def _check_transitions(
         problems.extend(
             _check_transitions(
                 state=substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -546,7 +546,7 @@ def _check_entries(
         problems.extend(
             _check_entries(
                 state=substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -610,7 +610,7 @@ def _check_exits(
         problems.extend(
             _check_exits(
                 state=substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -674,7 +674,7 @@ def _check_final(
         problems.extend(
             _check_final(
                 substate,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     substate.name,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -691,6 +691,40 @@ def _states_and_substates(
     for state in states:
         yield state
         yield from _states_and_substates(state.states)
+
+
+def states_by_hierarchical_state_name(
+    statechart: statechart_pb2.Statechart,
+) -> dict[str, statechart_pb2.Statechart.State]:
+    """Returns each state of `statechart`, and every state within
+    them, by its hierarchical state name."""
+    # `_hierarchical_state_names` and `_states_and_substates` both go
+    # through the states in the order they are written, each state
+    # before the states within it, so the two line up.
+    return dict(
+        zip(
+            _hierarchical_state_names(
+                statechart.states,
+                hierarchical_superstate_name=None,
+            ),
+            _states_and_substates(statechart.states),
+        ),
+    )
+
+
+def hierarchical_state_name_and_superstate_names(
+    hierarchical_state_name: str,
+) -> list[str]:
+    """Returns `hierarchical_state_name` and that of each state it is
+    within, innermost first: "FOO/BAR/BAZ", "FOO/BAR", then "FOO"."""
+    hierarchical_state_names = [hierarchical_state_name]
+    while _HIERARCHICAL_STATE_NAME_SEPARATOR in hierarchical_state_names[-1]:
+        hierarchical_state_names.append(
+            hierarchical_state_names[-1].rpartition(
+                _HIERARCHICAL_STATE_NAME_SEPARATOR,
+            )[0],
+        )
+    return hierarchical_state_names
 
 
 def _entries(
@@ -970,18 +1004,7 @@ def _check_states_are_reachable(
     ever holds is not considered."""
     problems: list[str] = []
 
-    # `_hierarchical_state_names` and `_states_and_substates` both go
-    # through the states in the order they are written, each state
-    # before the states within it, so the two line up.
-    states_by_hierarchical_state_name = dict(
-        zip(
-            _hierarchical_state_names(
-                statechart.states,
-                hierarchical_superstate_name=None,
-            ),
-            _states_and_substates(statechart.states),
-        ),
-    )
+    states = states_by_hierarchical_state_name(statechart)
 
     # The hierarchical state names that an `initial` or a `to` leads
     # to: those that have been followed, and those still to follow.
@@ -997,13 +1020,13 @@ def _check_states_are_reachable(
             continue
         followed.add(hierarchical_state_name)
 
-        state = states_by_hierarchical_state_name[hierarchical_state_name]
+        state = states[hierarchical_state_name]
 
         if len(state.states) > 0:
             # A state that has states within it is entered at its
             # `initial`.
             to_follow.append(
-                _hierarchical_state_name(
+                make_hierarchical_state_name(
                     state.initial,
                     hierarchical_superstate_name=hierarchical_state_name,
                 ),
@@ -1018,7 +1041,7 @@ def _check_states_are_reachable(
             )
             for superstate_name in state_names[:-1]:
                 hierarchical_superstate_names.append(
-                    _hierarchical_state_name(
+                    make_hierarchical_state_name(
                         superstate_name,
                         hierarchical_superstate_name=(
                             hierarchical_superstate_names[-1]
@@ -1034,8 +1057,7 @@ def _check_states_are_reachable(
             transitions.extend(state.transitions)
             for hierarchical_superstate_name in hierarchical_superstate_names:
                 transitions.extend(
-                    states_by_hierarchical_state_name[
-                        hierarchical_superstate_name].transitions,
+                    states[hierarchical_superstate_name].transitions,
                 )
 
             for transition in transitions:
@@ -1050,9 +1072,7 @@ def _check_states_are_reachable(
     # A state is reachable if an `initial` or a `to` led to it or to a
     # state within it.
     reachable = {
-        hierarchical_state_name
-        for hierarchical_state_name in states_by_hierarchical_state_name
-        if any(
+        hierarchical_state_name for hierarchical_state_name in states if any(
             followed_hierarchical_state_name == hierarchical_state_name or
             followed_hierarchical_state_name.startswith(
                 hierarchical_state_name + _HIERARCHICAL_STATE_NAME_SEPARATOR,
@@ -1060,7 +1080,7 @@ def _check_states_are_reachable(
         )
     }
 
-    for hierarchical_state_name in states_by_hierarchical_state_name:
+    for hierarchical_state_name in states:
         if hierarchical_state_name not in reachable:
             problems.append(
                 f"state `{hierarchical_state_name}` is unreachable: no "
@@ -1095,7 +1115,7 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
         problems.extend(
             _check_final(
                 state,
-                hierarchical_state_name=_hierarchical_state_name(
+                hierarchical_state_name=make_hierarchical_state_name(
                     state.name,
                     hierarchical_superstate_name=None,
                 ),

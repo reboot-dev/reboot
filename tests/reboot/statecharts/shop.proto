@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package shop.v1;
+
+// The events of the statecharts in `transition_test.py`.
+
+message Cancelled {}
+
+message Charging {}
+
+message Packed {}
+
+message Paid {}
+
+message Reopened {}
+
+message Restarted {}
+
+message Resumed {}
+
+message Retried {}

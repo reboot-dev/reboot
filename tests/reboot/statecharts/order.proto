@@ -45,6 +45,13 @@ message Order {
       transitions {
         on {
           event: "tests.reboot.statecharts.Paid"
+          guard { inline { method: "is_settled" } }
+          to: "CLOSED"
+        }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Paid"
           actions {
             call {
               description: "Record the payment"
@@ -58,13 +65,6 @@ message Order {
       }
       transitions {
         on { event: "tests.reboot.statecharts.Settled" to: "CLOSED" }
-      }
-      transitions {
-        on {
-          event: "tests.reboot.statecharts.Paid"
-          guard { inline { method: "is_settled" } }
-          to: "CLOSED"
-        }
       }
       transitions {
         on {
@@ -100,6 +100,9 @@ message Order {
   uint32 owed_cents = 1;
   bool cancelled = 2;
   bool receipt_sent = 3;
+  // The method of each `call` of the statechart that was called, in
+  // the order they were called.
+  repeated string calls = 4;
 }
 
 service OrderMethods {
@@ -128,32 +131,40 @@ service OrderMethods {
     };
   }
 
-  // Enqueues a `Paid` and then a `Refunded`.
+  // Enqueues a `Paid` of 200 cents and then a `Refunded` of 300.
   rpc PayThenRefund(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
 
-  // Enqueues a `Paid` and then fails.
+  // Enqueues a `Paid` of 500 cents and then fails.
   rpc PayThenFail(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
 
-  // Enqueues a `Paid` and returns the status that it then reads.
+  // Enqueues a `Paid` of 200 cents and returns the status that it then
+  // reads.
   rpc PayThenStatus(google.protobuf.Empty)
       returns (rbt.v1alpha1.statecharts.Status) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
 
-  // Enqueues a `Paid` with an inline writer.
+  // Sets `cancelled`.
+  rpc Cancel(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` of 500 cents with an inline writer.
   rpc Charge(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
 
-  // Enqueues a `Paid` with an inline writer that then fails.
+  // Enqueues a `Paid` of 500 cents with an inline writer that then
+  // fails.
   rpc ChargeThenFail(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).workflow = {
     };
@@ -162,6 +173,11 @@ service OrderMethods {
   rpc StatusFromWorkflow(google.protobuf.Empty)
       returns (rbt.v1alpha1.statecharts.Status) {
     option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc Get(google.protobuf.Empty) returns (Order) {
+    option (rbt.v1alpha1.method).reader = {
     };
   }
 

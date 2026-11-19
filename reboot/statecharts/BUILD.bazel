@@ -21,3 +21,16 @@ py_library(
         requirement("protobuf"),
     ],
 )
+
+py_library(
+    name = "interpreter_py",
+    srcs = ["interpreter.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":events_py",
+        ":validation_py",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        requirement("protobuf"),
+    ],
+)
