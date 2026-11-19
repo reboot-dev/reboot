@@ -89,14 +89,14 @@ skill, following it from "When to Use".
 
 ## Worked examples
 
-| prompt | frontends | why |
-| --- | --- | --- |
-| "a CRM for my relationships" | ask, none marked, On the web and in AI chat first | nothing leans either way |
-| "a dashboard served at metrics.example.com" | ask, On the web recommended and first | a URL names the web app, not the web alone; a dashboard is looked at |
-| "a tool I can use from Claude to track my reading" | ask, In AI chat recommended and first | Claude named, not "only"; a log kept by talking |
-| "a website and an MCP server for our CRM" | On the web and in AI chat | a conjunction |
-| "just a website for my bakery, no AI" | On the web | "just", "no AI" |
-| "only an MCP server for our CRM, no web app" | In AI chat | "only", "no web app" |
+| prompt                                             | frontends                                         | why                                                                  |
+| -------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
+| "a CRM for my relationships"                       | ask, none marked, On the web and in AI chat first | nothing leans either way                                             |
+| "a dashboard served at metrics.example.com"        | ask, On the web recommended and first             | a URL names the web app, not the web alone; a dashboard is looked at |
+| "a tool I can use from Claude to track my reading" | ask, In AI chat recommended and first             | Claude named, not "only"; a log kept by talking                      |
+| "a website and an MCP server for our CRM"          | On the web and in AI chat                         | a conjunction                                                        |
+| "just a website for my bakery, no AI"              | On the web                                        | "just", "no AI"                                                      |
+| "only an MCP server for our CRM, no web app"       | In AI chat                                        | "only", "no web app"                                                 |
 
 ## How a Web App Differs From an MCP App
 

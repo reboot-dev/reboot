@@ -1,6 +1,6 @@
 ---
 name: app
-description: "Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt's own words when it says so outright (\"just a website\", \"only for Claude\", or both named), otherwise with one question, \"Where will people use your app?\" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app's domain (CRM, todo, dashboard, blog, …)."
+description: 'Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt''s own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Where will people use your app?" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app''s domain (CRM, todo, dashboard, blog, …).'
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -270,6 +270,7 @@ wrong means regenerating everything across 12+ files.
      Reboot does that other stacks make hard. State which feature
      shows which in one line of the message above the question, never
      in the question or the options:
+
      - **a transaction across states**: one action that changes two
        things or neither (moving stock between two warehouses takes
        it from one and adds it to the other atomically);
@@ -286,6 +287,7 @@ wrong means regenerating everything across 12+ files.
      cases. A rule the feature has that is not among them is
      enforced in the servicer, and offered as scenarios at the
      handoff.
+
    - **Name features as activities, in the app's own words**, short
      ("plots and reminders"; the message above the question has the
      full names), with no Reboot terms and no caveats.
@@ -303,9 +305,11 @@ wrong means regenerating everything across 12+ files.
    what is built. Write those features down as `@wip` feature files,
    per the feature skill's Step 2, before the API exists. The design
    below is derived from them.
+
 1. Analyze the user's description using the State Model Assessment
    below.
 2. State the design you are about to build:
+
    - Application types: state shape (fields, types, tags).
    - Method map: which operations, which method type
      (Reader/Writer/Transaction/Workflow).
@@ -327,6 +331,7 @@ wrong means regenerating everything across 12+ files.
 
    An alternative the design weighed goes in the design's text, not
    in the options.
+
 3. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still work the design first: read
