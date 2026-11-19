@@ -11,3 +11,15 @@ py_test(
         "//reboot:pydantic_schema_py",
     ],
 )
+
+py_test(
+    name = "generated_proto_test_py",
+    srcs = ["generated_proto_test.py"],
+    main = "generated_proto_test.py",
+    deps = [
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:api_py",
+        "//reboot:pydantic_api_py",
+        "//reboot:pydantic_schema_to_proto_py",
+    ],
+)
