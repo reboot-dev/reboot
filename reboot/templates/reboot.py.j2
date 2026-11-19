@@ -629,6 +629,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                                 state,
                                 {{ method.proto.name | to_snake }}_request,
                                 validating_effects=validating_effects,
+                                {% if state.has_statechart %}
+                                statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                                    status=self._state_manager.statechart_status(context),
+                                ),
+                                {% endif %}
                             )
 
                         response = await run__{{ method.proto.name }}()
@@ -1050,6 +1055,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% endif %}
         *,
         validating_effects: bool,
+        {% if state.has_statechart and method.options.proto.kind != 'workflow' %}
+        statechart: {{ state.proto.name }}BaseServicer.ImmutableStatechart,
+        {% endif %}
     {% if method.options.proto.kind in ['reader', 'transaction', 'workflow'] %}
     {% if not method.proto.server_streaming %}
     ) -> {{ method.output_type }}:
@@ -1060,6 +1068,13 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Effects:
     {% endif %}
         try:
+            {% if state.has_statechart and method.options.proto.kind != 'workflow' %}
+            # We should have an asyncio task and thus context per request,
+            # let's confirm this assumption by making sure that
+            # `_statechart is None`.
+            assert {{ state.proto.name }}BaseServicer._statechart.get() is None
+            {{ state.proto.name }}BaseServicer._statechart.set(statechart)
+            {% endif %}
             {% if method.options.proto.constructor %}
             states_being_constructed.add(context.state_id)
             {% endif %}
@@ -1285,6 +1300,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             {% if method.options.proto.kind == 'workflow' %}
             self._servicer.__servicer__.set(None)
             {% endif %}
+            {% if state.has_statechart and method.options.proto.kind != 'workflow' %}
+            {{ state.proto.name }}BaseServicer._statechart.set(None)
+            {% endif %}
             {% if not (method.options.proto.constructor or (options.proto.pydantic and method.options.proto.kind in ['transaction', 'workflow'])) %}
             pass
             {% endif %}
@@ -1394,6 +1412,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state{% if method.options.proto.state_streaming %}s{% endif %},
                     request{% if method.proto.client_streaming %}s{% endif +%},
                     validating_effects=validating_effects,
+                    {% if state.has_statechart %}
+                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                        status=self._state_manager.statechart_status(context),
+                    ),
+                    {% endif %}
                 )
                 return response
                 {% else %}
@@ -1402,6 +1425,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state{% if method.options.proto.state_streaming %}s{% endif %},
                     request{% if method.proto.client_streaming %}s{% endif +%},
                     validating_effects=True,
+                    {% if state.has_statechart %}
+                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                        status=self._state_manager.statechart_status(context),
+                    ),
+                    {% endif %}
                 ):
                     yield response
                 {% endif %}
@@ -1426,6 +1454,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state,
                     request,
                     validating_effects=validating_effects,
+                    {% if state.has_statechart %}
+                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                        status=self._state_manager.statechart_status(context),
+                    ),
+                    {% endif %}
                 )
 
                 await writer.complete(effects)
@@ -1452,6 +1485,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state,
                     request,
                     validating_effects=validating_effects,
+                    {% if state.has_statechart %}
+                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                        status=self._state_manager.statechart_status(context),
+                    ),
+                    {% endif %}
                 )
 
                 await complete(
@@ -3368,6 +3406,71 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             servicer=self,
         )
 
+{% if state.has_statechart %}
+    class ImmutableStatechart:
+        """The statechart of a `{{ state.proto.name }}`, for one call of
+        a method."""
+
+        def __init__(
+            self,
+            *,
+            status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status],
+        ):
+            # Where the statechart is: `status`, which is what is stored
+            # with the state. Empty for a statechart that has not
+            # started.
+            self._status = rbt.v1alpha1.statecharts.statechart_pb2.Status()
+
+            if status is not None:
+                self._status.CopyFrom(status)
+
+        def status(self) -> rbt.v1alpha1.statecharts.statechart_pb2.Status:
+            """Returns a copy of where the statechart is. It is empty
+            for a statechart that has not started."""
+            status = rbt.v1alpha1.statecharts.statechart_pb2.Status()
+            status.CopyFrom(self._status)
+            return status
+
+    # The statechart for the method that is being called in the current
+    # asyncio context.
+    _statechart: IMPORT_contextvars.ContextVar[IMPORT_typing.Optional[ImmutableStatechart]] = IMPORT_contextvars.ContextVar(
+        'The statechart of the state for the method that is being called',
+        default=None,
+    )
+
+    def statechart(
+        self,
+        context: (
+            IMPORT_reboot_aio_contexts.ReaderContext |
+            IMPORT_reboot_aio_contexts.WriterContext |
+            IMPORT_reboot_aio_contexts.TransactionContext
+        ),
+    ) -> {{ state.proto.name }}BaseServicer.ImmutableStatechart:
+        """Returns the statechart of the state that `context` is for."""
+        IMPORT_reboot_aio_types.assert_type(
+            context,
+            [
+                IMPORT_reboot_aio_contexts.ReaderContext,
+                IMPORT_reboot_aio_contexts.WriterContext,
+                IMPORT_reboot_aio_contexts.TransactionContext,
+            ],
+            error_message_supplement=(
+                "a servicer has the statechart of its state within a "
+                "reader, a writer or a transaction, which have the state"
+            ),
+        )
+
+        statechart = {{ state.proto.name }}BaseServicer._statechart.get()
+
+        if statechart is None:
+            raise RuntimeError(
+                "A servicer has the statechart of its state only within a "
+                "reader, a writer or a transaction"
+            )
+
+        return statechart
+
+{% endif %}
     class Effects(IMPORT_reboot_aio_state_managers.Effects):
         def __init__(
             self,
@@ -4777,6 +4880,11 @@ class {{ client.proto.state_name }}:
     {# Since 'API' uses 'extra="allow"', mypy can't resolve dynamic
     attributes like 'api.Ping.state', so we use 'cast' to help it. #}
     State: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.state){% else %}{{ pb2_name }}.{{ client.proto.state_name }}{% endif %}
+    {% if client.state.has_statechart %}
+
+    ImmutableStatechart: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}BaseServicer.ImmutableStatechart
+
+    {% endif %}
     {% endif %}
 
     {% for service in client.services %}

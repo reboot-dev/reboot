@@ -1,6 +1,6 @@
 import inspect
 import unittest
-from reboot.aio.contexts import WorkflowContext
+from reboot.aio.contexts import ReaderContext, WorkflowContext
 from tests.reboot.statecharts import order_pb2
 from tests.reboot.statecharts.order_rbt import Order
 from typing import Optional
@@ -174,6 +174,43 @@ class ServicerTest(unittest.TestCase):
             inspect.signature(
                 Order.Servicer.send_reminders,
             ).return_annotation,
+        )
+
+    def test_servicer_has_statechart_only_within_method(self) -> None:
+        # The context of a reader, which a servicer is only given by
+        # an application that is running.
+        context = ReaderContext.__new__(ReaderContext)
+
+        with self.assertRaises(RuntimeError) as raised:
+            OrderServicer().statechart(context)
+
+        self.assertEqual(
+            "A servicer has the statechart of its state only within a "
+            "reader, a writer or a transaction",
+            str(raised.exception),
+        )
+
+    def test_servicer_has_no_statechart_for_context_of_workflow(
+        self,
+    ) -> None:
+        # The context of a workflow, which a servicer is only given
+        # by an application that is running.
+        context = WorkflowContext.__new__(WorkflowContext)
+
+        with self.assertRaises(TypeError) as raised:
+            OrderServicer().statechart(
+                context,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(
+            "reboot.aio.contexts.WorkflowContext is not an instance or "
+            "subclass of one of the expected type(s): "
+            "['reboot.aio.contexts.ReaderContext', "
+            "'reboot.aio.contexts.WriterContext', "
+            "'reboot.aio.contexts.TransactionContext']; a servicer has the "
+            "statechart of its state within a reader, a writer or a "
+            "transaction, which have the state",
+            str(raised.exception),
         )
 
     def test_servicer_without_a_method_is_not_instantiated(self) -> None:

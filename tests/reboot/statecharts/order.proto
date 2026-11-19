@@ -4,6 +4,7 @@ package tests.reboot.statecharts;
 
 import "google/protobuf/empty.proto";
 import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
 
 message Paid {
   uint32 cents = 1;
@@ -104,6 +105,26 @@ message Order {
 service OrderMethods {
   rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  rpc StatusFromReader(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc StatusFromWriter(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc StatusFromTransaction(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).transaction = {
+      shared: {}
     };
   }
 }

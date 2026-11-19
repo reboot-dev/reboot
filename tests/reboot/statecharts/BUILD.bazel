@@ -18,6 +18,7 @@ proto_library(
     srcs = ["order.proto"],
     deps = [
         "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
         "@com_google_protobuf//:empty_proto",
     ],
 )
@@ -34,5 +35,21 @@ py_test(
     deps = [
         ":order_py_reboot",
         "//reboot/aio:contexts_py",
+    ],
+)
+
+py_test(
+    name = "status_test",
+    srcs = ["status_test.py"],
+    deps = [
+        ":order_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:state_managers_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+        "//reboot/aio/auth:authorizers_py",
+        requirement("protobuf"),
     ],
 )
