@@ -444,7 +444,7 @@ def _get_discriminated_union_info(
 
 
 def _pydantic_to_proto(
-    input: Model | PRIMITIVE | COLLECTION | None,
+    input: Model | Message | PRIMITIVE | COLLECTION | None,
     input_type: Optional[typing.Type],
     # We always will return lists, dicts and BaseModels as proto messages.
     output_type: typing.Type[Message] | PRIMITIVE_TYPE,
@@ -678,6 +678,10 @@ def _pydantic_to_proto(
                 assert isinstance(nested_output, Message)
                 output_value.CopyFrom(nested_output)
         return output
+    elif issubclass(input_type_or_origin, Message):
+        # A protobuf message is carried as it is.
+        assert isinstance(input, input_type_or_origin), type(input)
+        return input
     elif issubclass(input_type_or_origin, Model):
         assert isinstance(output_type, type(Message))
         assert isinstance(input, Model)
@@ -750,8 +754,9 @@ def _pydantic_to_proto(
     else:
         raise ValueError(
             f"Unexpected input type in '_pydantic_to_proto'. "
-            f"Expected 'Model', 'list', 'dict' or primitive type for output '{output_type}' "
-            f"but got '{input}' of type '{input_type}'."
+            "Expected 'Model', protobuf 'Message', 'list', 'dict' or "
+            f"primitive type for output '{output_type}' but got '{input}' "
+            f"of type '{input_type}'."
         )
 
 
@@ -778,9 +783,10 @@ def pydantic_to_proto(
 
 def _proto_to_pydantic(
     input: Message | PRIMITIVE,
-    output_type: typing.Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+    output_type: typing.Type[Model] | typing.Type[Message] | PRIMITIVE_TYPE |
+    COLLECTION_TYPE | None,
     field_info: Optional[FieldInfo] = None,
-) -> Model | PRIMITIVE | COLLECTION | None:
+) -> Model | Message | PRIMITIVE | COLLECTION | None:
     """Converts a Protobuf 'input' message or primitive type to the
     'output_type' Model, list, dict or primitive type.
 
@@ -957,6 +963,13 @@ def _proto_to_pydantic(
                 dict_value_type,
             )
         return output
+    elif issubclass(output_type_or_origin, Message):
+        # A protobuf message is carried as it is, copied so that the
+        # model does not share it with the message it was read from.
+        assert isinstance(input, output_type_or_origin), type(input)
+        output_message = output_type_or_origin()
+        output_message.CopyFrom(input)
+        return output_message
     elif issubclass(output_type_or_origin, Model):
         # Ensure 'output_type' is a class (not a Union of primitive
         # types), so we can safely call 'output_type' as a class inside
@@ -1008,8 +1021,8 @@ def _proto_to_pydantic(
     else:
         raise ValueError(
             f"Unexpected output type in '_proto_to_pydantic'. "
-            f"Expected 'Model', 'list', 'dict' or primitive type for input '{input}' "
-            f"but got '{output_type}'."
+            "Expected 'Model', protobuf 'Message', 'list', 'dict' or "
+            f"primitive type for input '{input}' but got '{output_type}'."
         )
 
 
@@ -1340,6 +1353,9 @@ class Type(pydantic.BaseModel):
                 # `dict[str, Any]` becomes a Protobuf `map<string,
                 # google.protobuf.Value>` carrying arbitrary JSON
                 # values; the value type needs no further validation.
+                pass
+            elif issubclass(field_type, Message):
+                # A protobuf message is carried as it is.
                 pass
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):
