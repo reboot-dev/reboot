@@ -276,8 +276,7 @@ uv run pytest tests/web_test.py
 ```
 
 **Run without pacing while building, and paced last.** Every run
-while you write and fix takes `--recording-slowmo=0
---recording-dwell=0`: pacing only slows the browser, so it checks
+while you write and fix takes `--recording-slowmo=0 --recording-dwell=0`: pacing only slows the browser, so it checks
 nothing more, and a paced suite takes about two thirds longer (12
 scenarios: 1:16 paced, 0:46 not). Every run writes the recordings
 the dashboard shows, so the last run before you hand off — after a
