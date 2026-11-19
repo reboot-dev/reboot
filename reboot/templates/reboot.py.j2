@@ -1055,8 +1055,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% endif %}
         *,
         validating_effects: bool,
-        {% if state.has_statechart and method.options.proto.kind != 'workflow' %}
+        {% if state.has_statechart and method.options.proto.kind == 'reader' %}
         statechart: {{ state.proto.name }}BaseServicer.ImmutableStatechart,
+        {% elif state.has_statechart and method.options.proto.kind in ['writer', 'transaction'] %}
+        statechart: {{ state.proto.name }}BaseServicer.Statechart,
         {% endif %}
     {% if method.options.proto.kind in ['reader', 'transaction', 'workflow'] %}
     {% if not method.proto.server_streaming %}
@@ -1145,6 +1147,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 response=response,
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
+                {% if state.has_statechart %}
+                statechart_status=statechart._status if statechart._status_modified else None,
+                {% endif %}
             )
             {% else %}
             return response
@@ -1455,7 +1460,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     request,
                     validating_effects=validating_effects,
                     {% if state.has_statechart %}
-                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
+                    statechart={{ state.proto.name }}BaseServicer.Statechart(
                         status=self._state_manager.statechart_status(context),
                     ),
                     {% endif %}
@@ -1480,15 +1485,19 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 requires_constructor={{ service.proto.requires_constructor }}
             ) as (state, complete):
 
+                {% if state.has_statechart %}
+                statechart = {{ state.proto.name }}BaseServicer.Statechart(
+                    status=self._state_manager.statechart_status(context),
+                )
+
+                {% endif %}
                 response = await self.__{{ method.proto.name }}(
                     context,
                     state,
                     request,
                     validating_effects=validating_effects,
                     {% if state.has_statechart %}
-                    statechart={{ state.proto.name }}BaseServicer.ImmutableStatechart(
-                        status=self._state_manager.statechart_status(context),
-                    ),
+                    statechart=statechart,
                     {% endif %}
                 )
 
@@ -1496,6 +1505,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     IMPORT_reboot_aio_state_managers.Effects(
                         state=state,
                         response=response,
+                        {% if state.has_statechart %}
+                        statechart_status=statechart._status if statechart._status_modified else None,
+                        {% endif %}
                     )
                 )
                 return response
@@ -3431,12 +3443,79 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             status.CopyFrom(self._status)
             return status
 
+    class Statechart(ImmutableStatechart):
+        """The statechart of a `{{ state.proto.name }}`, for one call of
+        a method that can change the state."""
+
+        def __init__(
+            self,
+            *,
+            status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status],
+        ):
+            super().__init__(status=status)
+
+            # Whether the method has changed `_status`.
+            self._status_modified = False
+
+        async def enqueue(
+            self,
+            event: {{ state.statechart_event_types | join(' | ') }},
+        ) -> None:
+            """Enqueues `event` for the statechart, behind every event
+            that is waiting. The event is stored with the effects of
+            the method, so it is enqueued only if the method completes,
+            and `status()` has it from now on."""
+            IMPORT_reboot_aio_types.assert_type(
+                event,
+                [
+                    {% for event_type in state.statechart_event_types %}
+                    {{ event_type }},
+                    {% endfor %}
+                ],
+                error_message_supplement=(
+                    "an event that is enqueued is one of the `events` of "
+                    "the statechart"
+                ),
+            )
+
+            status_event = self._status.queue.add(
+                event=event.DESCRIPTOR.full_name,
+            )
+
+            # An event without fields has no value.
+            if len(event.DESCRIPTOR.fields) > 0:
+                status_event.value.update(
+                    IMPORT_google_protobuf_json_format.MessageToDict(
+                        event,
+                        preserving_proto_field_name=True,
+                    ),
+                )
+
+            self._status_modified = True
+
     # The statechart for the method that is being called in the current
     # asyncio context.
     _statechart: IMPORT_contextvars.ContextVar[IMPORT_typing.Optional[ImmutableStatechart]] = IMPORT_contextvars.ContextVar(
         'The statechart of the state for the method that is being called',
         default=None,
     )
+
+    @IMPORT_typing.overload
+    def statechart(
+        self,
+        context: IMPORT_reboot_aio_contexts.ReaderContext,
+    ) -> {{ state.proto.name }}BaseServicer.ImmutableStatechart:
+        ...
+
+    @IMPORT_typing.overload
+    def statechart(
+        self,
+        context: (
+            IMPORT_reboot_aio_contexts.WriterContext |
+            IMPORT_reboot_aio_contexts.TransactionContext
+        ),
+    ) -> {{ state.proto.name }}BaseServicer.Statechart:
+        ...
 
     def statechart(
         self,
@@ -3446,7 +3525,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_aio_contexts.TransactionContext
         ),
     ) -> {{ state.proto.name }}BaseServicer.ImmutableStatechart:
-        """Returns the statechart of the state that `context` is for."""
+        """Returns the statechart of the state that `context` is for:
+        one that an event can be enqueued for if `context` is that of a
+        writer or a transaction, which can change the state."""
         IMPORT_reboot_aio_types.assert_type(
             context,
             [
@@ -3468,6 +3549,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 "reader, a writer or a transaction"
             )
 
+        # A writer and a transaction have a statechart that an event
+        # can be enqueued for.
+        assert isinstance(
+            context,
+            IMPORT_reboot_aio_contexts.ReaderContext,
+        ) or isinstance(statechart, {{ state.proto.name }}BaseServicer.Statechart)
+
         return statechart
 
 {% endif %}
@@ -3479,10 +3567,13 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             response: IMPORT_typing.Optional[IMPORT_google_protobuf_message.Message] = None,
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
+            {% if state.has_statechart %}
+            statechart_status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status] = None,
+            {% endif %}
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts{% if state.has_statechart %}, statechart_status=statechart_status{% endif %})
 
     {% for service in state.services %}
     {% for method in service.methods %}
@@ -3498,11 +3589,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             response: {{ method.output_type }},
             tasks: IMPORT_typing.Optional[list[IMPORT_reboot_aio_tasks.TaskEffect]] = None,
             _colocated_upserts: IMPORT_typing.Optional[list[tuple[str, IMPORT_typing.Optional[bytes]]]] = None,
+            {% if state.has_statechart %}
+            statechart_status: IMPORT_typing.Optional[rbt.v1alpha1.statecharts.statechart_pb2.Status] = None,
+            {% endif %}
         ):
             IMPORT_reboot_aio_types.assert_type(state, [{{ state.pb2_name }}.{{ state.proto.name }}])
             IMPORT_reboot_aio_types.assert_type(response, [{{ method.output_type }}])
 
-            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+            super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts{% if state.has_statechart %}, statechart_status=statechart_status{% endif %})
 
     {% endif %}
 
@@ -3840,6 +3934,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 typed_state = {{ state.proto.name }}FromProto(protobuf_state)
 
+                                {# TODO: let `writer` take `statechart` as well as `state`, so that a workflow can enqueue an event. #}
                                 result = await writer(state=typed_state)
 
                                 {{ state.proto.name }}ToProto(typed_state, protobuf_state)
@@ -4883,6 +4978,8 @@ class {{ client.proto.state_name }}:
     {% if client.state.has_statechart %}
 
     ImmutableStatechart: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}BaseServicer.ImmutableStatechart
+
+    Statechart: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}BaseServicer.Statechart
 
     {% endif %}
     {% endif %}

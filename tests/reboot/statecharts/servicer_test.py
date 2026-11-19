@@ -1,5 +1,7 @@
+import asyncio
 import inspect
 import unittest
+from google.protobuf.empty_pb2 import Empty
 from reboot.aio.contexts import ReaderContext, WorkflowContext
 from tests.reboot.statecharts import order_pb2
 from tests.reboot.statecharts.order_rbt import Order
@@ -199,7 +201,7 @@ class ServicerTest(unittest.TestCase):
 
         with self.assertRaises(TypeError) as raised:
             OrderServicer().statechart(
-                context,  # type: ignore[arg-type]
+                context,  # type: ignore[call-overload]
             )
 
         self.assertEqual(
@@ -210,6 +212,31 @@ class ServicerTest(unittest.TestCase):
             "'reboot.aio.contexts.TransactionContext']; a servicer has the "
             "statechart of its state within a reader, a writer or a "
             "transaction, which have the state",
+            str(raised.exception),
+        )
+
+    def test_only_statechart_that_is_not_immutable_has_enqueue(self) -> None:
+        self.assertTrue(
+            issubclass(Order.Statechart, Order.ImmutableStatechart)
+        )
+        self.assertTrue(hasattr(Order.Statechart, "enqueue"))
+        self.assertFalse(hasattr(Order.ImmutableStatechart, "enqueue"))
+
+    def test_event_that_is_enqueued_is_event_of_statechart(self) -> None:
+        with self.assertRaises(TypeError) as raised:
+            asyncio.run(
+                Order.Statechart(status=None).enqueue(
+                    Empty(),  # type: ignore[arg-type]
+                ),
+            )
+
+        self.assertEqual(
+            "google.protobuf.empty_pb2.Empty is not an instance or "
+            "subclass of one of the expected type(s): "
+            "['tests.reboot.statecharts.order_pb2.Paid', "
+            "'tests.reboot.statecharts.order_pb2.Refunded', "
+            "'tests.reboot.statecharts.order_pb2.Settled']; an event that "
+            "is enqueued is one of the `events` of the statechart",
             str(raised.exception),
         )
 

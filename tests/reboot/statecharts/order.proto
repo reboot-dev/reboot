@@ -109,6 +109,44 @@ service OrderMethods {
     };
   }
 
+  // Enqueues the request.
+  rpc Pay(Paid) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues the request.
+  rpc Refund(Refunded) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      exclusive: {}
+    };
+  }
+
+  // Enqueues a `Settled`, which has no fields.
+  rpc Settle(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and then a `Refunded`.
+  rpc PayThenRefund(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and then fails.
+  rpc PayThenFail(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Paid` and returns the status that it then reads.
+  rpc PayThenStatus(google.protobuf.Empty)
+      returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
   rpc StatusFromReader(google.protobuf.Empty)
       returns (rbt.v1alpha1.statecharts.Status) {
     option (rbt.v1alpha1.method).reader = {
