@@ -52,3 +52,18 @@ requirements:
 	bazel run //tests:requirements.update
 	bazel run //reboot/examples:requirements.update
 	bazel run //bazel/pip_package_rule:requirements.update
+
+########################################################################
+# Compares this branch's plugin with `main`'s on the plugin eval cases
+# and rewrites `tests/reboot/plugin/evals/RESULT.md`. Starts agent
+# sessions on your Claude account. See tests/reboot/plugin/evals/README.md.
+.PHONY: plugin-evals
+plugin-evals:
+	tests/reboot/plugin/evals/compare.sh $(ARGS)
+
+########################################################################
+# Runs the plugin eval cases without writing `RESULT.md`, e.g.
+# `make plugin-evals-run ARGS="--case private-profile --runs 1"`.
+.PHONY: plugin-evals-run
+plugin-evals-run:
+	tests/reboot/plugin/evals/run.sh $(ARGS)
