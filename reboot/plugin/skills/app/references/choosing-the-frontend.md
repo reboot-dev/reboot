@@ -1,21 +1,21 @@
 ---
-title: Choosing the Front End — MCP App, Web App, or Both
+title: Choosing the Frontend — MCP App, Web App, or Both
 impact: CRITICAL
-impactDescription: Which front end an app has decides its API, its servicers and every frontend file. A wrong guess costs ~12 files of regeneration, so the app skill settles it first, from the user's own words or by asking.
-tags: routing, front-end, mcp-app, web-app, both, ask
+impactDescription: Which frontend an app has decides its API, its servicers and every frontend file. A wrong guess costs ~12 files of regeneration, so the app skill settles it first, from the user's own words or by asking.
+tags: routing, frontend, mcp-app, web-app, both, ask
 ---
 
-# Choosing the Front End
+# Choosing the Frontend
 
 The app skill reads this reference first, unless the build started from
-`/reboot:web-app` or `/reboot:mcp-app`. Settle the front end here, then
+`/reboot:web-app` or `/reboot:mcp-app`. Settle the frontend here, then
 go back to the [app skill](../SKILL.md) and follow it from "When to
 Use".
 
 A Reboot app has one backend: the same methods and the same live
 state, used in a browser through a web app and in an AI chat client
 (Claude, ChatGPT) through an MCP App, added there as a connector. An
-app has one or both front ends:
+app has one or both frontends:
 
 - **On the web and in AI chat** (the default) — one backend with one `Application(oauth=...)`
   and one `User` per upstream identity, a web app and an MCP App: its
@@ -23,7 +23,7 @@ app has one or both front ends:
 - **On the web** — the web app alone.
 - **In AI chat** — the MCP App alone.
 
-## Settle the front end
+## Settle the frontend
 
 **On the web and in AI chat is the default**: ask once, unless the
 prompt already settles it:
@@ -36,7 +36,7 @@ prompt already settles it:
 - **On the web and in AI chat**, no question: the prompt's own answer naming both, or a
   conjunction ("a website and an MCP server").
 
-Naming one front end is not asking for it alone: "a website for my
+Naming one frontend is not asking for it alone: "a website for my
 CRM" and "a tool I can use from Claude" still get the question. Domain
 words never settle it (a CRM, a booking app, "login").
 
@@ -83,7 +83,7 @@ User"); the others keep the order above. When nothing in the
 description leans either way, mark none. The answer goes into
 `AGENTS.md`'s Decisions when it is written.
 
-Then state the plan in one sentence ("Building this with both front ends,
+Then state the plan in one sentence ("Building this with both frontends,
 a web app and an MCP App for AI chat clients.") and go back to the app
 skill, following it from "When to Use".
 

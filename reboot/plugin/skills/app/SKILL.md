@@ -1,6 +1,6 @@
 ---
 name: app
-description: 'Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt''s own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Where will people use your app?" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app''s domain (CRM, todo, dashboard, blog, …).'
+description: 'Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the frontend first: from the prompt''s own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Where will people use your app?" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the frontend from the app''s domain (CRM, todo, dashboard, blog, …).'
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -12,7 +12,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > says how and when to react.
 
 Build a complete Reboot application from a user description. This
-skill is the process: it settles which front end the app has, then
+skill is the process: it settles which frontend the app has, then
 builds it step by step. What it builds with lives in two other
 skills, read at the step that needs them:
 
@@ -39,15 +39,15 @@ for all of them:
   propose without asking ("build it as you propose") takes the first
   option of every question it leaves unanswered.
 
-## Step 0 — Settle the Front End
+## Step 0 — Settle the Frontend
 
-**Before anything else, settle which front end the app has.** If the
+**Before anything else, settle which frontend the app has.** If the
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
-[`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: both front ends are the default, and it says
+[`references/choosing-the-frontend.md`](references/choosing-the-frontend.md)
+and do what it says: both frontends are the default, and it says
 when to ask "Where will people use your app?". Write no file until
-the front end is settled. This holds in auto mode too.
+the frontend is settled. This holds in auto mode too.
 
 ## When to Use
 
@@ -65,28 +65,28 @@ the front end is settled. This holds in auto mode too.
   Cloud that runs the backend and serves the built MCP Apps and web
   app from it.
 
-## What Each Front End Adds
+## What Each Frontend Adds
 
 Every app goes through the same steps below. An MCP App and a web
 app each add their own work at some of those steps, and that guidance
 lives in the `python` skill or the `frontend` skill. The table lists,
-for each step, which section to read for each front end. An app with
-both front ends reads both columns.
+for each step, which section to read for each frontend. An app with
+both frontends reads both columns.
 
 | Step                                                                      | MCP App                                                                                                                          | Web app                                                                                                                                                                                                 |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Design                                                                    | [Designing an MCP App](../python/references/mcp-app-concepts.md#designing-an-mcp-app) in `python/references/mcp-app-concepts.md` | [Designing a web app](../frontend/SKILL.md#designing-a-web-app) in the `frontend` skill, and [Who Signs In](../python/references/auth-web-apps.md#who-signs-in) in `python/references/auth-web-apps.md` |
 | Project files, API, servicers, `main.py`, authorizers, scenarios, updates | [Building an MCP App](../python/SKILL.md#building-an-mcp-app) in the `python` skill                                              | [Building a web app](../python/SKILL.md#building-a-web-app) in the `python` skill                                                                                                                       |
 | Frontend scaffold and build, browser scenarios, updates                   | [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis) in the `frontend` skill                                        | [Building a web app](../frontend/SKILL.md#building-a-web-app) in the `frontend` skill                                                                                                                   |
-| Both front ends in one `frontend/`                                        | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill                                                      |                                                                                                                                                                                                         |
+| Both frontends in one `frontend/`                                         | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill                                                      |                                                                                                                                                                                                         |
 
 ## Which References to Read, and When
 
 **Read each reference at the step that needs it** — not all of them
 up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
-exactly one of them — the step that needs it. Each front end adds
-references of its own at some steps; [What Each Front End Adds](#what-each-front-end-adds)
+exactly one of them — the step that needs it. Each frontend adds
+references of its own at some steps; [What Each Frontend Adds](#what-each-frontend-adds)
 above says where they are listed.
 
 **Before writing the project files** (`.python-version`, `pyproject.toml`,
@@ -155,7 +155,7 @@ for a web app):
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
-  machinery. Both front ends sign users in with `oauth=`, even in dev
+  machinery. Both frontends sign users in with `oauth=`, even in dev
   (the `Development()` provider), so `context.auth.user_id` is set
   from the first run and `allow_if` rules work from the start; there
   is no reason for a placeholder `allow()`.
@@ -313,8 +313,8 @@ wrong means regenerating everything across 12+ files.
    - Application types: state shape (fields, types, tags).
    - Method map: which operations, which method type
      (Reader/Writer/Transaction/Workflow).
-   - The design items of each front end you build: see
-     [What Each Front End Adds](#what-each-front-end-adds) above.
+   - The design items of each frontend you build: see
+     [What Each Frontend Adds](#what-each-frontend-adds) above.
 
    Then ask "Build this design?", with these three options and no
    others:
@@ -421,8 +421,8 @@ Before writing code, analyze the user's request:
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **The `User` type.** Whether the app has one, and what it does,
-   is among the front end's design items
-   ([What Each Front End Adds](#what-each-front-end-adds)).
+   is among the frontend's design items
+   ([What Each Frontend Adds](#what-each-frontend-adds)).
 3. **Container shape for each collection.** Once an entity is its
    own `Type`, the parent (typically `User`) stores **references**,
    not objects. Three shapes (full table + worked PRM example in
@@ -484,8 +484,8 @@ Before writing code, analyze the user's request:
    external call, a long loop) blocks every other write to them:
    coordinate it in a `Workflow` instead, which updates each state in
    turn and is consistent in the end, not at every moment.
-10. **Each front end's own items**, from the design section of its
-    skill ([What Each Front End Adds](#what-each-front-end-adds)).
+10. **Each frontend's own items**, from the design section of its
+    skill ([What Each Frontend Adds](#what-each-frontend-adds)).
 
 ## When Correct Decomposition Fights the UI
 
@@ -518,7 +518,7 @@ Shape C is in `python/references/state-collections.md`.
 ## Project Structure
 
 The layout is the one every Reboot app has, `frontend/` included
-(`python/references/lifecycle-project-setup.md`). What each front end
+(`python/references/lifecycle-project-setup.md`). What each frontend
 puts under `frontend/` is in its section of the
 [`frontend` skill](../frontend/SKILL.md).
 
@@ -553,8 +553,8 @@ puts under `frontend/` is in its section of the
 ## Step-by-Step Build Flow
 
 **All commands run from the application directory.** At each step,
-also do what your front end adds to it: the table in
-[What Each Front End Adds](#what-each-front-end-adds) names the step each addition belongs to.
+also do what your frontend adds to it: the table in
+[What Each Frontend Adds](#what-each-frontend-adds) names the step each addition belongs to.
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — same shape as in
@@ -585,10 +585,10 @@ also do what your front end adds to it: the table in
    [`python/references/lifecycle-sample-data.md`](../python/references/lifecycle-sample-data.md)
    says.
 8. Scaffold the frontend at `frontend/`, as the
-   [`frontend` skill](../frontend/SKILL.md) says for your front end.
+   [`frontend` skill](../frontend/SKILL.md) says for your frontend.
 9. `cd frontend && npm install`.
 10. Build the frontend from the references the
-    [`frontend` skill](../frontend/SKILL.md) lists for your front end.
+    [`frontend` skill](../frontend/SKILL.md) lists for your frontend.
     Write the calls from those references
     and do **not** open `frontend/api/**/*_rbt_react.ts` to check
     them: it is tens of thousands of lines.
@@ -631,7 +631,7 @@ also do what your front end adds to it: the table in
     not satisfy this requirement.
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     [Required final hand-over: the connector](../dashboard/SKILL.md#step-6--required-final-hand-over-the-connector).
-    What to hand over for each front end is the run skill's
+    What to hand over for each frontend is the run skill's
     [Hand off](../run/SKILL.md#step-6--hand-off).
     Offer the features the build plan left for later, so the user
     can pick the next build.
@@ -644,8 +644,8 @@ also do what your front end adds to it: the table in
 
 ## Update Flow
 
-When modifying an existing app (and at each step, what your front end
-adds to it, as the table in [What Each Front End Adds](#what-each-front-end-adds) says):
+When modifying an existing app (and at each step, what your frontend
+adds to it, as the table in [What Each Frontend Adds](#what-each-frontend-adds) says):
 
 1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer, and
    `main.py`.
