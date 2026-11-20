@@ -1,6 +1,6 @@
-## Auto-construct state types now require `oauth=`
+## Auto-construct object types now require `oauth=`
 
-An `Application` with `User`-typed auto-construct servicers (state
+An `Application` with `User`-typed auto-construct servicers (object
 types constructed on demand for a signed-in user) used to start even
 when it configured no `Application(oauth=...)`: it came up silently
 and simply never constructed those states, since a user is only ever

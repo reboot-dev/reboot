@@ -128,7 +128,7 @@ code changes.
 
 It also serves the dashboard as MCP Apps at `/mcp`, which Claude or
 ChatGPT can show once they can reach it: the whole dashboard, and a
-card of one feature or one state type, inline, for when the user asks
+card of one feature or one domain object, inline, for when the user asks
 about a specific one; a listing tool gives the host the ids. Step 6
 hands the user the steps for that once the app is built.
 

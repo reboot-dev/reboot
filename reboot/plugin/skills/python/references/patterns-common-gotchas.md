@@ -275,9 +275,9 @@ await TaskList.ref(list_id).get(alice2)
 The error names the fix directly: "Instead create a new
 `WeakReference` for every `Context`."
 
-### 22. The State Type Named `User` Is Auto-Constructed
+### 22. The Object Type Named `User` Is Auto-Constructed
 
-A state type literally named `User` is special: when
+An object type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
 `User` actor per signed-in identity, whose object ID **is** the
 `context.auth.user_id`, on first access. Do not write a sign-up
@@ -288,7 +288,7 @@ for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
 to start, except under the test harness, which supplies a test OAuth
 provider when `oauth=` is omitted (`testing-harness.md`). Other
-state types are constructed explicitly, by their factory `create`.
+object types are constructed explicitly, by their factory `create`.
 
 To give a new `User` initial state (e.g. allocate the id of an
 `OrderedMap` index, `state-collections.md`), override its

@@ -35,7 +35,7 @@ via `OrderedMap.ref(self.state.<id>)`.
 > constructor allocation that marks ownership. The full rationale,
 > and the generalization to every cross-`Type` reference (stdlib or
 > user-defined), is in `state-collections.md`'s "Relationships
-> Between State Types" section.
+> Between Object Types" section.
 
 ### Methods
 

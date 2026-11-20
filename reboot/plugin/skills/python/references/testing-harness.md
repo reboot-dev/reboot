@@ -98,7 +98,7 @@ await self.rbt.up(
 
 Things to know:
 
-- **`libraries=[...]`** — stdlib state types like `OrderedMap` /
+- **`libraries=[...]`** — standard library objects like `OrderedMap` /
   `SortedMap` / `Queue` need their library registered, exactly as
   in `main.py`. See `stdlib-*.md`.
 - **`legacy_grpc_servicers=[...]`** — for mixed pydantic + plain
@@ -218,7 +218,7 @@ be attributed to a user.
 
 ## Auto-Construct Under Auth
 
-If a state type has a real authorizer that gates its constructor —
+If an object type has a real authorizer that gates its constructor —
 typically the case for `User`-shaped front-door types — the framework
 calls `_authenticated` to create the state for an authenticated user
 whenever a token is minted for them. `create_external_context_as(...)`
@@ -254,7 +254,7 @@ It is possible to subclass a servicer and override `authorizer()` to
 `allow()` for the test suite only. **Don't reach for this** — it
 tests a different application: the one with no authorization. With
 impersonation (above) just as easy to set up, the legitimate uses
-are narrow, e.g. exercising the pure behavior of a state type whose
+are narrow, e.g. exercising the pure behavior of an object type whose
 authorization rules are themselves covered by other tests. If you do
 use it, say why in a comment, and keep at least one test that runs
 the real authorizers.

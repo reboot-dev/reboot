@@ -234,7 +234,7 @@ wrong means regenerating everything across 12+ files.
    the [`feature` skill](../feature/SKILL.md)'s Step 1 has them: each
    one's name, what it is for, its rules, and a few example
    situations. Put them in the order they build on, the one the
-   others need first. Write them from the description alone: no state
+   others need first. Write them from the description alone: no object
    types, fields, methods or scenarios yet, since the design is made
    for the scope chosen and only for it. End the message with this
    question, and nothing after it:
@@ -671,7 +671,7 @@ adds to it, as the table in [What Each Frontend Adds](#what-each-frontend-adds) 
    restart needed. Editing `.env` likewise triggers a restart, so
    a new or changed secret is re-read by `--env-file` without a
    manual relaunch.
-9. If the change moved a file, added a state type, a page or a UI,
+9. If the change moved a file, added a domain object, a page or a UI,
    changed a command, or taught a rule, update `AGENTS.md` in the
    same change ([`agents-md` skill](../agents-md/SKILL.md)).
 

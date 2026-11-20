@@ -245,7 +245,7 @@ messages nested as attributes, the `Servicer` base class, and the
   with the same name. Defining your own `Topic` / `Queue` /
   etc. forfeits durability, ordering, blocking semantics, and
   concurrency guarantees the stdlib already provides. See the
-  trigger table under "How to Use → Using stdlib state types"
+  trigger table under "How to Use → Using Standard Library Objects"
   below.
 
 ## How to Use
@@ -337,7 +337,7 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
   (the trap that skips creation semantics). The factory-declaration
   side is `servicer-constructor.md`; the call-site side is here
 
-### Using stdlib state types
+### Using Standard Library Objects
 
 If your design calls for any of the concepts in the left column,
 the stdlib already provides the canonical actor. Read the

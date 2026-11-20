@@ -1,6 +1,6 @@
 ---
 name: inspect
-description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's state types, lists the object IDs for a type, and prints a single actor's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what state types does this app have?", "which actors of this type exist?", or "what is stored in this actor right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
+description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's object types, lists the object IDs for a type, and prints a single actor's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what object types does this app have?", "which actors of this type exist?", or "what is stored in this actor right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
 argument-hint: "[type list | state list --type=<full.Name> | state get --type=<full.Name> --id=<id>]"
 allowed-tools: Bash, Read
 ---
@@ -14,7 +14,7 @@ allowed-tools: Bash, Read
 `rbt inspect` reads the persisted state of a **running** Reboot
 application — the same data the `/__/inspect` web dashboard shows,
 but from the terminal so it is scriptable and pipeable. Reach for it
-to debug what an app has actually stored: which state types exist,
+to debug what an app has actually stored: which object types exist,
 which actors of a type exist, and what a single actor currently holds.
 
 Use it whenever the question is about _runtime state_ rather than
@@ -30,7 +30,7 @@ It does not modify anything; it only reads.
 ## The three operations
 
 ```sh
-# 1. List the application's registered state types (full names).
+# 1. List the application's registered object types (full names).
 rbt inspect type list --application-url=<url>
 
 # 2. List the known object IDs for one type.

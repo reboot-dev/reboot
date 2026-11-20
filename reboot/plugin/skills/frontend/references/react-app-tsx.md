@@ -341,7 +341,7 @@ plus a cursor for the next page:
 # `OrderedMap` ID — a field on the parent's state, allocated once in
 # the parent's constructor. Never synthesize the map ID inline from
 # `self.ref().state_id` or `context.state_id` — see "Relationships
-# Between State Types" in `python/references/state-collections.md`.
+# Between Object Types" in `python/references/state-collections.md`.
 async def dashboard(
     self,
     context: ReaderContext,

@@ -135,7 +135,7 @@ class OrgServicer(Org.Servicer):
     async def add_member(
         self, context: TransactionContext, request: Org.AddMemberRequest,
     ) -> None:
-        # `User` is its own state Type.
+        # `User` is its own object type.
         self.state.member_user_ids.append(request.user_id)
 
     async def members(
@@ -178,7 +178,7 @@ at construction) and forwards reads/writes through the map.
 > state, allocate it once in the constructor (`uuid4()`), and
 > reference the map via `OrderedMap.ref(self.state.<id>)`. The
 > general rule — for any cross-`Type` reference — is in
-> "Relationships Between State Types" below.
+> "Relationships Between Object Types" below.
 
 ```python
 from reboot.std.collections.ordered_map.v1.ordered_map import (
@@ -213,7 +213,7 @@ class UserServicer(User.Servicer):
         context: TransactionContext,
         request: User.AddPersonRequest,
     ) -> User.AddPersonResponse:
-        # `Person` is its own state Type with `factory=True` `create`.
+        # `Person` is its own object type with `factory=True` `create`.
         person, _ = await Person.create(
             context,
             name=request.name,
@@ -250,14 +250,14 @@ Register `ordered_map_library()` in `Application(libraries=[...])`
 — see `stdlib-ordered-map.md` for the full method surface and the
 value-field options (`value` / `bytes` / `any`).
 
-### Relationships Between State Types
+### Relationships Between Object Types
 
 The rule for `OrderedMap` IDs is one instance of a general rule:
 **any reference from one state `Type` to another must be a persisted
 ID field on the parent — never a string derived inline from the
 owner's `state_id`.** This applies equally to user-defined `Type`s
 (a User pointing at a Profile actor; an Order pointing at an
-Invoice actor) and to every stdlib state type (`OrderedMap`,
+Invoice actor) and to every standard library object (`OrderedMap`,
 `Queue`, `Item`, `Presence`, `Topic`).
 
 **Correct (the reference lives in the schema):**
@@ -384,7 +384,7 @@ cleared state as gone.
   that marks ownership. Add a `<thing>_index_id` field and
   reference via `OrderedMap.ref(self.state.<id>)`. The same rule
   applies to every cross-`Type` reference, stdlib or user-defined
-  — see "Relationships Between State Types" above.
+  — see "Relationships Between Object Types" above.
 
 ### See Also
 

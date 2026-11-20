@@ -172,7 +172,7 @@ api = API(
     ),
     Counter=Type(
         state=CounterState,
-        # What the state type is for, shown by the dev dashboard
+        # What the object type is for, shown by the dev dashboard
         # beside its name and file.
         description="One counter the user created, and the "
         "consistency boundary its value changes on.",

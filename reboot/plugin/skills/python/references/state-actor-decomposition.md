@@ -1,11 +1,11 @@
 ---
-title: Split a State Type That Holds Multiple Concerns
+title: Split an Object Type That Holds Multiple Concerns
 impact: HIGH
 impactDescription: One actor holding many unrelated concerns serializes all writers across them and turns the front door into a God actor.
 tags: state, decomposition, responsibility, actors, front-door, serialization, contention
 ---
 
-## Split a State Type That Holds Multiple Concerns
+## Split an Object Type That Holds Multiple Concerns
 
 > **Critical:** one state `Type` should hold **one concern**. When a
 > single actor has accreted multiple unrelated responsibilities —

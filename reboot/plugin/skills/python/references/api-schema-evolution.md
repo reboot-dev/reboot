@@ -9,8 +9,8 @@ tags: api, schema, evolution, backwards-compatibility, migration, deploy, expung
 
 > **Critical:** once an application has persisted state, every new
 > version of its API is validated at boot against the schema that
-> state was written with. Deleting a state type, method, or field —
-> renaming a state type or method — or changing a field's type or
+> state was written with. Deleting an object type, method, or field —
+> renaming an object type or method — or changing a field's type or
 > tag — is backwards-incompatible: the application refuses to boot
 > and the deploy fails. Evolve schemas additively: add new methods
 > and fields rather than deleting or repurposing existing ones.
@@ -185,7 +185,7 @@ one:
 ## Checklist Before Changing a Deployed API
 
 - [ ] Am I only _adding_ states, methods, and (defaulted) fields?
-- [ ] Did I avoid renaming any state type or method? (Field renames
+- [ ] Did I avoid renaming any object type or method? (Field renames
       are fine if the `tag` is unchanged.)
 - [ ] Did every existing field keep its `tag`, type, and
       list-vs-scalar shape?

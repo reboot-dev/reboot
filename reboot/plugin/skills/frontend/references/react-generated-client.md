@@ -19,9 +19,9 @@ or
 **Do not read the generated `*_rbt_react.ts` to rediscover any of
 this.** It runs to tens of thousands of lines.
 
-## What Is Emitted, per State Type
+## What Is Emitted, per Object Type
 
-For a state type `Foo`:
+For an object type `Foo`:
 
 ```ts
 // Two overloads. With an id, the handle directly; without one, the
@@ -29,7 +29,7 @@ For a state type `Foo`:
 // a URL parameter resolves to).
 export function useFoo(args: { id: string }): UseFooApi;
 export function useFoo(args?: undefined): {
-  foo: UseFooApi | undefined;      // named after the state type
+  foo: UseFooApi | undefined;      // named after the object type
   isLoading: boolean;
 };
 

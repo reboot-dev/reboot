@@ -36,7 +36,7 @@ plugin or without it, so every command is spelled out.
 # <App name>
 
 <What the app does and who uses it, in a sentence.> A Reboot
-application, on Reboot <version>: durable state types whose APIs are
+application, on Reboot <version>: durable domain objects whose APIs are
 Pydantic models in `api/` (not `.proto` files), with <a web app | an
 MCP App | both> in front. Reboot's docs: https://docs.reboot.dev; with
 the Reboot plugin installed, its skills know Reboot best.
@@ -65,18 +65,18 @@ the Reboot plugin installed, its skills know Reboot best.
 
 ## Where things live
 
-| What                                           | Where                                                             |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| API: state types, methods, errors (the schema) | `api/<pkg>/v1/<name>.py`                                          |
-| Servicers: what each method does               | `backend/src/servicers/`                                          |
-| Application: servicers, `initialize`, `oauth=` | `backend/src/main.py`                                             |
-| Generated code, never edited                   | `backend/api/`, `frontend/api/`, rebuilt by `uv run rbt generate` |
-| Web app                                        | `frontend/web/src/`                                               |
-| MCP Apps                                       | `frontend/mcp/<name>/`                                            |
-| Feature files: what the app must do            | `tests/*.feature`                                                 |
-| Test modules                                   | `tests/*_test.py`                                                 |
-| `rbt` settings, one per line, not YAML         | `.rbtrc`                                                          |
-| Secrets for development, never committed       | `.env`                                                            |
+| What                                            | Where                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------- |
+| API: object types, methods, errors (the schema) | `api/<pkg>/v1/<name>.py`                                          |
+| Servicers: what each method does                | `backend/src/servicers/`                                          |
+| Application: servicers, `initialize`, `oauth=`  | `backend/src/main.py`                                             |
+| Generated code, never edited                    | `backend/api/`, `frontend/api/`, rebuilt by `uv run rbt generate` |
+| Web app                                         | `frontend/web/src/`                                               |
+| MCP Apps                                        | `frontend/mcp/<name>/`                                            |
+| Feature files: what the app must do             | `tests/*.feature`                                                 |
+| Test modules                                    | `tests/*_test.py`                                                 |
+| `rbt` settings, one per line, not YAML          | `.rbtrc`                                                          |
+| Secrets for development, never committed        | `.env`                                                            |
 
 ## Rules
 
@@ -104,6 +104,6 @@ Leave rule 5 out until the project has a rule of its own.
 
 ## Step 3 — Keep it current
 
-A change that moves a file, adds a state type, page or UI, changes a
+A change that moves a file, adds a domain object, page or UI, changes a
 command, or teaches a rule updates `AGENTS.md` in the same change (the
 app skill's [Update Flow](../app/SKILL.md#update-flow) includes it).

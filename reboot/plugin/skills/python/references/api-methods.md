@@ -232,7 +232,7 @@ tool's description. Write what a caller cannot derive from the
 signature: the precondition, the side effect, the unit, which error it
 raises and when.
 
-A state type takes one too, via `Type(description=...)`; see
+An object type takes one too, via `Type(description=...)`; see
 `api-pydantic.md`.
 
 ## Every Factory Takes `mcp=`

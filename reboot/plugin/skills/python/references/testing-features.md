@@ -43,7 +43,7 @@ tests/
 
 - **One `.feature` file per capability**, named for the activity:
   `transfers.feature`, `opening_accounts.feature`. Not
-  `bank.feature` or `account.feature`: those name state types, which
+  `bank.feature` or `account.feature`: those name domain objects, which
   the dashboard already indexes as such.
 - **One test module per application configuration.** A module is a
   few lines: the `application` fixture returning the

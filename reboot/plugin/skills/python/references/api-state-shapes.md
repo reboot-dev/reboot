@@ -68,7 +68,7 @@ of IDs (unbounded or paginated) — full code patterns in
 > it inline from the parent's `state_id`
 > (`OrderedMap.ref(f"{self.ref().state_id}-items")`). Same rule for
 > any cross-`Type` reference, stdlib or user-defined — full
-> rationale and code in "Relationships Between State Types" in
+> rationale and code in "Relationships Between Object Types" in
 > `python/references/state-collections.md`.
 
 ## Nested Model State Patterns

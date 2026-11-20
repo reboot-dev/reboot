@@ -78,7 +78,7 @@ await Application(servicers=[ChatRoomServicer]).run()
 ## Multiple Servicers and Stdlib Libraries
 
 Combine Servicer classes from your code with stdlib `servicers()` factories
-and `libraries=[...]` for stdlib state types:
+and `libraries=[...]` for standard library objects:
 
 ```python
 import reboot.thirdparty.mailgun
@@ -99,7 +99,7 @@ async def main():
 
 ## See Also
 
-If you're using any stdlib state type, register it the way its
+If you're using any standard library object, register it the way its
 reference says; the wiring differs per type. A `<name>_library()`
 factory in `libraries=[...]` brings its own servicers along, while a
 type without one (or whose library is not used) puts its

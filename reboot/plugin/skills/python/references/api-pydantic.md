@@ -415,10 +415,10 @@ with `<Name>.Servicer`, `<Name>.ref(id)`, and request/response messages
 nested as attributes (`Account.BalanceResponse`, `Account.DepositRequest`,
 etc.).
 
-### `Type(description=...)` Says What the State Type Is For
+### `Type(description=...)` Says What the Object Type Is For
 
 `Type` takes an optional `description=`, shown by the dev dashboard
-beside the state type's name and file:
+beside the object type's name and file:
 
 ```python
 api = API(
@@ -431,7 +431,7 @@ api = API(
 )
 ```
 
-A state type is the sum of its state and its methods, and its name
+An object type is the sum of its state and its methods, and its name
 alone rarely says what it is _for_. Write about the part a reader
 cannot derive from the fields and methods listed beside it: what it
 is the consistency boundary for, what one instance corresponds to,

@@ -27,7 +27,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 5. Stdlib (stdlib)
 
 **Impact:** HIGH
-**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
+**Description:** First-class standard library objects shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
 
 ## 6. Crypto (crypto)
 
