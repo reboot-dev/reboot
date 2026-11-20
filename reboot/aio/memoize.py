@@ -1,3 +1,4 @@
+import asyncio
 import log.log
 import pickle
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
@@ -19,6 +20,8 @@ from reboot.aio.workflows import (
     _isinstance_type,
 )
 from reboot.memoize.v1.memoize_rbt import (
+    CancelRequest,
+    CancelResponse,
     FailRequest,
     FailResponse,
     Memoize,
@@ -62,9 +65,36 @@ async def memoize(
     until: bool = False,
     retryable_exceptions: Optional[list[type[Exception]]] = None,
     effect_validation: EffectValidation | None = None,
+    deliver_cancellation: bool = True,
 ) -> T:
     """Memoizes the result of running `callable`, only attempting to do so
     once if `at_most_once=True`.
+
+    Cancellation of the workflow (see `TaskCancellation`) is handled
+    here for every memoized primitive (`at_least_once`,
+    `at_most_once`, `until`, `sleep`, inline reads and writes):
+
+    * A block is _shielded_: a pending cancellation is never raised
+      while `callable` runs. If one is pending once `callable` has
+      completed (and its result has been stored) the cancellation is
+      delivered right after it, i.e., `asyncio.CancelledError` is
+      raised instead of returning the result -- unless
+      `deliver_cancellation=False`, for a block that is internal to
+      another primitive which delivers it itself.
+
+    * A suspension point (`until`, `sleep`) delivers a cancellation
+      from within `callable` while it idles.
+
+    * Where the cancellation was delivered is recorded on that block
+      (`Cancel`), so that on a replay the block raises
+      `asyncio.CancelledError` right away, before running `callable`
+      or returning a stored result: the same `except` block runs
+      again, with the steps inside of it memoized as normal.
+
+    A block whose result is already stored (a replay) never delivers
+    a pending cancellation; the next suspension point or freshly run
+    step does, which is where the first run would have delivered it
+    too had it got that far.
 
     `type_t_inferred=True` indicates that `type_t` was inferred from
     `callable`'s return annotation rather than passed explicitly by
@@ -80,6 +110,11 @@ async def memoize(
     assert_type(context, [WorkflowContext])
 
     assert context.task_id is not None
+
+    # A shutdown is not a cancellation of the workflow: once the
+    # process is shutting down no block gets to run (or have effects)
+    # any more, the task is re-dispatched and replayed elsewhere.
+    context._raise_if_shutting_down()
 
     # `ALWAYS` means "run every time, don't memoize." Skip all
     # `Memoize` state machinery (Reset, Status, Store) since the
@@ -126,6 +161,14 @@ async def memoize(
     ).Reset(context)
 
     status = await memoize.always().Status(context)
+
+    if status.cancelled:
+        # A previous run delivered the workflow's cancellation at this
+        # block (while it was suspended, or right after it completed):
+        # a replay delivers it in the same place, without running
+        # `callable` or returning the stored result (which the first
+        # run never returned either).
+        context._deliver_recorded_cancellation()
 
     if at_most_once and status.started and not status.stored:
         raise AtMostOnceFailedBeforeCompleting(
@@ -209,6 +252,25 @@ async def memoize(
         t = await callable_validating_effects()
 
     except BaseException as exception:
+        if (
+            isinstance(exception, asyncio.CancelledError) and
+            context._cancellation_delivered and
+            not context.cancellation.shutting_down
+        ):
+            # The workflow's cancellation was delivered within this
+            # block: by a suspension point (`until`, `sleep`) idling
+            # inside of `callable`, or after a nested block. Record it
+            # here so that a replay raises here again (rather than
+            # running `callable` again, which for a suspension point
+            # would mean waiting again).
+            await memoize.idempotently(
+                f'{idempotency.alias} cancel',
+                # Don't mangle idempotency alias; any loop
+                # iterations are already accounted for in
+                # `idempotency.alias`.
+            ).Cancel(context)
+            raise
+
         if at_most_once and retryable_exceptions is not None and any(
             isinstance(exception, retryable_exception)
             for retryable_exception in retryable_exceptions
@@ -300,6 +362,20 @@ async def memoize(
             data=pickle.dumps(t),
         )
 
+        if deliver_cancellation and context._cancellation_pending:
+            # A step is shielded: a cancellation requested before or
+            # while `callable` ran is delivered now that the step has
+            # completed and its result is stored. Record that it was
+            # delivered here so that a replay, which finds the result
+            # stored, raises here as well instead of returning it.
+            await memoize.idempotently(
+                f'{idempotency.alias} cancel',
+                # Don't mangle idempotency alias; any loop
+                # iterations are already accounted for in
+                # `idempotency.alias`.
+            ).Cancel(context)
+            context._deliver_cancellation_if_pending()
+
         return t
 
 
@@ -363,6 +439,18 @@ class MemoizeServicer(Memoize.singleton.Servicer):
         state.failed = True
         state.failure = request.failure
         return FailResponse()
+
+    async def Cancel(
+        self,
+        context: WriterContext,
+        state: Memoize.State,
+        request: CancelRequest,
+    ) -> CancelResponse:
+        # NOTE: `stored` may or may not be set: a step whose
+        # cancellation is delivered after it completed has its result
+        # stored first, a suspension point never stores anything.
+        state.cancelled = True
+        return CancelResponse()
 
 
 def servicers():
