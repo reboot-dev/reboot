@@ -420,6 +420,13 @@ AUTO_CONSTRUCT_STATE_TYPE = "User"
 AUTO_CONSTRUCT_METHOD = "create"  # As used in Python.
 AUTO_CONSTRUCT_PROTO_METHOD = "Create"  # As used in protobuf.
 
+# Name of the workflow method that the framework has on a state type
+# with a statechart to run an activity of the statechart. An rpc
+# cannot have this name, since the name of an rpc starts with a
+# letter. Must be the same as `RUN_STATECHART_ACTIVITY_METHOD` in
+# `reboot/templates/reboot.py.j2`.
+RUN_STATECHART_ACTIVITY_METHOD = "__RunStatechartActivity__"
+
 # Name of the claims-delivery method the framework injects on
 # auto-constructed state types: a transaction through which the
 # framework delivers the user's verified identity claims (see the

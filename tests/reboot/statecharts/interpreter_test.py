@@ -538,5 +538,190 @@ class RunTest(unittest.TestCase):
         )
 
 
+# A statechart with activities. `PACKING` has the schedule `pack` and a
+# timer of five minutes, and the statechart itself has the schedule
+# `audit`. A `Paid` and the
+# order being cancelled each take `PACKING` to `DONE`, and a
+# `Refunded` is handled with a call where the statechart is.
+STATECHART_WITH_ACTIVITIES = text_format.Parse(
+    """
+    events: "tests.reboot.statecharts.Paid"
+    events: "tests.reboot.statecharts.Refunded"
+    initial: "PACKING"
+    entry { schedule { inline { method: "audit" } } }
+    states {
+      name: "PACKING"
+      entry { schedule { inline { method: "pack" } } }
+      entry {
+        timer {
+          minutes: 5
+          enqueue { event: "tests.reboot.statecharts.Refunded" }
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Paid" to: "DONE" }
+      }
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Refunded"
+          actions {
+            call { description: "Refund" inline { method: "refund" } }
+          }
+        }
+      }
+      transitions {
+        when {
+          description: "Cancelled"
+          condition { inline { method: "is_cancelled" } }
+          to: "DONE"
+        }
+      }
+    }
+    states { name: "DONE" }
+    """,
+    statechart_pb2.Statechart(),
+)
+
+# The activities of `STATECHART_WITH_ACTIVITIES` as they are once
+# their tasks have been made.
+AUDIT = statechart_pb2.Status.Activity(
+    schedule=STATECHART_WITH_ACTIVITIES.entry[0].schedule,
+    task_uuid=b"audit",
+)
+PACK = statechart_pb2.Status.Activity(
+    state="PACKING",
+    schedule=STATECHART_WITH_ACTIVITIES.states[0].entry[0].schedule,
+    task_uuid=b"pack",
+)
+REMIND = statechart_pb2.Status.Activity(
+    state="PACKING",
+    timer=STATECHART_WITH_ACTIVITIES.states[0].entry[1].timer,
+    task_uuid=b"remind",
+)
+
+
+class RunActivitiesTest(unittest.TestCase):
+    """Tests `run` with `STATECHART_WITH_ACTIVITIES` and a
+    `Servicer`."""
+
+    def test_schedule_and_timer_of_state_that_is_entered_are_to_schedule(
+        self,
+    ) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(),
+        )
+
+        # That of the statechart, and then those of the state. None
+        # has a task yet.
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                activities=[
+                    statechart_pb2.Status.Activity(schedule=AUDIT.schedule),
+                    statechart_pb2.Status.Activity(
+                        state="PACKING",
+                        schedule=PACK.schedule,
+                    ),
+                    statechart_pb2.Status.Activity(
+                        state="PACKING",
+                        timer=REMIND.timer,
+                    ),
+                ],
+            ),
+            status_after,
+        )
+
+    def test_event_waits_for_schedule_of_state_its_transition_exits(
+        self,
+    ) -> None:
+        status = statechart_pb2.Status(
+            active="PACKING",
+            queue=[
+                status_event_from_message(order_pb2.Paid(cents=500)),
+                status_event_from_message(order_pb2.Refunded(cents=1)),
+            ],
+            activities=[AUDIT, PACK],
+        )
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=status,
+        )
+
+        # The `Paid` stays at the head of the queue, and the `Refunded`
+        # behind it is not looked at.
+        self.assertIsNone(status_after)
+        self.assertEqual([], servicer.called)
+
+    def test_when_transition_waits_for_schedule_of_state_it_exits(
+        self,
+    ) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(cancelled=True),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                activities=[AUDIT, PACK],
+            ),
+        )
+
+        self.assertIsNone(status_after)
+
+    def test_transition_that_exits_no_state_is_taken_during_schedule(
+        self,
+    ) -> None:
+        refunded = order_pb2.Refunded(cents=1)
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[status_event_from_message(refunded)],
+                activities=[AUDIT, PACK],
+            ),
+        )
+
+        self.assertEqual([("refund", refunded)], servicer.called)
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                activities=[AUDIT, PACK],
+            ),
+            status_after,
+        )
+
+    def test_event_is_handled_once_schedule_has_finished(self) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            # `pack` has finished. The schedule of the statechart
+            # itself is of no state, so no transition waits for it,
+            # and no transition waits for a timer.
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
+                activities=[AUDIT, REMIND],
+            ),
+        )
+
+        # The timer of `PACKING`, which was exited, is no longer
+        # running.
+        self.assertEqual(
+            statechart_pb2.Status(active="DONE", activities=[AUDIT]),
+            status_after,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

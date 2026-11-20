@@ -23,6 +23,11 @@ together. #}
 {% set AUTO_CONSTRUCT_UNSPECIFIED = 0 %}
 {% set AUTO_CONSTRUCT_PER_USER_ID = 1 %}
 {% set AUTO_CONSTRUCT_PROTO_METHOD = "Create" %}
+{# Name of the workflow method that the framework has on a state type
+with a statechart to run an activity of the statechart. An rpc cannot
+have this name, since the name of an rpc starts with a letter. Must be
+the same as `RUN_STATECHART_ACTIVITY_METHOD` in `reboot/settings.py`. #}
+{% set RUN_STATECHART_ACTIVITY_METHOD = "__RunStatechartActivity__" %}
 {% set AUTO_CONSTRUCT_METHOD = "create" %}
 {% set SET_CLAIMS_PROTO_METHOD = "SetClaims" %}
 {% set SET_CLAIMS_METHOD = "set_claims" %}
@@ -467,7 +472,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         # deserialized into the correct type.
         self.request_type_by_method_name: dict[str, type[IMPORT_google_protobuf_message.Message]] = {
             {% for service in state.services %}
-            {% for method in service.methods %}
+            {% for method in service.methods + (state.internal_methods if loop.first else []) %}
             '{{ method.proto.name }}': {{ method.input_type }},
             {% endfor %}
             {% endfor %}
@@ -881,7 +886,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
         {# NOTE: need to use 'namespace' so we can update it within the loop. #}
         {%- for service in state.services -%}
-        {%- for method in service.methods -%}
+        {%- for method in service.methods + (state.internal_methods if loop.first else []) -%}
         {%- if not (method.proto.server_streaming or method.proto.client_streaming) %}
         {%- if loop.first %}
         if '{{ method.proto.name }}' == task.method_name:
@@ -1041,7 +1046,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
     # {{ state.proto.name }} specific methods:
     {% for service in state.services %}
-    {% for method in service.methods %}
+    {% for method in service.methods + (state.internal_methods if loop.first else []) %}
     async def __{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.{{ method.options.proto.kind | to_camel }}Context,
@@ -1119,7 +1124,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             )
 
             {% if state.has_statechart and method.options.proto.kind in ['writer', 'transaction'] %}
-            statechart._run(servicer=self._servicer, state=typed_state)
+            statechart._run(
+                servicer=self._servicer,
+                state=typed_state,
+                state_ref=context._state_ref,
+            )
 
             {% endif %}
             {% if options.proto.pydantic and method.options.proto.kind == 'writer' %}
@@ -1153,7 +1162,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             return {{ state.proto.name }}.{{ method.proto.name }}Effects(
                 state=state,
                 response=response,
+                {% if state.has_statechart %}
+                tasks=context._tasks + statechart._tasks,
+                {% else %}
                 tasks=context._tasks,
+                {% endif %}
                 _colocated_upserts=context._colocated_upserts,
                 {% if state.has_statechart %}
                 statechart_status=statechart._status if statechart._status_modified else None,
@@ -1186,7 +1199,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # NOTE: we don't log if we're a task as it will be logged
             # in `public/reboot/aio/internals/tasks_dispatcher.py` instead.
             aborted_type: IMPORT_typing.Optional[type] = None
+            {# An internal method is of no rpc, so it has no errors that it is declared to abort with. #}
+            {% if method not in state.internal_methods %}
             aborted_type = {{ state.proto.name }}.{{ method.proto.name }}Aborted
+            {% endif %}
             if isinstance(aborted, IMPORT_reboot.aio.aborted.SystemAborted):
                 # Not logging when within `node` as we already log there.
                 if IMPORT_reboot_nodejs_python.should_print_stacktrace():
@@ -1320,6 +1336,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             pass
             {% endif %}
 
+    {# What follows serves a method as an rpc, which an internal method is not. #}
+    {% if method not in state.internal_methods %}
     {% if method.options.proto.kind != 'workflow' %}
     {% if not method.proto.server_streaming %}
     @IMPORT_reboot_aio_tracing.function_span(
@@ -1515,6 +1533,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         response=response,
                         {% if state.has_statechart %}
                         statechart_status=statechart._status if statechart._status_modified else None,
+                        tasks=statechart._tasks or None,
                         {% endif %}
                     )
                 )
@@ -1835,6 +1854,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 yield response
             {% endif %}
 
+    {% endif %}
     {% endfor %}
     {% endfor %}
     def _maybe_authorize(
@@ -3473,6 +3493,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             # Whether the method has changed `_status`.
             self._status_modified = False
 
+            # The task for each activity that the statechart has
+            # started, which the effects of the method have so that
+            # the activity starts when the method completes.
+            self._tasks: list[IMPORT_reboot_aio_tasks.TaskEffect] = []
+
         async def enqueue(
             self,
             event: {{ state.statechart_event_types | join(' | ') }},
@@ -3507,11 +3532,15 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             *,
             servicer: {{ state.proto.name }}BaseServicer,
             state: {{ state.proto.name }}.State,
+            state_ref: IMPORT_reboot_aio_types.StateRef,
         ) -> None:
-            """Runs the statechart, with the methods of `servicer`, on
-            `state` as the method has left it, until the statechart has
-            nothing left to do: every event that is waiting is handled,
-            and every transition that fires is taken."""
+            """Runs the statechart of the state that has `state_ref`,
+            with the methods of `servicer`, on `state` as the method
+            has left it, until the statechart has nothing left to do:
+            every event that is waiting is handled, every transition
+            that fires is taken, and every activity that is to be
+            scheduled is, by a task that the effects of the method
+            then have."""
             status = IMPORT_reboot_statecharts_interpreter.run(
                 {{ state.proto.name }}BaseServicer.__statechart__,
                 servicer=servicer,
@@ -3519,9 +3548,127 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 status=self._status,
             )
 
-            if status is not None:
-                self._status = status
-                self._status_modified = True
+            if status is None:
+                return
+
+            # Schedule each activity that has no task yet: make the
+            # task that runs it, which the effects of the method then
+            # have, so that the activity runs once the method has
+            # completed. An activity that has a task is one that is
+            # running.
+            for activity in status.activities:
+                if activity.HasField("task_uuid"):
+                    continue
+
+                if activity.HasField("schedule"):
+                    task = IMPORT_reboot_aio_tasks.TaskEffect(
+                        state_type=IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+                        state_ref=state_ref,
+                        method_name='{{ RUN_STATECHART_ACTIVITY_METHOD }}',
+                        request=rbt.v1alpha1.statecharts.statechart_pb2.RunActivityRequest(
+                            schedule=activity.schedule,
+                        ),
+                    )
+                else:
+                    assert activity.HasField("timer")
+
+                    # A timer is run after its delay, which is the sum
+                    # of whichever of these it has.
+                    task = IMPORT_reboot_aio_tasks.TaskEffect(
+                        state_type=IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+                        state_ref=state_ref,
+                        method_name='{{ RUN_STATECHART_ACTIVITY_METHOD }}',
+                        request=rbt.v1alpha1.statecharts.statechart_pb2.RunActivityRequest(
+                            timer=activity.timer,
+                        ),
+                        schedule=IMPORT_reboot_time_DateTimeWithTimeZone.now() + IMPORT_datetime_timedelta(
+                            seconds=activity.timer.seconds,
+                            minutes=activity.timer.minutes,
+                            hours=activity.timer.hours,
+                            days=activity.timer.days,
+                        ),
+                    )
+
+                activity.task_uuid = task.task_id.task_uuid
+
+                self._tasks.append(task)
+
+            self._status = status
+            self._status_modified = True
+
+        def _finish_activity(self, task_uuid: bytes) -> bool:
+            """Takes the activity that the task that has `task_uuid`
+            runs from those that are running. Returns whether it was
+            one of them: a timer of a state that has been exited is
+            not."""
+            activities = [
+                activity for activity in self._status.activities
+                if activity.task_uuid != task_uuid
+            ]
+
+            if len(activities) == len(self._status.activities):
+                return False
+
+            del self._status.activities[:]
+            self._status.activities.extend(activities)
+
+            self._status_modified = True
+
+            return True
+
+    async def _{{ RUN_STATECHART_ACTIVITY_METHOD }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+        request: rbt.v1alpha1.statecharts.statechart_pb2.RunActivityRequest,
+    ) -> rbt.v1alpha1.statecharts.statechart_pb2.RunActivityResponse:
+        """Runs an activity of the statechart. A `schedule` is run by
+        calling its method, as a workflow of the servicer is called,
+        and what it enqueues is the event that the method returns, if
+        it returns one. A `timer`, whose delay is over by now,
+        enqueues its event. Then, in one write, the activity is taken
+        from those that are running and the event is enqueued."""
+        task = context.task
+
+        assert task is not None
+
+        # The event to enqueue, if any. What it is depends on the
+        # activity, and `enqueue()` checks that it is one of the
+        # events of the statechart.
+        event: IMPORT_typing.Any = None
+
+        if request.HasField("schedule"):
+            event = await getattr(type(self), request.schedule.inline.method)(
+                context,
+            )
+        else:
+            assert request.HasField("timer")
+
+            status_event = rbt.v1alpha1.statecharts.statechart_pb2.Status.Event(
+                event=request.timer.enqueue.event,
+            )
+
+            if request.timer.enqueue.HasField("value"):
+                status_event.value.CopyFrom(request.timer.enqueue.value)
+
+            event = IMPORT_reboot_statecharts_events.message_from_status_event(
+                status_event,
+            )
+
+        async def finish_activity(
+            state: {{ state.proto.name }}.State,
+            statechart: {{ state.proto.name }}BaseServicer.Statechart,
+        ) -> None:
+            # A timer of a state that has been exited is no longer
+            # running, and enqueues nothing.
+            if not statechart._finish_activity(task.task_id.task_uuid):
+                return
+
+            if event is not None:
+                await statechart.enqueue(event)
+
+        await {{ state.proto.name }}.ref().write(context, finish_activity)
+
+        return rbt.v1alpha1.statecharts.statechart_pb2.RunActivityResponse()
 
     # The statechart for the method that is being called in the current
     # asyncio context.
@@ -4015,6 +4162,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                 statechart._run(
                                     servicer=servicer,
                                     state=typed_state,
+                                    state_ref=writer_context._state_ref,
                                 )
                                 {% else %}
                                 result = await writer(state=typed_state)
@@ -4069,6 +4217,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                     ),
                                     {% if state.has_statechart %}
                                     statechart_status=statechart._status if statechart._status_modified else None,
+                                    tasks=statechart._tasks or None,
                                     {% endif %}
                                 )
 

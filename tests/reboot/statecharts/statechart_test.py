@@ -203,17 +203,6 @@ class OrderServicer(Order.Servicer):
     def stop_reminders(self, state: Order.State) -> None:
         state.calls.append("stop_reminders")
 
-    @classmethod
-    async def send_reminders(cls, context: WorkflowContext) -> None:
-        pass
-
-    @classmethod
-    async def charge_card(
-        cls,
-        context: WorkflowContext,
-    ) -> Optional[order_pb2.Paid | order_pb2.Refunded]:
-        return None
-
 
 OPEN = statechart_pb2.Status(active="OPEN")
 CLOSED = statechart_pb2.Status(active="CLOSED")

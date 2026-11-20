@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package tests.reboot.statecharts;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
+
+message Packed {}
+
+message Cancelled {}
+
+message Delivered {}
+
+message Returned {}
+
+message Reimbursed {}
+
+// A shipment, whose statechart has activities.
+//
+// While it is `PACKING` it is being packed, which ends in a `Packed`
+// or a `Cancelled`, and labelled, which ends in no event. A shipment
+// that is `SHIPPED` is `DELIVERED` after one second, unless it is
+// `RETURNED` first, and one that is `RETURNED` is `REIMBURSED` after
+// one and a half seconds. A `Delivered` that came for a shipment that
+// is `RETURNED` would make it `DELIVERED`.
+message Shipment {
+  option (rbt.v1alpha1.state) = {
+  };
+  option (rbt.v1alpha1.statechart) = {
+    events: "tests.reboot.statecharts.Packed"
+    events: "tests.reboot.statecharts.Cancelled"
+    events: "tests.reboot.statecharts.Delivered"
+    events: "tests.reboot.statecharts.Returned"
+    events: "tests.reboot.statecharts.Reimbursed"
+    initial: "PACKING"
+    states {
+      name: "PACKING"
+      entry {
+        schedule {
+          inline {
+            method: "pack"
+            enqueues: "tests.reboot.statecharts.Packed"
+            enqueues: "tests.reboot.statecharts.Cancelled"
+          }
+        }
+      }
+      entry { schedule { inline { method: "label" } } }
+      transitions {
+        on { event: "tests.reboot.statecharts.Packed" to: "SHIPPED" }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Cancelled" to: "CANCELLED" }
+      }
+    }
+    states {
+      name: "SHIPPED"
+      entry {
+        timer {
+          seconds: 1
+          enqueue { event: "tests.reboot.statecharts.Delivered" }
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Delivered" to: "DELIVERED" }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Returned" to: "RETURNED" }
+      }
+    }
+    states {
+      name: "RETURNED"
+      entry {
+        timer {
+          seconds: 1.5
+          enqueue { event: "tests.reboot.statecharts.Reimbursed" }
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Delivered" to: "DELIVERED" }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Reimbursed" to: "REIMBURSED" }
+      }
+    }
+    states { name: "DELIVERED" }
+    states { name: "REIMBURSED" }
+    states { name: "CANCELLED" }
+  };
+}
+
+service ShipmentMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  // Enqueues a `Cancelled`.
+  rpc Cancel(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Returned`.
+  rpc SendBack(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Returned`, as `SendBack` does, but in a transaction.
+  rpc SendBackInTransaction(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      exclusive: {}
+    };
+  }
+
+  rpc Status(google.protobuf.Empty) returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

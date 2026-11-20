@@ -198,6 +198,11 @@ message Statechart {
   string initial = 1;
   repeated State states = 2;
   repeated Transition transitions = 3;
+  // What the statechart itself does when it starts, as a state does
+  // when it is entered, and what it does when it is exited.
+  //
+  // TODO: show these in whatever the dashboard draws of a statechart,
+  // beside those of its states.
   repeated Entry entry = 4;
   repeated Exit exit = 5;
   // Every event the statechart mentions, which is also every event
@@ -224,7 +229,43 @@ message Status {
   // it was last in.
   map<string, string> history = 2;
 
+  // An activity that is running: a `Schedule` or a `Timer` that a
+  // state that is active, or the statechart itself, has as an `Entry`.
+  message Activity {
+    // The hierarchical state name of the state that has the activity.
+    // Left out for an activity of the statechart itself.
+    optional string state = 1;
+
+    // What the activity is: the `Entry` that it is of.
+    oneof activity {
+      Statechart.Schedule schedule = 2;
+      Statechart.Timer timer = 3;
+    }
+
+    // The UUID of the task that runs the activity. Left out until the
+    // task has been made.
+    optional bytes task_uuid = 4;
+  }
+
   // The events waiting to be handled, the next one first. An enqueued
   // event is added at the end, and an injected one at the front.
   repeated Event queue = 3;
+
+  // The activities that are running. A state that has a `Schedule`
+  // that is running is not exited: a transition that would exit it
+  // waits until the schedule has finished. A `Timer` of a state that
+  // is exited is no longer running.
+  repeated Activity activities = 4;
 }
+
+// What the task that runs an activity of a statechart is given.
+message RunActivityRequest {
+  // What the activity is.
+  oneof activity {
+    Statechart.Schedule schedule = 1;
+    Statechart.Timer timer = 2;
+  }
+}
+
+// What the task that runs an activity of a statechart returns.
+message RunActivityResponse {}

@@ -27,11 +27,13 @@ from reboot.protoc_gen_reboot_generic import (
     BaseService,
     BaseState,
     PluginSpecificData,
+    ProtoMethod,
     ProtoMethodOptions,
     ProtoType,
     RebootProtocPlugin,
     UserProtoError,
 )
+from reboot.settings import RUN_STATECHART_ACTIVITY_METHOD
 from reboot.statecharts.validation import (
     calls,
     on_transitions,
@@ -118,6 +120,11 @@ class PythonState(BaseState):
     proto_ui_request_fields: dict[str, dict[str, str]]
     # Whether the state has a statechart.
     has_statechart: bool
+    # Each method of the state that is of no rpc and so cannot be
+    # called, but that is dispatched and run as a method of its kind
+    # is. For a state with a statechart, that is the workflow that
+    # runs an activity of the statechart.
+    internal_methods: list[PythonMethod]
     # For a state with a statechart, the type of each of its events.
     statechart_event_types: list[PythonType]
     # For a state with a statechart, each method that a guard of the
@@ -224,7 +231,52 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             file.proto._descriptor.message_types_by_name[state.proto.name],
         )
 
+        internal_methods: list[PythonMethod] = []
+
         if statechart is not None:
+            internal_methods.append(
+                PythonMethod(
+                    proto=ProtoMethod(
+                        name=RUN_STATECHART_ACTIVITY_METHOD,
+                        full_name=(
+                            f"{state.proto.full_name}."
+                            f"{RUN_STATECHART_ACTIVITY_METHOD}"
+                        ),
+                        client_streaming=False,
+                        server_streaming=False,
+                        # The method is of no rpc.
+                        _descriptor=None,  # type: ignore[arg-type]
+                    ),
+                    options=PythonMethodOptions(
+                        proto=ProtoMethodOptions(
+                            kind="workflow",
+                            constructor=False,
+                            exclusive=False,
+                            state_streaming=False,
+                            has_errors=False,
+                            description=None,
+                            mcp=None,
+                        ),
+                        errors={},
+                        pydantic_error_types=[],
+                        pydantic_error_field_details={},
+                    ),
+                    input_type=(
+                        "rbt.v1alpha1.statecharts.statechart_pb2."
+                        "RunActivityRequest"
+                    ),
+                    input_type_name="RunActivityRequest",
+                    output_type=(
+                        "rbt.v1alpha1.statecharts.statechart_pb2."
+                        "RunActivityResponse"
+                    ),
+                    output_type_name="RunActivityResponse",
+                    input_type_fields={},
+                    has_non_none_request=True,
+                    has_non_none_response=False,
+                ),
+            )
+
             statechart_event_types = [
                 self._python_type_from_proto_type(
                     self.pool.FindMessageTypeByName(event),
@@ -297,6 +349,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                     ) for ui in state.proto.uis if ui.request_message
             },
             has_statechart=statechart is not None,
+            internal_methods=internal_methods,
             statechart_event_types=statechart_event_types,
             statechart_guards=statechart_guards,
             statechart_conditions=statechart_conditions,

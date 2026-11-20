@@ -3,8 +3,9 @@ import inspect
 import unittest
 from google.protobuf.empty_pb2 import Empty
 from reboot.aio.contexts import ReaderContext, WorkflowContext
-from tests.reboot.statecharts import order_pb2
+from tests.reboot.statecharts import order_pb2, shipment_pb2
 from tests.reboot.statecharts.order_rbt import Order
+from tests.reboot.statecharts.shipment_rbt import Shipment
 from typing import Optional
 
 
@@ -39,16 +40,19 @@ class OrderServicer(Order.Servicer):
     def stop_reminders(self, state: Order.State) -> None:
         pass
 
-    @classmethod
-    async def send_reminders(cls, context: WorkflowContext) -> None:
-        pass
+
+class ShipmentServicer(Shipment.Servicer):
 
     @classmethod
-    async def charge_card(
+    async def pack(
         cls,
         context: WorkflowContext,
-    ) -> Optional[order_pb2.Paid | order_pb2.Refunded]:
-        return order_pb2.Paid(cents=500)
+    ) -> Optional[shipment_pb2.Packed | shipment_pb2.Cancelled]:
+        return shipment_pb2.Packed()
+
+    @classmethod
+    async def label(cls, context: WorkflowContext) -> None:
+        pass
 
 
 class ServicerTest(unittest.TestCase):
@@ -58,9 +62,11 @@ class ServicerTest(unittest.TestCase):
     `Refunded`, and `is_cancelled` is a condition. Of its calls,
     `record_payment` is an action of a transition on `Paid` and
     injects `Settled`, `void` is an action of a `when` transition,
-    `send_receipt` is an `entry` and `stop_reminders` is an `exit`. Of
-    its schedules, `charge_card` enqueues `Paid` or `Refunded` and
-    `send_reminders` enqueues nothing."""
+    `send_receipt` is an `entry` and `stop_reminders` is an `exit`.
+
+    The statechart of `Shipment` in `shipment.proto` has the
+    schedules: `pack` enqueues `Packed` or `Cancelled` and `label`
+    enqueues nothing."""
 
     def test_servicer_implements_methods_of_statechart(self) -> None:
         servicer = OrderServicer()
@@ -147,19 +153,19 @@ class ServicerTest(unittest.TestCase):
     def test_schedule_is_class_method_that_takes_workflow_context(
         self,
     ) -> None:
-        for schedule in ["charge_card", "send_reminders"]:
+        for schedule in ["pack", "label"]:
             self.assertIsInstance(
-                inspect.getattr_static(Order.Servicer, schedule),
+                inspect.getattr_static(Shipment.Servicer, schedule),
                 classmethod,
             )
             self.assertTrue(
                 inspect.iscoroutinefunction(
-                    getattr(Order.Servicer, schedule),
+                    getattr(Shipment.Servicer, schedule),
                 ),
             )
 
         # The signature of a class method leaves out the class.
-        signature = inspect.signature(Order.Servicer.charge_card)
+        signature = inspect.signature(Shipment.Servicer.pack)
 
         self.assertEqual(["context"], list(signature.parameters))
         self.assertEqual(
@@ -167,15 +173,13 @@ class ServicerTest(unittest.TestCase):
             signature.parameters["context"].annotation,
         )
         self.assertEqual(
-            "IMPORT_typing.Optional[tests.reboot.statecharts.order_pb2."
-            "Paid | tests.reboot.statecharts.order_pb2.Refunded]",
+            "IMPORT_typing.Optional[tests.reboot.statecharts.shipment_pb2."
+            "Packed | tests.reboot.statecharts.shipment_pb2.Cancelled]",
             signature.return_annotation,
         )
         self.assertEqual(
             "None",
-            inspect.signature(
-                Order.Servicer.send_reminders,
-            ).return_annotation,
+            inspect.signature(Shipment.Servicer.label).return_annotation,
         )
 
     def test_servicer_has_statechart_only_within_method(self) -> None:
@@ -217,7 +221,7 @@ class ServicerTest(unittest.TestCase):
 
     def test_only_statechart_that_is_not_immutable_has_enqueue(self) -> None:
         self.assertTrue(
-            issubclass(Order.Statechart, Order.ImmutableStatechart)
+            issubclass(Order.Statechart, Order.ImmutableStatechart),
         )
         self.assertTrue(hasattr(Order.Statechart, "enqueue"))
         self.assertFalse(hasattr(Order.ImmutableStatechart, "enqueue"))
@@ -248,8 +252,6 @@ class ServicerTest(unittest.TestCase):
             "void",
             "send_receipt",
             "stop_reminders",
-            "send_reminders",
-            "charge_card",
         ]:
             # `OrderServicer` but for `method`, which is as `Order`
             # declares it: abstract.
@@ -263,6 +265,24 @@ class ServicerTest(unittest.TestCase):
                 servicer_type()
 
             self.assertIn(method, str(raised.exception))
+
+    def test_servicer_without_a_schedule_is_not_instantiated(self) -> None:
+        for schedule in ["pack", "label"]:
+            # `ShipmentServicer` but for `schedule`, which is as
+            # `Shipment` declares it: abstract.
+            servicer_type = type(
+                "ShipmentServicerWithout",
+                (ShipmentServicer,),
+                {
+                    schedule:
+                        inspect.getattr_static(Shipment.Servicer, schedule),
+                },
+            )
+
+            with self.assertRaises(TypeError) as raised:
+                servicer_type()
+
+            self.assertIn(schedule, str(raised.exception))
 
 
 if __name__ == "__main__":

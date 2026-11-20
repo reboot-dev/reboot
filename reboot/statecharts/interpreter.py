@@ -297,17 +297,38 @@ def _run_actions(
 def _run_entries(
     entries: Iterable[statechart_pb2.Statechart.Entry],
     *,
+    hierarchical_state_name: Optional[str],
     servicer: Any,
     state: Any,
-) -> list[statechart_pb2.Status.Event]:
-    """Runs each of `entries` that is an action, in order. Returns
-    each event that was injected."""
+) -> tuple[
+    list[statechart_pb2.Status.Event],
+    list[statechart_pb2.Status.Activity],
+]:
+    """Runs each of `entries`, in order, which are those of the state
+    that has `hierarchical_state_name`, or of the statechart itself if
+    that is `None`. An action is run, and a `schedule` or a `timer` is
+    an activity to schedule. Returns each event that was injected, and
+    each activity that is to be scheduled."""
     injected_events: list[statechart_pb2.Status.Event] = []
+    activities_to_schedule: list[statechart_pb2.Status.Activity] = []
 
     for entry in entries:
-        if entry.HasField("schedule") or entry.HasField("timer"):
-            # TODO: start the activity that the `schedule` or the
-            # `timer` is.
+        if entry.HasField("schedule"):
+            activities_to_schedule.append(
+                statechart_pb2.Status.Activity(
+                    state=hierarchical_state_name,
+                    schedule=entry.schedule,
+                ),
+            )
+            continue
+
+        if entry.HasField("timer"):
+            activities_to_schedule.append(
+                statechart_pb2.Status.Activity(
+                    state=hierarchical_state_name,
+                    timer=entry.timer,
+                ),
+            )
             continue
 
         injected_event = _run_action(
@@ -319,7 +340,7 @@ def _run_entries(
         if injected_event is not None:
             injected_events.append(injected_event)
 
-    return injected_events
+    return (injected_events, activities_to_schedule)
 
 
 def _enter_state(
@@ -328,13 +349,18 @@ def _enter_state(
     *,
     servicer: Any,
     state: Any,
-) -> list[statechart_pb2.Status.Event]:
+) -> tuple[
+    list[statechart_pb2.Status.Event],
+    list[statechart_pb2.Status.Activity],
+]:
     """Enters the state of `statechart` that has
     `hierarchical_state_name`: runs each `entry` of it, in order.
-    Returns each event that was injected."""
+    Returns each event that was injected, and each activity that is to
+    be scheduled."""
     return _run_entries(
         states_by_hierarchical_state_name(statechart)
         [hierarchical_state_name].entry,
+        hierarchical_state_name=hierarchical_state_name,
         servicer=servicer,
         state=state,
     )
@@ -372,10 +398,13 @@ def _start(
 
     Returns the status that the statechart then has: that of
     `status`, with the innermost of the states that were entered as
-    the state that is active and each event that was injected ahead
-    of every event that is waiting."""
-    injected_events = _run_entries(
+    the state that is active, each event that was injected ahead of
+    every event that is waiting, and each activity that is to be
+    scheduled.
+    """
+    injected_events, activities_to_schedule = _run_entries(
         statechart.entry,
+        hierarchical_state_name=None,
         servicer=servicer,
         state=state,
     )
@@ -388,19 +417,23 @@ def _start(
     )
 
     for hierarchical_state_name in entered:
-        injected_events.extend(
-            _enter_state(
-                statechart,
-                hierarchical_state_name,
-                servicer=servicer,
-                state=state,
-            ),
+        (
+            injected_events_of_state,
+            activities_to_schedule_of_state,
+        ) = _enter_state(
+            statechart,
+            hierarchical_state_name,
+            servicer=servicer,
+            state=state,
         )
+        injected_events.extend(injected_events_of_state)
+        activities_to_schedule.extend(activities_to_schedule_of_state)
 
     return statechart_pb2.Status(
         active=entered[-1],
         history=status.history,
         queue=injected_events + list(status.queue),
+        activities=list(status.activities) + activities_to_schedule,
     )
 
 
@@ -425,8 +458,13 @@ def _take_transition(
     itself if the transition left it as it is: that of `status`, with
     the innermost of the states that were entered as the state that is
     active, with each state that was exited as what the state it is
-    within was last in, and with each event that was injected ahead of
-    every event that is waiting."""
+    within was last in, with each event that was injected ahead of
+    every event that is waiting, and with each activity that is to be
+    scheduled.
+
+    None of the states that the transition exits has a schedule that
+    is running. A timer of a state that it exits is no longer
+    running."""
     exited, entered = states_exited_and_entered_from_transition(
         statechart,
         hierarchical_state_name=status.active,
@@ -455,15 +493,20 @@ def _take_transition(
         ),
     )
 
+    activities_to_schedule: list[statechart_pb2.Status.Activity] = []
+
     for hierarchical_state_name in entered:
-        injected_events.extend(
-            _enter_state(
-                statechart,
-                hierarchical_state_name,
-                servicer=servicer,
-                state=state,
-            ),
+        (
+            injected_events_of_state,
+            activities_to_schedule_of_state,
+        ) = _enter_state(
+            statechart,
+            hierarchical_state_name,
+            servicer=servicer,
+            state=state,
         )
+        injected_events.extend(injected_events_of_state)
+        activities_to_schedule.extend(activities_to_schedule_of_state)
 
     # A transition that exits and enters nothing, and whose actions
     # inject nothing, leaves the status as it is.
@@ -480,10 +523,44 @@ def _take_transition(
         if len(superstate_names) > 0:
             history[superstate_names[0]] = hierarchical_state_name
 
+    # A timer of a state that was exited is no longer running. A
+    # schedule of one is not either: the transition would have waited
+    # for it.
+    activities = [
+        activity for activity in status.activities
+        if not activity.HasField("state") or activity.state not in exited
+    ]
+
     return statechart_pb2.Status(
         active=entered[-1] if len(entered) > 0 else status.active,
         history=history,
         queue=injected_events + list(status.queue),
+        activities=activities + activities_to_schedule,
+    )
+
+
+def _exits_state_with_running_schedule(
+    statechart: statechart_pb2.Statechart,
+    transition: (
+        statechart_pb2.Statechart.On | statechart_pb2.Statechart.When
+    ),
+    *,
+    status: statechart_pb2.Status,
+) -> bool:
+    """Returns whether taking `transition` exits a state that has a
+    schedule that is running, as `status` says, which the statechart
+    waits to finish before it exits the state. It waits for no
+    timer."""
+    exited, _ = states_exited_and_entered_from_transition(
+        statechart,
+        hierarchical_state_name=status.active,
+        transition=transition,
+        history=status.history,
+    )
+
+    return any(
+        activity.HasField("schedule") and activity.HasField("state") and
+        activity.state in exited for activity in status.activities
     )
 
 
@@ -504,6 +581,11 @@ def run(
     `on` transition that fires for it, if any, is taken; an event that
     no transition fires for is dropped. Before the first event and
     after each one, every `when` transition that fires is taken.
+
+    A transition that would exit a state that has a schedule that is
+    running is not taken, and the statechart then has nothing left to
+    do until the schedule has finished: an event that such a
+    transition fires for stays at the head of the queue.
 
     `servicer` has the methods that the statechart names, each of
     which is called with `state`, which it may change. `statechart`
@@ -549,6 +631,16 @@ def run(
                 state=state,
             )
         ) is not None:
+            # A transition that would exit a state that has a schedule
+            # that is running is not taken, and the statechart then has
+            # nothing left to do until the schedule has finished.
+            if _exits_state_with_running_schedule(
+                statechart,
+                when,
+                status=status,
+            ):
+                return status if status is not given_status else None
+
             status = _take_transition(
                 statechart,
                 when,
@@ -562,13 +654,7 @@ def run(
         if len(status.queue) == 0:
             break
 
-        # Take the event at the head of the queue from it.
         event = message_from_status_event(status.queue[0])
-        status = statechart_pb2.Status(
-            active=status.active,
-            history=status.history,
-            queue=status.queue[1:],
-        )
 
         on = maybe_on_transition(
             statechart,
@@ -576,6 +662,26 @@ def run(
             event=event,
             servicer=servicer,
             state=state,
+        )
+
+        # A transition that would exit a state that has a schedule
+        # that is running is not taken, and the statechart then has
+        # nothing left to do until the schedule has finished. The
+        # event that the transition fires for stays at the head of the
+        # queue.
+        if on is not None and _exits_state_with_running_schedule(
+            statechart,
+            on,
+            status=status,
+        ):
+            break
+
+        # Take the event from the queue.
+        status = statechart_pb2.Status(
+            active=status.active,
+            history=status.history,
+            queue=status.queue[1:],
+            activities=status.activities,
         )
 
         if on is not None:
