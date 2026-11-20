@@ -5301,6 +5301,10 @@ class SidecarStateManager(
                     workflow_iteration=context.workflow_iteration,
                     constructor=context.constructor,
                 )
+                if effects.tasks is not None:
+                    # The tasks are dispatched once the transaction
+                    # has committed.
+                    transaction.tasks.extend(effects.tasks)
 
         if not context.nested:
             # We need to register as the coordinator _before_ we
