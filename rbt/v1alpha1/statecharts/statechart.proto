@@ -269,7 +269,9 @@ message Status {
   // waits until the schedule has finished, which a schedule that is
   // `cancellable` is made to do by being cancelled. No transition
   // waits for a `Timer`: one of a state that a transition would exit
-  // is cancelled, and enqueues nothing when its delay is over.
+  // is cancelled, and enqueues nothing when its delay is over. The
+  // same holds for an activity of the statechart itself and a
+  // transition that enters a final state of the statechart itself.
   repeated Activity activities = 4;
 }
 

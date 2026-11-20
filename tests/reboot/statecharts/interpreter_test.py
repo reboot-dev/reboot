@@ -541,12 +541,20 @@ class RunTest(unittest.TestCase):
 # A statechart with a final state: it has an `exit` of its own and the
 # final state `CLOSED`, which a `Paid` takes `OPEN` to. A `Refunded` takes
 # `OPEN` to `REVIEW`, and so into `REVIEW/DONE`, which is a final
-# state within a state.
+# state within a state. The statechart itself has the schedule
+# `audit`, which is cancellable, and a timer of five minutes.
 STATECHART_WITH_FINAL_STATE = text_format.Parse(
     """
     events: "tests.reboot.statecharts.Paid"
     events: "tests.reboot.statecharts.Refunded"
     initial: "OPEN"
+    entry { schedule { inline { method: "audit" } cancellable: true } }
+    entry {
+      timer {
+        minutes: 5
+        enqueue { event: "tests.reboot.statecharts.Refunded" }
+      }
+    }
     exit { call { description: "Void" inline { method: "void" } } }
     states {
       name: "OPEN"
@@ -655,9 +663,120 @@ LABEL_CANCELLING = statechart_pb2.Status.Activity(
     cancelling=True,
 )
 
+# The activities of `STATECHART_WITH_FINAL_STATE`, which are of the
+# statechart itself, as they are once their tasks have been made, and
+# as they are once they are being cancelled.
+AUDIT_OF_STATECHART = statechart_pb2.Status.Activity(
+    schedule=STATECHART_WITH_FINAL_STATE.entry[0].schedule,
+    task_uuid=b"audit",
+)
+AUDIT_OF_STATECHART_CANCELLING = statechart_pb2.Status.Activity(
+    schedule=STATECHART_WITH_FINAL_STATE.entry[0].schedule,
+    task_uuid=b"audit",
+    cancelling=True,
+)
+TIMER_OF_STATECHART = statechart_pb2.Status.Activity(
+    timer=STATECHART_WITH_FINAL_STATE.entry[1].timer,
+    task_uuid=b"timer",
+)
+TIMER_OF_STATECHART_CANCELLING = statechart_pb2.Status.Activity(
+    timer=STATECHART_WITH_FINAL_STATE.entry[1].timer,
+    task_uuid=b"timer",
+    cancelling=True,
+)
+
 
 class RunFinalStateTest(unittest.TestCase):
     """Tests `run` with `STATECHART_WITH_FINAL_STATE` and a `Servicer`."""
+
+    def test_transition_to_final_state_waits_for_schedule_of_statechart(
+        self,
+    ) -> None:
+        paid = status_event_from_message(order_pb2.Paid(cents=500))
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="OPEN",
+                queue=[paid],
+                activities=[
+                    AUDIT_OF_STATECHART,
+                    TIMER_OF_STATECHART,
+                ],
+            ),
+        )
+
+        # The `Paid` waits for `audit`, which is being cancelled, as
+        # the timer is.
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="OPEN",
+                queue=[paid],
+                activities=[
+                    AUDIT_OF_STATECHART_CANCELLING,
+                    TIMER_OF_STATECHART_CANCELLING,
+                ],
+            ),
+            status_after,
+        )
+        self.assertEqual([], servicer.called)
+
+    def test_transition_to_final_state_cancels_timer_of_statechart(
+        self,
+    ) -> None:
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="OPEN",
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
+                activities=[TIMER_OF_STATECHART],
+            ),
+        )
+
+        # No transition waits for a timer.
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="CLOSED",
+                activities=[TIMER_OF_STATECHART_CANCELLING],
+            ),
+            status_after,
+        )
+        self.assertEqual([("enter_closed",), ("void",)], servicer.called)
+
+    def test_other_transition_leaves_activities_of_statechart(
+        self,
+    ) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="OPEN",
+                queue=[status_event_from_message(order_pb2.Refunded(cents=1))],
+                activities=[
+                    AUDIT_OF_STATECHART,
+                    TIMER_OF_STATECHART,
+                ],
+            ),
+        )
+
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="REVIEW/DONE",
+                activities=[
+                    AUDIT_OF_STATECHART,
+                    TIMER_OF_STATECHART,
+                ],
+            ),
+            status_after,
+        )
 
     def test_statechart_that_enters_final_state_of_its_own_is_exited(
         self,
