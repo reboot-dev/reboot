@@ -1,6 +1,6 @@
 ## `rbt dev run` no longer opens the dashboard
 
-The developer dashboard is started by `rbt dashboard`, which now
+The Reboot Dashboard is started by `rbt dashboard`, which now
 opens the browser itself once it is serving — unless somebody is
 already looking at one, or the page's "Don't reopen automatically"
 notice said not to. `rbt dev run`'s `--open-dashboard` and

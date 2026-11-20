@@ -107,7 +107,7 @@ from reboot.aio.http import external_context
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
 from starlette.responses import RedirectResponse
 
-SLACK = "slack.com"  # any string; a state id naming the service.
+SLACK = "slack.com"  # any string; an object ID naming the service.
 
 
 async def slack_callback(request):
@@ -145,14 +145,14 @@ API key, personal access token, or webhook secret into your UI instead.
 > _as that user_ — a per-user secret, stored per user. Don't confuse it
 > with service-to-service auth, where **you, the developer,** hold one
 > key for the whole application (your Stripe secret key, your OpenAI
-> key): that key is not per-user state and never goes in an actor —
+> key): that key is not per-user state and never goes in an instance —
 > deliver it as an application secret via environment variables /
 > `rbt cloud secret` (`lifecycle-secrets.md`).
 
 `OAuthTokenManager` is purpose-built for OAuth tokens; don't shoehorn an
 API key into it. The key is still a secret at rest, so the rule from
 `state-scalar-fields.md` applies: **never a plain `str` field** — encrypt
-it with the `Ciphertext` stdlib type and keep the returned `state_id` (a
+it with the `Ciphertext` standard library object and keep the returned `state_id` (a
 harmless `str`) in your state as the reference to the encrypted value.
 This path needs only `ciphertext_library()` + `ordered_map_library()`
 (no `oauth_library()`).
@@ -221,7 +221,7 @@ from reboot.std.oauth.v1.oauth import GOOGLE
 > the same workflow. Use **`context.state_id`** as the `user_id`, **not
 > `context.auth`**: a `Workflow` is a `@classmethod` typically reached
 > via a scheduled or app-internal call, so `context.auth` isn't reliably
-> populated; `context.state_id` always resolves to the actor the method
+> populated; `context.state_id` always resolves to the instance the method
 > runs on, which for a `User`-type servicer keyed by user id _is_ the
 > signed-in user.
 
@@ -269,7 +269,7 @@ crash.
 
 **UI shape that fits the Workflow rule.** A React UI subscribes to a
 `Reader`, but the fetch-and-call is a `Workflow`. The common pattern: a
-`Workflow` calls the service and writes a **snapshot** into the actor's
+`Workflow` calls the service and writes a **snapshot** into the instance's
 state; a `Reader` exposes that snapshot; a UI-invoked `Writer`
 `schedule()`s the workflow (a `Writer` can't `await` one).
 
@@ -319,7 +319,7 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
       (the user provides an API key, not OAuth): `Ciphertext.encrypt`,
       with the returned `state_id` — never the raw key — kept in state.
       A key the developer holds for the whole app is an application
-      secret (`rbt cloud secret`), not actor state.
+      secret (`rbt cloud secret`), not instance state.
 - [ ] Every method that calls the service's API is a `Workflow`, the
       call wrapped in a durability primitive (`at_least_once` /
       `at_most_once`), with `user_id=context.state_id`.

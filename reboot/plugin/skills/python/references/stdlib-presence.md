@@ -110,5 +110,5 @@ servicer-level API above; client-side TS uses the React hook.
 ### Building on Top
 
 Treat the presence servicers as a foundation: your app's "channel" or
-"room" actor calls `Presence.ref(channel_id).subscribe(context, subscriber_id=...)` and `Presence.ref(channel_id).list(context)` to
+"room" instance calls `Presence.ref(channel_id).subscribe(context, subscriber_id=...)` and `Presence.ref(channel_id).list(context)` to
 render the participant list.

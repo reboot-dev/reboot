@@ -106,10 +106,10 @@ from "now" lets the run time drift later every day (each run starts a
 little after the last). Recomputing the next absolute target each time
 keeps it pinned.
 
-## The Recurring-Job Shape: `start` / `tick` / `run`
+## The Recurring-Task Shape: `start` / `tick` / `run`
 
-The canonical shape for a recurring job is three methods on **one**
-actor:
+The canonical shape for a recurring task is three methods on **one**
+instance:
 
 1. **`start()`** — a `factory=True` writer that kicks off the first
    tick.
@@ -156,7 +156,7 @@ class NightlyReportServicer(NightlyReport.Servicer):
         ...
 ```
 
-Create the actor once (e.g. from the `initialize` hook, idempotently)
+Create the instance once (e.g. from the `initialize` hook, idempotently)
 and the chain runs forever; stop it by clearing `active` (see
 [Stopping a recurring schedule](#stopping-a-recurring-schedule)).
 
@@ -175,14 +175,14 @@ never holds up the cadence:
 
 - **`run()` doesn't have to be a workflow.** If one occurrence is just
   a state mutation — no external calls, no multi-step durability — make
-  `run()` a `Writer` (or a `Transaction` if it spans several actors).
-  Pick the method type by the usual rules (see `servicer-workflow.md`,
+  `run()` a `Writer` (or a `Transaction` if it spans several instances).
+  Pick the kind of method by the usual rules (see `servicer-workflow.md`,
   `servicer-writer.md`, `servicer-transaction.md`).
 - **Pause the recurrence while a `run()` can't complete.** The shape
   above never skips an occurrence — a failed `run()` doesn't interrupt
-  the `tick()` chain. That's the safe default: most recurring jobs are
+  the `tick()` chain. That's the safe default: most recurring tasks are
   "better late than never" (granting interest, sending a report). If a
-  job should instead wait for each run to succeed before scheduling the
+  task should instead wait for each run to succeed before scheduling the
   next, drop `tick()` and have `run()` re-schedule the next `run()` as
   its **last** step. The next occurrence is then scheduled only once the
   current one has finished — which also means runs can never overlap.
@@ -205,7 +205,7 @@ Schedules are persisted with the surrounding writer, so a tick whose
 time arrives while the app is down is **not lost**: when the app comes
 back, a past-due schedule fires immediately. But because each tick only
 schedules the _next_ one, you get a **single** catch-up fire, not one
-fire per missed window. If a daily 02:00 job is down for three days, it
+fire per missed window. If a daily 02:00 task is down for three days, it
 fires once on restart, then resumes the daily cadence — it does not run
 three times to backfill. If you need to detect or backfill missed
 windows, compare the wall clock against the last-run timestamp in state

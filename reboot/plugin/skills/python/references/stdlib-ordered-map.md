@@ -1,7 +1,7 @@
 ---
 title: Use `OrderedMap` for Distributed Sorted Key/Value Storage
 impact: HIGH
-impactDescription: Without a stdlib sorted map, large or paginated collections must be hand-rolled
+impactDescription: Without a standard library sorted map, large or paginated collections must be hand-rolled
 tags: stdlib, OrderedMap, B-tree, collections, range, paginated, ordered
 ---
 
@@ -9,7 +9,7 @@ tags: stdlib, OrderedMap, B-tree, collections, range, paginated, ordered
 
 > **Critical:** must register `ordered_map_library()` in
 > `Application(libraries=[...])`. Forgetting it produces a runtime
-> error about an unknown actor type. `range` / `reverse_range`
+> error about an unknown object type. `range` / `reverse_range`
 > require a non-zero `limit=`. Each entry's value is one of
 > `value` (`google.protobuf.Value`), `bytes`, or `any`
 > (`google.protobuf.Any`) — pick **one** per entry. Until the map is
@@ -18,9 +18,9 @@ tags: stdlib, OrderedMap, B-tree, collections, range, paginated, ordered
 
 `OrderedMap` (`reboot.std.collections.ordered_map.v1.ordered_map`) is
 a B-tree-backed sorted `(string key → value)` map. It stores entries
-across many `Node` actors so concurrent writes scale, and exposes
+across many `Node` instances so concurrent writes scale, and exposes
 single-key and bulk variants of `insert` / `remove`, plus `search`,
-`range`, and `reverse_range`. Each `OrderedMap` is its own actor
+`range`, and `reverse_range`. Each `OrderedMap` is its own instance
 identified by a string ID — your code **must** persist that ID as a
 field on the parent's state (e.g. `<thing>_index_id: str`),
 allocate it once in the parent's constructor, and reference the map
@@ -33,9 +33,9 @@ via `OrderedMap.ref(self.state.<id>)`.
 > It "works" but hides the parent → map relationship from the state
 > schema, repeats the magic string at every callsite, and skips the
 > constructor allocation that marks ownership. The full rationale,
-> and the generalization to every cross-`Type` reference (stdlib or
+> and the generalization to every cross-`Type` reference (standard library or
 > user-defined), is in `state-collections.md`'s "Relationships
-> Between State Types" section.
+> Between Object Types" section.
 
 ### Methods
 
@@ -203,7 +203,7 @@ mutations — only opt in when you actually need the count.
 
 ### `Node` Is an Implementation Detail
 
-`OrderedMap` is composed of `Node` actors at runtime. You should not
+`OrderedMap` is composed of `Node` instances at runtime. You should not
 typically interact with `Node` directly — use the `OrderedMap`
 methods. The `Node` API is exported for advanced cases (custom
 traversal, debugging) but isn't the day-to-day surface.

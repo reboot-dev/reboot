@@ -19,9 +19,9 @@ or
 **Do not read the generated `*_rbt_react.ts` to rediscover any of
 this.** It runs to tens of thousands of lines.
 
-## What Is Emitted, per State Type
+## What Is Emitted, per Object Type
 
-For a state type `Foo`:
+For an object type `Foo`:
 
 ```ts
 // Two overloads. With an id, the handle directly; without one, the
@@ -29,7 +29,7 @@ For a state type `Foo`:
 // a URL parameter resolves to).
 export function useFoo(args: { id: string }): UseFooApi;
 export function useFoo(args?: undefined): {
-  foo: UseFooApi | undefined;      // named after the state type
+  foo: UseFooApi | undefined;      // named after the object type
   isLoading: boolean;
 };
 
@@ -105,7 +105,7 @@ to skip" mode. `id: ''` throws
 throws inside `stateIdToRef`. Identity often resolves
 asynchronously, so the fix is **not** a placeholder id —
 `useFoo({ id: id || '__none__' })` makes every loading session
-subscribe to the same shared actor. Don't mount the component until
+subscribe to the same shared instance. Don't mount the component until
 the id is real: guard at the parent and pass a guaranteed-real id
 down.
 

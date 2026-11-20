@@ -1,31 +1,31 @@
 ---
-title: Split a State Type That Holds Multiple Concerns
+title: Split an Object Type That Holds Multiple Concerns
 impact: HIGH
-impactDescription: One actor holding many unrelated concerns serializes all writers across them and turns the front door into a God actor.
-tags: state, decomposition, responsibility, actors, front-door, serialization, contention
+impactDescription: One instance holding many unrelated concerns serializes all writers across them and turns `User` into a God object.
+tags: state, decomposition, responsibility, instances, user, serialization, contention
 ---
 
-## Split a State Type That Holds Multiple Concerns
+## Split an Object Type That Holds Multiple Concerns
 
-> **Critical:** one state `Type` should hold **one concern**. When a
-> single actor has accreted multiple unrelated responsibilities —
+> **Critical:** one object type should hold **one concern**. When a
+> single instance has accreted multiple unrelated responsibilities —
 > auth/session fields alongside persona config alongside background-
 > engine config alongside a UI cache — split each concern into its
-> own state `Type` and have the front-door actor reference them by
+> own object type and have the `User` instance reference them by
 > ID. Beyond hygiene, this is a **runtime** rule: writers on the same
-> actor serialize (see `servicer-writer.md`), so unrelated concerns
-> stacked on one actor create false contention that a concern-based
+> instance serialize (see `servicer-writer.md`), so unrelated concerns
+> stacked on one instance create false contention that a concern-based
 > split removes entirely.
 
 `state-collections.md` covers decomposing **collections of entities**
 into their own `Type`s. This file covers the orthogonal decomposition:
-**a single actor whose state has accreted multiple unrelated
+**a single instance whose state has accreted multiple unrelated
 concerns** — split it by concern, regardless of whether any field is
 a collection.
 
 ### Signals That You Should Split
 
-If a single state `Type` shows any of the following, it's holding
+If a single object type shows any of the following, it's holding
 more than one concern and should be split:
 
 - **Fields fall into clusters that don't move together.** The auth
@@ -37,7 +37,7 @@ more than one concern and should be split:
 - **A background workflow's state writes contend with on-demand
   user actions.** The monitor workflow writing "last scanned at"
   serializes against the user editing their persona. Different
-  concerns, same actor, false contention.
+  concerns, same instance, false contention.
 - **You catch yourself prefixing fields to disambiguate concerns**
   (`monitoring_active`, `monitoring_poll_interval`,
   `monitoring_chat_ids`). The prefix is the concern asking to be its
@@ -48,33 +48,33 @@ more than one concern and should be split:
   prefix group is a separate concern.
 - **A "transient" cache field** — a picker snapshot, a draft
   scratchpad, a UI hint — sits next to durable business state on the
-  same actor. Caches have a different lifecycle and a different read
-  pattern; promote them to their own `Type` (or a stdlib `Item`).
+  same instance. Caches have a different lifecycle and a different read
+  pattern; promote them to their own `Type` (or a standard library `Item`).
 
 ### Why It Matters in Reboot Specifically
 
 Two reasons, one per layer:
 
-1. **Writers on the same actor serialize.** This is the explicit
-   contract in `servicer-writer.md`: "writers on the same actor are
-   serialized; writers across actors run independently." A login
+1. **Writers on the same instance serialize.** This is the explicit
+   contract in `servicer-writer.md`: "writers on the same instance are
+   serialized; writers across instances run independently." A login
    step, a persona edit, a monitoring-config change, and a
    background workflow's state writes all queueing on one `User`
-   actor is false contention — splitting by concern across multiple
+   instance is false contention — splitting by concern across multiple
    `Type`s lets them run independently with no application-level
    change.
-2. **The front-door framing degenerates without this rule.** Chat
-   apps and similar Reboot apps use a `User` `Type` as the AI's
-   entry point. "Front door" means **entry point + delegation**, not
+2. **`User` turns into a container without this rule.** Chat
+   apps and similar Reboot apps create and find everything through a
+   `User` `Type`. `User` **locates and delegates**; it is not a
    _container for all application state_ — see "`User` and Application
    Types" in `mcp-app-concepts.md`. Without responsibility
-   decomposition, every new feature lands on `User` and the actor
-   becomes a God actor.
+   decomposition, every new feature lands on `User` and the instance
+   becomes a God object.
 
 ### How to Split
 
-Keep the front-door actor as the entry point and the **owner of IDs
-of concern-specific actors**. Each concern becomes its own `Type`
+Keep `User` as the way in and the **owner of IDs
+of concern-specific instances**. Each concern becomes its own `Type`
 with the fields and methods that belong to that concern:
 
 ```python
@@ -95,7 +95,7 @@ class MonitoringManagerState(Model):
 
 class UserState(Model):
     display_name: str = Field(tag=1, default="")
-    # IDs of the concern-specific actors this user owns.
+    # IDs of the concern-specific instances this user owns.
     telegram_session_id: str = Field(tag=2, default="")
     monitoring_manager_id: str = Field(tag=3, default="")
 ```
@@ -122,15 +122,15 @@ flows on `TelegramSession`, the `monitor` workflow on
 `MonitoringManager` — and only the cross-concern orchestration stays
 on `User`.
 
-### What Stays on the Front Door
+### What Stays on `User`
 
-The front-door `Type` keeps:
+`User` keeps:
 
-- **Identity fields** that name the actor itself (e.g. the user's
+- **Identity fields** that name the instance itself (e.g. the user's
   display name).
-- **References (IDs)** to concern-specific actors it owns.
-- **Front-door methods** — typically `Transaction`s that locate or
-  create concern-specific actors and return their IDs, and any
+- **References (IDs)** to concern-specific instances it owns.
+- **Methods that locate or create** — typically `Transaction`s that locate or
+  create concern-specific instances and return their IDs, and any
   user-scoped UI (`dashboard`, `home`).
 
 Everything else — auth/session, configuration, background-engine
@@ -146,5 +146,5 @@ state, transient caches, per-concern workflows — moves to its own
   principle applies here.
 - `servicer-writer.md` — the serialization contract that makes this
   a runtime rule, not just hygiene.
-- `mcp-app-concepts.md` — "`User` and Application Types": **"front door"
-  means entry point + delegation, not container.**
+- `mcp-app-concepts.md` — "`User` and Application Types": **`User`
+  locates and delegates; it is not a container.**

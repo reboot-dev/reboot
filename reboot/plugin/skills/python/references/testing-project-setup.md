@@ -52,11 +52,11 @@ backend's: a scenario that opens the web app drives the frontend too.
 ```
 
 - A feature file is named for the activity (`transfers.feature`),
-  not for a state type.
+  not for an object type.
 - A test module ends in `_test.py` so `pytest` picks it up, defines
   the `application` fixture returning the `Application(...)` its
   scenarios run against, and calls `scenarios('a.feature', 'b.feature')` from `reboot.bdd`. One module per way of configuring
-  the application: with authorizers, with a scheduled job turned
+  the application: with authorizers, with a scheduled task turned
   off, with a scripted LLM, with the web app served. The minimal
   module is in [testing-features.md](testing-features.md).
 - A crash-and-recover test

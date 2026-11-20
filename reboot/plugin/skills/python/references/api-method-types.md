@@ -1,11 +1,11 @@
 ---
-title: API Definition — Method Types and Tool Exposure
+title: API Definition — Kinds of Method and Tool Exposure
 impact: CRITICAL
 impactDescription: The pydantic API file is the source of truth for both Reboot codegen AND MCP tool surface. `UI()` is MCP App-only; every method (including `User`'s) requires explicit `mcp=`; application types need `factory=True` on their `create` Writer.
 tags: api, pydantic, ui, tool, mcp, reader, writer, transaction, workflow, factory, user
 ---
 
-## API Definition — Method Types and Tool Exposure
+## API Definition — Kinds of Method and Tool Exposure
 
 The pydantic API rules — zero-value defaults, `Optional[<Model>]` +
 `default=None` for nested Models — are in
@@ -17,7 +17,7 @@ What's _MCP App-specific_ about these files:
 - A `User` type with empty (or near-empty) state and `Transaction`
   methods that create application-type instances.
 - `factory=True` on each application type's `create` Writer.
-- The `UI()` method type for opening React UIs (MCP-only — no plain
+- The `UI()` kind of method, for opening React UIs (MCP-only — no plain
   `python` analogue).
 - Every method declares `mcp=Tool()` or `mcp=None`.
 - `api = API(User=Type(...), <AppType>=Type(...))` registers the
@@ -70,16 +70,16 @@ The rule:
 
 - **Per-entity UI** ("show this Person", "edit this Task",
   "view this Document") → `UI()` on the entity's `Type`. The
-  actor ID is the tool call's target, implicit — no `request=`
+  object ID is the tool call's target, implicit — no `request=`
   needed.
 - **User-scoped UI** ("show my dashboard", "browse all my
-  Persons") → `UI()` on `User`. The actor is the user itself.
+  Persons") → `UI()` on `User`. The instance is the user itself.
 
 **Why the entity-Type placement works.** When a `UI()` lives
-on a `Type`, the generated MCP tool takes that Type's state ID
+on a `Type`, the generated MCP tool takes that Type's object ID
 as its argument and the generated `use<Type>()`
 React hook used in the UI's component auto-resolves its target with
-no arguments needed. The actor reference is end-to-end implicit:
+no arguments needed. The instance reference is end-to-end implicit:
 the AI calls `person_show(person_id=...)`, the React UI
 materializes for that exact `Person`, no props plumbing, no risk
 of mixing up which entity ID goes where. (Mechanism documented
@@ -93,8 +93,7 @@ the AI now has to plumb the entity ID through a request Model,
 the React component receives it as a prop and must call
 `usePerson({ id: personId })` explicitly, and every other
 per-Person operation already lives on `Person` — so the UI is
-the one method that doesn't fit. The framing of "the User is
-the front door" is for **creating and locating** entity
+the one method that doesn't fit. The `User` type is for **creating and locating** entity
 instances. Once the AI has an entity's ID, _everything_
 specific to that entity — Readers, Writers, UIs — belongs on
 that entity's `Type`.
@@ -172,7 +171,7 @@ api = API(
     ),
     Counter=Type(
         state=CounterState,
-        # What the state type is for, shown by the dev dashboard
+        # What the object type is for, shown by the Reboot Dashboard
         # beside its name and file.
         description="One counter the user created, and the "
         "consistency boundary its value changes on.",
@@ -180,7 +179,7 @@ api = API(
             # `show_clicker` lives on `Counter` (not `User`)
             # because it shows ONE specific Counter. The AI calls
             # the generated `counter_show_clicker` tool with the
-            # target Counter's state ID; the React hook resolves
+            # target Counter's object ID; the React hook resolves
             # that ID automatically. See the "UI Placement"
             # section above for the full rule.
             show_clicker=UI(

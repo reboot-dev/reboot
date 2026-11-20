@@ -1,13 +1,13 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
+description: Reboot Python framework for building transactional microservices with durable state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
 license: Apache-2.0
 metadata:
   author: reboot
   version: "1.0.0"
   organization: Reboot
   date: April 2026
-  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, the workflow call-classification model (Reboot scopes `.per_workflow` / `.per_iteration` / `.always()` for Reboot calls; external-call primitives `at_least_once` / `at_most_once`; reactive-waiting primitives `until` / `until_changes`), actor refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
+  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, the workflow call-classification model (Reboot scopes `.per_workflow` / `.per_iteration` / `.always()` for Reboot calls; external-call primitives `at_least_once` / `at_most_once`; reactive-waiting primitives `until` / `until_changes`), refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
 ---
 
 # Reboot Python Best Practices
@@ -34,7 +34,7 @@ Reference these guidelines when:
 - Changing the API of an application that has persisted state or has
   been deployed — read `references/api-schema-evolution.md` first
 - Implementing or modifying a Servicer
-- Calling another actor via `Service.ref(id).method(context, ...)`
+- Calling another instance via `Service.ref(id).method(context, ...)`
 - Building a durable workflow with `WorkflowContext`, picking the right
   primitive per `servicer-workflow.md` (Reboot calls use
   `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()`;
@@ -55,20 +55,20 @@ Reference these guidelines when:
 
 ## Rule Categories by Priority
 
-| Priority | Category   | Impact     | Prefix        |
-| -------- | ---------- | ---------- | ------------- |
-| 1        | Lifecycle  | CRITICAL   | `lifecycle-`  |
-| 2        | API        | CRITICAL   | `api-`        |
-| 3        | Servicer   | HIGH       | `servicer-`   |
-| 4        | Agent      | HIGH       | `agent-`      |
-| 5        | Stdlib     | HIGH       | `stdlib-`     |
-| 6        | Crypto     | HIGH       | `crypto-`     |
-| 7        | State      | HIGH       | `state-`      |
-| 8        | Auth       | HIGH       | `auth-`       |
-| 9        | RPC        | MEDIUM     | `rpc-`        |
-| 10       | Scheduling | MEDIUM     | `scheduling-` |
-| 11       | Testing    | LOW-MEDIUM | `testing-`    |
-| 12       | Patterns   | LOW-MEDIUM | `patterns-`   |
+| Priority | Category         | Impact     | Prefix        |
+| -------- | ---------------- | ---------- | ------------- |
+| 1        | Lifecycle        | CRITICAL   | `lifecycle-`  |
+| 2        | API              | CRITICAL   | `api-`        |
+| 3        | Servicer         | HIGH       | `servicer-`   |
+| 4        | Agent            | HIGH       | `agent-`      |
+| 5        | Standard library | HIGH       | `stdlib-`     |
+| 6        | Crypto           | HIGH       | `crypto-`     |
+| 7        | State            | HIGH       | `state-`      |
+| 8        | Auth             | HIGH       | `auth-`       |
+| 9        | RPC              | MEDIUM     | `rpc-`        |
+| 10       | Scheduling       | MEDIUM     | `scheduling-` |
+| 11       | Testing          | LOW-MEDIUM | `testing-`    |
+| 12       | Patterns         | LOW-MEDIUM | `patterns-`   |
 
 The `Workflow(...)` context method is the fourth servicer context
 type alongside reader / writer / transaction; its (large) reference
@@ -209,7 +209,7 @@ messages nested as attributes, the `Servicer` base class, and the
 - `.rbtrc` is **line-based**, not YAML. Each line is `<subcommand> <flag>`.
   Use `--application-name=<app>` (canonical since Reboot 1.0.4; `--name`
   still works as a deprecated alias but warns).
-- The actor's ID is `self.ref().state_id` inside writer/reader/
+- The instance's object ID is `self.ref().state_id` inside writer/reader/
   transaction methods, and `context.state_id` inside workflows.
   `self.state_id` does not exist and raises `AttributeError`.
 - **Every `Field(tag=N)` needs an explicit zero-value default**
@@ -228,24 +228,24 @@ messages nested as attributes, the `Servicer` base class, and the
   description, and describe the value, not the type: "What the
   account holds, in dollars, never below zero", not "The balance
   (float)".
-- Cross-actor and external-service calls belong in `TransactionContext`
+- Cross-instance and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
 - **Changing an API after the application has persisted state or has
   been deployed?** Read `references/api-schema-evolution.md` to
   understand the rules you must follow for API schema evolution.
-- Pass arguments to actor methods as **kwargs**, not as Request wrappers:
+- Pass arguments to methods as **kwargs**, not as Request wrappers:
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
 - **`Queue`, `Topic`, `OrderedMap`, `Presence`, `Item` are
-  stdlib actor names — use them, don't redefine them.** If a
+  standard library object names — use them, don't redefine them.** If a
   design or task names any of these (e.g. "publish to a
   `Topic`", "track members in an `OrderedMap`", "subscribe a
   `Queue`", "presence shows who's online"), the answer is to
-  _import_ the stdlib actor — not to declare a pydantic `Model`
+  _import_ the standard library object — not to declare a pydantic `Model`
   with the same name. Defining your own `Topic` / `Queue` /
   etc. forfeits durability, ordering, blocking semantics, and
-  concurrency guarantees the stdlib already provides. See the
-  trigger table under "How to Use → Using stdlib state types"
+  concurrency guarantees the standard library already provides. See the
+  trigger table under "How to Use → Using Standard Library Objects"
   below.
 
 ## How to Use
@@ -307,7 +307,7 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 - `references/api-errors.md` — typed error declaration
 - `references/state-collections.md` — **always read when modeling
   any collection**: decide whether each contained item should be
-  its own state `Type`, and pick between in-state `list[Sub]`,
+  its own object type, and pick between in-state `list[Sub]`,
   in-state `list[str]` of foreign IDs, or an `OrderedMap` of
   foreign IDs. The most common modeling mistake — packing an
   entity collection like `list[Person]` into one parent's state —
@@ -337,11 +337,11 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
   (the trap that skips creation semantics). The factory-declaration
   side is `servicer-constructor.md`; the call-site side is here
 
-### Using stdlib state types
+### Using Standard Library Objects
 
 If your design calls for any of the concepts in the left column,
-the stdlib already provides the canonical actor. Read the
-reference **before** writing your own actor type — defining your
+the standard library already provides the canonical object type. Read the
+reference **before** writing your own object type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
@@ -356,10 +356,10 @@ and forfeits durability, ordering, and concurrency guarantees:
 | A field holds a password/API key/secret/PII       | `Ciphertext`        | `stdlib-ciphertext.md`   |
 | Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext`        | `stdlib-ciphertext.md`   |
 
-Each stdlib reference also lists its library registration —
-forgetting `<thing>_library()` and the stdlib actor's
+Each standard library reference also lists its library registration —
+forgetting `<thing>_library()` and the standard library object's
 `<thing>.servicers()` in your `Application(...)` fails at boot
-with "unknown actor type."
+with "unknown object type."
 
 ### Encryption & key derivation
 
@@ -481,7 +481,7 @@ is the frontend skill's
 
 **Design:**
 [`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
-— the `User` front door, tool exposure, `UI()`, `oauth=` and
+— the `User` object type, tool exposure, `UI()`, `oauth=` and
 example prompts the design names.
 
 **Project files:**
@@ -495,7 +495,7 @@ example prompts the design names.
 **API definition:**
 
 - [`references/api-method-types.md`](references/api-method-types.md)
-  — the pydantic API file for an MCP App: `User`-type front door,
+  — the pydantic API file for an MCP App: the `User` object type,
   `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
   props), `factory=True` on `create`, the `Workflow(...)`
   declaration shape. Full Counter API example.
@@ -505,7 +505,7 @@ example prompts the design names.
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
   `create` (the gotcha "Nested `Model` fields can't take
   `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
-  The state-inside-state regression and how to compose state actors
+  The state-inside-state regression and how to compose instances
   via string ID + `ref(id)`.
 - [`references/patterns-mcp-app-gotchas.md`](references/patterns-mcp-app-gotchas.md)
   — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,
@@ -574,7 +574,7 @@ generate --react=frontend/api
 each one. Do **not** add `mcp=Tool()` or `UI()`; those are MCP App
 only.
 
-**Authorizers:** the dev-vs-prod sign-in sequence is
+**Authorizers:** the development-vs-production sign-in sequence is
 [`references/auth-web-apps.md`](references/auth-web-apps.md). Calling
 an external service as the user:
 
@@ -614,7 +614,7 @@ above lists the right ones grouped by task type. The full catalog:
 **MCP App**:
 
 - `references/mcp-app-concepts.md` — what makes an app an MCP App: the
-  `User` front door, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
+  `User` object type, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
 
 **API** (`api-`):
 
@@ -624,7 +624,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-schema-evolution.md` — schema evolution rules for
   deployed applications / persisted state
 - `references/api-method-types.md` — an MCP App's API file: the
-  `User` front door, `mcp=Tool()` / `mcp=None`, `UI()`
+  `User` object type, `mcp=Tool()` / `mcp=None`, `UI()`
 - `references/api-state-shapes.md` — `list[Item]` and nested `Model`
   sub-objects in state
 
@@ -640,7 +640,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
 - `references/servicer-patterns.md` — an MCP App's servicers: the
-  `User` front door creating application types, workflows on
+  `User` creating application types, workflows on
   `MyType.ref()`
 
 **Agent** (`agent-`):
@@ -648,7 +648,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/agent-pydantic-ai.md`
 - `references/agent-tools.md`
 
-**Stdlib** (`stdlib-`):
+**Standard library** (`stdlib-`):
 
 - `references/stdlib-ordered-map.md`
 - `references/stdlib-queue.md`

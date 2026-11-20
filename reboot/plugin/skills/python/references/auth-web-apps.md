@@ -138,6 +138,6 @@ same recipe.
 A web app's design says who signs in: anonymous visitors only,
 signed-in users, or per-user state. If the app has per-user state,
 declare a `User` type for the owned data and route creation through
-it the same way an MCP App does — the `User`-front-door pattern is
+it the same way an MCP App does — the `User` pattern is
 independent of MCP. If the app is anonymous or all users share state,
 skip `User`.

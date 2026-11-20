@@ -31,7 +31,7 @@ repository is the canonical example.
 **Incorrect (free-floating decls that aren't wired up via `API(...)`):**
 
 ```python
-# DON'T — Methods is the binding from name to method type; declarations
+# DON'T — Methods is the binding from name to kind of method; declarations
 # outside of an API(...) block never reach the generator.
 from reboot.api import API, Field, Methods, Model, Writer
 
@@ -175,12 +175,12 @@ the same change.
 
 ## Method Factories
 
-| Factory            | Context type         | Use for                                                 |
-| ------------------ | -------------------- | ------------------------------------------------------- |
-| `Reader(...)`      | `ReaderContext`      | Read-only access to `self.state`                        |
-| `Writer(...)`      | `WriterContext`      | Mutate `self.state` for one actor                       |
-| `Transaction(...)` | `TransactionContext` | Atomic mutations across multiple actors / external work |
-| `Workflow(...)`    | `WorkflowContext`    | Durable, long-running, restartable methods              |
+| Factory            | Context type         | Use for                                                    |
+| ------------------ | -------------------- | ---------------------------------------------------------- |
+| `Reader(...)`      | `ReaderContext`      | Read-only access to `self.state`                           |
+| `Writer(...)`      | `WriterContext`      | Mutate `self.state` for one instance                       |
+| `Transaction(...)` | `TransactionContext` | Atomic mutations across multiple instances / external work |
+| `Workflow(...)`    | `WorkflowContext`    | Durable, long-running, restartable methods                 |
 
 Attach typed errors via `errors=[ErrorModel, ...]`. Mark a method as a
 constructor with `factory=True` (only valid on `Writer` and
@@ -219,15 +219,15 @@ hello=Workflow(... factory=True ...),    # codegen error
 get=Reader(... factory=True ...),        # codegen error
 ```
 
-To kick off a workflow on actor creation, make the factory a
+To kick off a workflow on instance creation, make the factory a
 `Writer(factory=True)` or `Transaction(factory=True)` and have
 its body call `self.ref().schedule().<workflow_name>(context, ...)`.
 See `servicer-workflow.md` for the full pattern.
 
-Calling `<Type>.<MethodPascalCase>(ctx, <state-id>, **kwargs)`
-both creates the actor AND runs the factory method. Don't try
+Calling `<Type>.<MethodPascalCase>(ctx, <object-id>, **kwargs)`
+both creates the instance AND runs the factory method. Don't try
 to call factory methods through `<Type>.ref(<id>).<method>(...)`
-— the actor doesn't exist yet.
+— the instance doesn't exist yet.
 
 ### Every Method Factory Takes a Required `mcp=` Argument
 
@@ -415,10 +415,10 @@ with `<Name>.Servicer`, `<Name>.ref(id)`, and request/response messages
 nested as attributes (`Account.BalanceResponse`, `Account.DepositRequest`,
 etc.).
 
-### `Type(description=...)` Says What the State Type Is For
+### `Type(description=...)` Says What the Object Type Is For
 
-`Type` takes an optional `description=`, shown by the dev dashboard
-beside the state type's name and file:
+`Type` takes an optional `description=`, shown by the Reboot Dashboard
+beside the object type's name and file:
 
 ```python
 api = API(
@@ -431,7 +431,7 @@ api = API(
 )
 ```
 
-A state type is the sum of its state and its methods, and its name
+An object type is the sum of its state and its methods, and its name
 alone rarely says what it is _for_. Write about the part a reader
 cannot derive from the fields and methods listed beside it: what it
 is the consistency boundary for, what one instance corresponds to,

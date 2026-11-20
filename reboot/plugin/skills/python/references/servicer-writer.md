@@ -1,15 +1,15 @@
 ---
 title: Implement Writer Methods
 impact: HIGH
-impactDescription: Writer methods are the only path to mutate single-actor state
+impactDescription: Writer methods are the only path to mutate single-instance state
 tags: servicer, writer, WriterContext, state, mutation
 ---
 
 ## Implement Writer Methods
 
-> **Critical:** writer scope is **mutating one actor**. Cross-actor
+> **Critical:** writer scope is **mutating one instance**. Cross-instance
 > mutations belong in a `transaction` method (a writer may still
-> call readers on other actors — cross-actor reads are fine). **No
+> call readers on other instances — cross-instance reads are fine). **No
 > external side effects in a writer — none, not even idempotent
 > ones.** Two reasons stack: (a) a writer can be invoked inside a
 > `Transaction`, and a transaction is all-or-nothing — if it aborts,
@@ -20,12 +20,12 @@ tags: servicer, writer, WriterContext, state, mutation
 > LLM/model — belong in a `Workflow`; the writer only
 > `schedule()`s the workflow, and the workflow picks the right
 > primitive per `servicer-workflow.md`. A writer calling another
-> actor's writer is a category error.
+> instance's writer is a category error.
 
 A method declared with `Writer(...)` in the API file receives a
 `WriterContext` and is the only legal place to mutate `self.state`
-for **one** actor. Writers on the same actor are serialized; writers
-across actors run independently.
+for **one** instance. Writers on the same instance are serialized; writers
+across instances run independently.
 
 The runtime may re-execute a writer's body — both on transient
 retries and, in development, as part of **effect validation**, which
@@ -36,19 +36,19 @@ runs are not compared, so a value that differs between runs (a
 is not fine is an effect outside Reboot state, which every run
 repeats. So a writer body must be safe to run more than once: confine it to
 `self.state` mutations and in-system calls (including readers on
-other actors), and push any external work to a `Workflow` — the
+other instances), and push any external work to a `Workflow` — the
 workflow picks the right primitive per
 `servicer-workflow.md`.
 
-**Incorrect (calling another actor's writer from inside a writer):**
+**Incorrect (calling another instance's writer from inside a writer):**
 
 ```python
 async def deposit(
     self, context: WriterContext, request: Account.DepositRequest,
 ) -> None:
     self.state.balance += request.amount
-    # WRONG — cross-actor mutation requires a transaction (cross-actor
-    # reads are fine; this call mutates another actor).
+    # WRONG — cross-instance mutation requires a transaction (cross-instance
+    # reads are fine; this call mutates another instance).
     await Account.ref("audit-log").record(context, ...)
 ```
 
@@ -72,7 +72,7 @@ class AccountServicer(Account.Servicer):
 ## Mutate `self.state` Directly
 
 `self.state` is the typed state `Model`; assignments and collection
-mutations apply to the actor's persistent state when the writer
+mutations apply to the instance's persistent state when the writer
 commits:
 
 ```python
@@ -82,12 +82,12 @@ async def send(
     self.state.messages.append(request.message)
 ```
 
-## Writer Scope Is Mutating One Actor
+## Writer Scope Is Mutating One Instance
 
 A writer can read its own state freely, mutate its own state, and
 schedule work on itself. It **can** call **readers** on other
-actors — cross-actor reads are fine. It **cannot** mutate another
-actor's state — for cross-actor mutation use a `Transaction` method
+instances — cross-instance reads are fine. It **cannot** mutate another
+instance's state — for cross-instance mutation use a `Transaction` method
 (see `servicer-transaction.md`).
 
 A writer also **cannot** make external calls — network, filesystem,
@@ -99,7 +99,7 @@ also re-execute under retries and effect validation. External calls
 belong in a `Workflow` (see `servicer-workflow.md` for the
 right primitive); the writer only `schedule()`s the workflow.
 
-A writer **can** call `ref.schedule(...).method(context)` on its own actor
+A writer **can** call `ref.schedule(...).method(context)` on its own instance
 to defer work (see `scheduling-basic.md`).
 
 ## Errors Roll Back the Mutation
@@ -141,11 +141,11 @@ async def increment(
   `request=None` / `response=None` variants. Read it instead of
   the generated `*_rbt.py`.
 - `rpc-refs.md` — `self.ref().state_id` (not `self.state_id`) for this
-  actor's ID; `self.ref().schedule(...)` for self-scheduling.
-- `rpc-calls.md` — kwargs convention for calling other actors.
+  instance's object ID; `self.ref().schedule(...)` for self-scheduling.
+- `rpc-calls.md` — kwargs convention for calling other instances.
 - `scheduling-basic.md` / `scheduling-recurring.md` — the canonical
   pattern for deferred work driven from a writer.
-- `servicer-transaction.md` — when a writer can't (cross-actor
+- `servicer-transaction.md` — when a writer can't (cross-instance
   mutation).
 - `servicer-workflow.md` — the home for **all** external side
   effects (even idempotent ones); writers/transactions only

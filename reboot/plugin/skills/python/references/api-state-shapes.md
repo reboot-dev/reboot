@@ -1,7 +1,7 @@
 ---
 title: API State Shapes — List and Nested Sub-Objects
 impact: HIGH
-impactDescription: Two recurring MCP App state patterns. `list[Item]` of non-state Models is for **bounded sub-records** that have no identity of their own; entity collections (people, posts, messages, anything addressable on its own) must be promoted to their own state `Type`. Single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (the gotcha "Nested `Model` fields can't take `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
+impactDescription: Two recurring MCP App state patterns. `list[Item]` of non-state Models is for **bounded sub-records** that have no identity of their own; entity collections (people, posts, messages, anything addressable on its own) must be promoted to their own object type. Single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (the gotcha "Nested `Model` fields can't take `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
 tags: state, list, nested, sub-object, optional, model, default, default_factory, gotcha-13, decomposition
 ---
 
@@ -11,8 +11,8 @@ The pydantic foundation rules (zero-value defaults; non-Optional
 `Model`-typed fields reject defaults) are in
 `python/references/api-pydantic.md`. The full three-way decision
 between in-state `list[Sub]`, in-state `list[str]` of foreign IDs,
-and a stdlib `OrderedMap` of foreign IDs — including when to
-**decompose** an entity collection into its own state `Type` —
+and a standard library `OrderedMap` of foreign IDs — including when to
+**decompose** an entity collection into its own object type —
 lives in `python/references/state-collections.md`. **Read it
 before settling on a list-based state shape.** This file covers
 the MCP App-specific corollaries.
@@ -56,7 +56,7 @@ identity of their own:
   `from <pkg>.v1.<name> import LineItem`.
 
 If the items are themselves entities (Step 1 of `state-collections.md`
-came out "yes"), promote them to their own state `Type` and pick
+came out "yes"), promote them to their own object type and pick
 between in-state `list[str]` of IDs (bounded) or an `OrderedMap`
 of IDs (unbounded or paginated) — full code patterns in
 `python/references/state-collections.md`.
@@ -67,8 +67,8 @@ of IDs (unbounded or paginated) — full code patterns in
 > `OrderedMap.ref(self.state.items_index_id)`. **Do not** synthesize
 > it inline from the parent's `state_id`
 > (`OrderedMap.ref(f"{self.ref().state_id}-items")`). Same rule for
-> any cross-`Type` reference, stdlib or user-defined — full
-> rationale and code in "Relationships Between State Types" in
+> any cross-`Type` reference, standard library or user-defined — full
+> rationale and code in "Relationships Between Object Types" in
 > `python/references/state-collections.md`.
 
 ## Nested Model State Patterns
@@ -142,19 +142,19 @@ parent state is first written.
 
 ## Don't Nest State `Model`s Inside Other State `Model`s
 
-State actors (whatever has `Type(state=<X>)` registered in your
+Durable domain objects (whatever has `Type(state=<X>)` registered in your
 `API(...)`) must NOT appear as nested fields on other state
-actors. That's the same rule covered in
+instances. That's the same rule covered in
 `python/references/state-nested-models.md` — only **non-state**
-`Model`s may be nested fields. To compose one state actor into
+`Model`s may be nested fields. To compose one instance into
 another, store its **string ID** in the parent and reach the
-nested actor via `<Type>.ref(<id>)`. A Model referenced as
+nested instance via `<Type>.ref(<id>)`. A Model referenced as
 `state=X` in `Type(...)` should never also appear as
 `<field>: X = Field(...)` on another state Model.
 
-The corollary is that **collections of state actors** also live in
+The corollary is that **collections of instances** also live in
 the parent as collections-of-IDs, not collections-of-objects: in
 the parent's state you store `list[str]`, `dict[str, str]`, or the
-ID of a stdlib `OrderedMap` — never `list[<StateModel>]`. See
+ID of a standard library `OrderedMap` — never `list[<StateModel>]`. See
 `python/references/state-collections.md` for the three shapes and
 when to pick each.

@@ -1,7 +1,7 @@
 ---
 title: Use `Ciphertext` for Envelope Encryption and Crypto-Shredding
 impact: HIGH
-impactDescription: Hand-rolled encryption-at-rest / right-to-erasure is easy to get wrong; the stdlib library is auditable and handles key rotation for you.
+impactDescription: Hand-rolled encryption-at-rest / right-to-erasure is easy to get wrong; the standard library's version is auditable and handles key rotation for you.
 tags: stdlib, ciphertext, encryption, envelope, crypto-shred, gdpr, right-to-erasure, shred, scope, key-manager, associated-data
 ---
 
@@ -9,7 +9,7 @@ tags: stdlib, ciphertext, encryption, envelope, crypto-shred, gdpr, right-to-era
 
 > **Critical:** register **both** `ciphertext_library()` **and** > `ordered_map_library()` in `Application(libraries=[...])` —
 > `Ciphertext` depends on `OrderedMap`; forgetting either fails at boot
-> with "unknown actor type." `associated_data` must be supplied
+> with "unknown object type." `associated_data` must be supplied
 > **byte-for-byte identical** at decrypt as at encrypt — build it with
 > `make_associated_data`, never an ad-hoc string. These methods are
 > **app-internal by default** (no authorizer); call them from within

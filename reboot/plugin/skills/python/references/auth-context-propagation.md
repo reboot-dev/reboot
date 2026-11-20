@@ -90,7 +90,7 @@ Rules are evaluated against the callee's `context.auth`, so:
 - `is_app_internal` passes for every nested call; carrying an identity
   does not make a call external.
 - `allow_if(any=[state_id_is_user_id, is_app_internal])` stays the
-  canonical rule for user-owned actors with background work
+  canonical rule for user-owned instances with background work
   (`auth-built-in-predicates.md`).
 
 ## What Is Not Carried
@@ -110,7 +110,7 @@ Rules are evaluated against the callee's `context.auth`, so:
 
 ## Keep `context.auth` Out of Reader Bodies
 
-A reader's response must be a function of the actor's state and the
+A reader's response must be a function of the instance's state and the
 request only. Do not compute anything from `context.auth` inside a
 reader body:
 

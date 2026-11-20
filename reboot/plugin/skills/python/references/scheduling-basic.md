@@ -77,7 +77,7 @@ await self.ref().schedule(
 ).interest(context)
 ```
 
-## Schedule Other Actors, Not Just `self`
+## Schedule Other Instances, Not Just `self`
 
 `ref.schedule(...)` works on any ref, not only `self.ref()`:
 

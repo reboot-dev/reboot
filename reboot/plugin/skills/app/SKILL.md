@@ -1,6 +1,6 @@
 ---
 name: app
-description: 'Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the front end first: from the prompt''s own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Where will people use your app?" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the front end from the app''s domain (CRM, todo, dashboard, blog, …).'
+description: 'Build a Reboot application from a user description — one backend with a web app in the browser and an MCP App used from an AI chat client (Claude, ChatGPT, VSCode, Goose) by default, or just one of them. Settles the frontend first: from the prompt''s own words when it says so outright ("just a website", "only for Claude", or both named), otherwise with one question, "Where will people use your app?" (on the web, in AI chat, or both); the `web-app` and `mcp-app` skills start here with the answer given. Then runs the whole build — design, feature files, project files, API, servicers, frontend, scenarios, design review, and running the app — reading the `python` skill for the backend and the `frontend` skill for the React side at the step that needs each. Never infers the frontend from the app''s domain (CRM, todo, dashboard, blog, …).'
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -12,12 +12,12 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 > says how and when to react.
 
 Build a complete Reboot application from a user description. This
-skill is the process: it settles which front end the app has, then
+skill is the process: it settles which frontend the app has, then
 builds it step by step. What it builds with lives in two other
 skills, read at the step that needs them:
 
 - the [`python` skill](../python/SKILL.md) for the backend: the API,
-  servicers, state, sign-in, and the MCP App's front door and tools;
+  servicers, state, sign-in, and the MCP App's `User` and tools;
 - the [`frontend` skill](../frontend/SKILL.md) for the React side: the
   generated client, the web app, and the MCP App UIs.
 
@@ -39,15 +39,15 @@ for all of them:
   propose without asking ("build it as you propose") takes the first
   option of every question it leaves unanswered.
 
-## Step 0 — Settle the Front End
+## Step 0 — Settle the Frontend
 
-**Before anything else, settle which front end the app has.** If the
+**Before anything else, settle which frontend the app has.** If the
 build started from `/reboot:web-app` or `/reboot:mcp-app`, it is
 settled: go on to "When to Use". Otherwise read
-[`references/choosing-the-front-end.md`](references/choosing-the-front-end.md)
-and do what it says: both front ends are the default, and it says
+[`references/choosing-the-frontend.md`](references/choosing-the-frontend.md)
+and do what it says: both frontends are the default, and it says
 when to ask "Where will people use your app?". Write no file until
-the front end is settled. This holds in auto mode too.
+the frontend is settled. This holds in auto mode too.
 
 ## When to Use
 
@@ -65,28 +65,28 @@ the front end is settled. This holds in auto mode too.
   Cloud that runs the backend and serves the built MCP Apps and web
   app from it.
 
-## What Each Front End Adds
+## What Each Frontend Adds
 
 Every app goes through the same steps below. An MCP App and a web
 app each add their own work at some of those steps, and that guidance
 lives in the `python` skill or the `frontend` skill. The table lists,
-for each step, which section to read for each front end. An app with
-both front ends reads both columns.
+for each step, which section to read for each frontend. An app with
+both frontends reads both columns.
 
 | Step                                                                      | MCP App                                                                                                                          | Web app                                                                                                                                                                                                 |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Design                                                                    | [Designing an MCP App](../python/references/mcp-app-concepts.md#designing-an-mcp-app) in `python/references/mcp-app-concepts.md` | [Designing a web app](../frontend/SKILL.md#designing-a-web-app) in the `frontend` skill, and [Who Signs In](../python/references/auth-web-apps.md#who-signs-in) in `python/references/auth-web-apps.md` |
 | Project files, API, servicers, `main.py`, authorizers, scenarios, updates | [Building an MCP App](../python/SKILL.md#building-an-mcp-app) in the `python` skill                                              | [Building a web app](../python/SKILL.md#building-a-web-app) in the `python` skill                                                                                                                       |
 | Frontend scaffold and build, browser scenarios, updates                   | [Building MCP App UIs](../frontend/SKILL.md#building-mcp-app-uis) in the `frontend` skill                                        | [Building a web app](../frontend/SKILL.md#building-a-web-app) in the `frontend` skill                                                                                                                   |
-| Both front ends in one `frontend/`                                        | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill                                                      |                                                                                                                                                                                                         |
+| Both frontends in one `frontend/`                                         | [Building both](../frontend/SKILL.md#building-both) in the `frontend` skill                                                      |                                                                                                                                                                                                         |
 
 ## Which References to Read, and When
 
 **Read each reference at the step that needs it** — not all of them
 up front — and read each one **once**. The
 groups below are in build order, and each reference appears in
-exactly one of them — the step that needs it. Each front end adds
-references of its own at some steps; [What Each Front End Adds](#what-each-front-end-adds)
+exactly one of them — the step that needs it. Each frontend adds
+references of its own at some steps; [What Each Frontend Adds](#what-each-frontend-adds)
 above says where they are listed.
 
 **Before writing the project files** (`.python-version`, `pyproject.toml`,
@@ -110,7 +110,7 @@ above says where they are listed.
   declares any.
 - `python/references/state-collections.md` — **always read when the
   app has any "list of X" concept.** Decides whether each X should
-  be its own state `Type` (most of the time, yes) and picks between
+  be its own object type (most of the time, yes) and picks between
   in-state `list[Sub]`, in-state `list[str]` of foreign IDs, or an
   `OrderedMap` of foreign IDs. The trap is defaulting to
   `list[Person]`/`list[Post]`/`list[Task]` on `User` for entity
@@ -121,11 +121,11 @@ above says where they are listed.
   it bounded.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
-- `python/references/state-actor-decomposition.md` — the orthogonal
-  decomposition: when one state `Type` has accreted multiple
+- `python/references/state-object-decomposition.md` — the orthogonal
+  decomposition: when one object type has accreted multiple
   unrelated concerns (auth/session, persona, background-engine,
   transient cache), split each into its own `Type`. Critical for the
-  `User` front door, which otherwise turns into a God actor and
+  `User` object type, which otherwise turns into a God object and
   serializes unrelated writers.
 
 **Before writing the servicer:**
@@ -155,7 +155,7 @@ for a web app):
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
-  machinery. Both front ends sign users in with `oauth=`, even in dev
+  machinery. Both frontends sign users in with `oauth=`, even in dev
   (the `Development()` provider), so `context.auth.user_id` is set
   from the first run and `allow_if` rules work from the start; there
   is no reason for a placeholder `allow()`.
@@ -224,7 +224,7 @@ recursive grep.
 ## Workflow: Settle the Design, Then Build
 
 **Always settle the design before writing code.** The state model
-is the foundation — getting entities, field types, or method types
+is the foundation — getting entities, field types, or kinds of method
 wrong means regenerating everything across 12+ files.
 
 ### Design Phase
@@ -234,7 +234,7 @@ wrong means regenerating everything across 12+ files.
    the [`feature` skill](../feature/SKILL.md)'s Step 1 has them: each
    one's name, what it is for, its rules, and a few example
    situations. Put them in the order they build on, the one the
-   others need first. Write them from the description alone: no state
+   others need first. Write them from the description alone: no object
    types, fields, methods or scenarios yet, since the design is made
    for the scope chosen and only for it. End the message with this
    question, and nothing after it:
@@ -311,10 +311,10 @@ wrong means regenerating everything across 12+ files.
 2. State the design you are about to build:
 
    - Application types: state shape (fields, types, tags).
-   - Method map: which operations, which method type
+   - Method map: which operations, which kind of method
      (Reader/Writer/Transaction/Workflow).
-   - The design items of each front end you build: see
-     [What Each Front End Adds](#what-each-front-end-adds) above.
+   - The design items of each frontend you build: see
+     [What Each Frontend Adds](#what-each-frontend-adds) above.
 
    Then ask "Build this design?", with these three options and no
    others:
@@ -349,7 +349,7 @@ They mean nothing outside this skill:
 
 - `Shape A` / `Shape B` / `Shape C` — name the actual data
   structure: `list[Sub]` of inline sub-records, `list[str]` of
-  foreign state IDs, `OrderedMap` of foreign state IDs.
+  foreign object IDs, `OrderedMap` of foreign object IDs.
 - "non-state `Model`" — say "a flat sub-record that lives and
   dies with the parent" or "no identity of its own", in domain
   terms.
@@ -361,7 +361,7 @@ They mean nothing outside this skill:
   decision, but never as the explanation.
 
 **For every design choice, give the what + the why.** The _what_
-is the concrete data structure, method type, or route. The _why_
+is the concrete data structure, kind of method, or route. The _why_
 is a one-clause reason rooted in the user's domain ("grows
 without bound, so we need pagination"; "no methods or auth of
 its own, so it lives inline"; "logged-in users only, because the
@@ -371,7 +371,7 @@ document is per-account").
 
 Collection shape reasoning — BAD, uses skill-internal terms:
 
-> `people_index_id: str` — ID of an OrderedMap actor that
+> `people_index_id: str` — ID of an OrderedMap instance that
 > holds this user's Persons (Shape C from state-collections.md
 > — unbounded; PRM is explicitly called out as a Shape C case).
 
@@ -390,7 +390,7 @@ Nested model reasoning — GOOD:
 
 > Relationship and Event live inline on Person as
 > `list[Relationship]` / `list[Event]`. They don't get their
-> own state actors because they have no lifecycle, methods, or
+> own instances because they have no lifecycle, methods, or
 > auth independent of the Person they belong to.
 
 **Escape hatch.** When the precise type name _is_ what the reader
@@ -409,10 +409,10 @@ Before writing code, analyze the user's request:
    accounts, …). **Each entity becomes its own `Type` with its own
    state**, even when "each User only has a few of them". Anything
    you can imagine the user `add`-ing / `remove`-ing / `find`-ing by
-   name has its own identity and belongs in its own actor. The
+   name has its own identity and belongs in its own object type. The
    default wrong move is packing everything into one parent's state
    as `list[Person]` (or `list[Post]`, `list[Task]`, …) — that
-   flattens N actors into one, prevents per-entity auth/methods,
+   flattens N instances into one, prevents per-entity auth/methods,
    and forces a full rewrite when the collection grows. A
    collection your app **syncs or scrapes from an external
    system** (a GitHub repo's issues, a mailbox, an RSS feed) is an
@@ -421,8 +421,8 @@ Before writing code, analyze the user's request:
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **The `User` type.** Whether the app has one, and what it does,
-   is among the front end's design items
-   ([What Each Front End Adds](#what-each-front-end-adds)).
+   is among the frontend's design items
+   ([What Each Frontend Adds](#what-each-frontend-adds)).
 3. **Container shape for each collection.** Once an entity is its
    own `Type`, the parent (typically `User`) stores **references**,
    not objects. Three shapes (full table + worked PRM example in
@@ -431,10 +431,10 @@ Before writing code, analyze the user's request:
    - **Shape A**, `list[Sub]` of non-state `Model`s — for bounded sub-records
      that genuinely belong with the parent (line items on an Order,
      tags on a Post). NOT for entity collections.
-   - **Shape B**, `list[str]` of foreign state IDs — when the collection of
+   - **Shape B**, `list[str]` of foreign object IDs — when the collection of
      entity IDs is bounded (low hundreds, occasionally low
      thousands) and you always read it whole.
-   - **Shape C**, `OrderedMap` of foreign state IDs — when the collection
+   - **Shape C**, `OrderedMap` of foreign object IDs — when the collection
      grows without bound, needs pagination, range queries, or
      ordered iteration. The default choice for any "list of
      things the user keeps adding to" (people in a PRM, posts
@@ -454,7 +454,7 @@ Before writing code, analyze the user's request:
    `Transaction` on `User` that calls `<Type>.create(context)` and
    registers the new ID in the appropriate container (Shape B or C
    above). For anonymous or shared-state apps without `User`, put
-   creation and registration on the shared parent or front-door type
+   creation and registration on the shared parent or `User` type
    chosen in the design instead.
 5. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
@@ -466,7 +466,7 @@ Before writing code, analyze the user's request:
    Full rules + examples in
    [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md)
    and `python/references/api-pydantic.md`.
-6. **Operations**: Map to the right method type:
+6. **Operations**: Map to the right kind of method:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
    - `Transaction` — multi-state atomic operations (e.g. transfer
@@ -478,38 +478,38 @@ Before writing code, analyze the user's request:
    locked down, …? See `python/references/auth-*.md`.
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation change several
-   state instances? If they must change together or not at all, and
+   instances? If they must change together or not at all, and
    the operation is quick, use a `Transaction`. A transaction locks
    every state it touches until it finishes, so a slow one (an
    external call, a long loop) blocks every other write to them:
    coordinate it in a `Workflow` instead, which updates each state in
    turn and is consistent in the end, not at every moment.
-10. **Each front end's own items**, from the design section of its
-    skill ([What Each Front End Adds](#what-each-front-end-adds)).
+10. **Each frontend's own items**, from the design section of its
+    skill ([What Each Frontend Adds](#what-each-frontend-adds)).
 
 ## When Correct Decomposition Fights the UI
 
 The React references show **one `use<Type>()` subscription per
-UI** — one hook, one actor, one live feed. That is the easy,
+UI** — one hook, one instance, one live feed. That is the easy,
 documented path, and it quietly pressures you to flatten an entity
-collection into `list[Item]` on a single actor just so the dashboard
+collection into `list[Item]` on a single instance just so the dashboard
 can read it in one subscription.
 
 **Resolve the tension the other way: the data model wins.** When
 a collection is its own entity type (Assessment step 1) or
-unbounded (step 3, Shape C), keep it decomposed — one actor per
+unbounded (step 3, Shape C), keep it decomposed — one instance per
 item, an `OrderedMap` index on the parent — even though that is
-more than one actor. Do **not** collapse the model to fit the
+more than one instance. Do **not** collapse the model to fit the
 single-subscription pattern. A demo-correct `list[Item]` that
 must be torn apart the moment a real data source is pointed at it
 is the exact failure this skill exists to prevent.
 
 The UI still gets its single subscription. Add a **composing
-reader** on the front-door type: a `Reader` that ranges the
-parent's `OrderedMap` for one page of IDs, reads each item actor,
+reader** on the `User` type: a `Reader` that ranges the
+parent's `OrderedMap` for one page of IDs, reads each item instance,
 and returns a page of fully-hydrated objects plus a `next_cursor`.
 The React UI subscribes to that one reader and pages by cursor —
-the fan-out across item actors happens server-side, inside the
+the fan-out across item instances happens server-side, inside the
 reader. The composing-reader pattern (backend reader + React
 subscription) is in
 [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md);
@@ -518,7 +518,7 @@ Shape C is in `python/references/state-collections.md`.
 ## Project Structure
 
 The layout is the one every Reboot app has, `frontend/` included
-(`python/references/lifecycle-project-setup.md`). What each front end
+(`python/references/lifecycle-project-setup.md`). What each frontend
 puts under `frontend/` is in its section of the
 [`frontend` skill](../frontend/SKILL.md).
 
@@ -553,8 +553,8 @@ puts under `frontend/` is in its section of the
 ## Step-by-Step Build Flow
 
 **All commands run from the application directory.** At each step,
-also do what your front end adds to it: the table in
-[What Each Front End Adds](#what-each-front-end-adds) names the step each addition belongs to.
+also do what your frontend adds to it: the table in
+[What Each Frontend Adds](#what-each-frontend-adds) names the step each addition belongs to.
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — same shape as in
@@ -565,7 +565,7 @@ also do what your front end adds to it: the table in
    [`agents-md` skill](../agents-md/SKILL.md), naming the API and
    servicer files the design settled on.
 2. `uv sync`.
-3. Start the developer dashboard — load the
+3. Start the Reboot Dashboard — load the
    [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
    the user can watch the API take shape while you write it. If it
    fails to come up, say so in one sentence and keep building; do
@@ -585,10 +585,10 @@ also do what your front end adds to it: the table in
    [`python/references/lifecycle-sample-data.md`](../python/references/lifecycle-sample-data.md)
    says.
 8. Scaffold the frontend at `frontend/`, as the
-   [`frontend` skill](../frontend/SKILL.md) says for your front end.
+   [`frontend` skill](../frontend/SKILL.md) says for your frontend.
 9. `cd frontend && npm install`.
 10. Build the frontend from the references the
-    [`frontend` skill](../frontend/SKILL.md) lists for your front end.
+    [`frontend` skill](../frontend/SKILL.md) lists for your frontend.
     Write the calls from those references
     and do **not** open `frontend/api/**/*_rbt_react.ts` to check
     them: it is tens of thousands of lines.
@@ -622,7 +622,7 @@ also do what your front end adds to it: the table in
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, starts the backend and frontend,
     waits for them to come up, and hands the user the URLs.
-    Required final hand-over: if you started the developer
+    Required final hand-over: if you started the
     dashboard, include the `cloudflared` command and the Claude and
     ChatGPT connector instructions in your final response. This
     applies even when the user asked only for a standalone web app and
@@ -631,7 +631,7 @@ also do what your front end adds to it: the table in
     not satisfy this requirement.
     The steps are the [`dashboard` skill](../dashboard/SKILL.md)'s
     [Required final hand-over: the connector](../dashboard/SKILL.md#step-6--required-final-hand-over-the-connector).
-    What to hand over for each front end is the run skill's
+    What to hand over for each frontend is the run skill's
     [Hand off](../run/SKILL.md#step-6--hand-off).
     Offer the features the build plan left for later, so the user
     can pick the next build.
@@ -644,8 +644,8 @@ also do what your front end adds to it: the table in
 
 ## Update Flow
 
-When modifying an existing app (and at each step, what your front end
-adds to it, as the table in [What Each Front End Adds](#what-each-front-end-adds) says):
+When modifying an existing app (and at each step, what your frontend
+adds to it, as the table in [What Each Frontend Adds](#what-each-frontend-adds) says):
 
 1. Read `AGENTS.md`, `.rbtrc`, the API definition, servicer, and
    `main.py`.
@@ -671,7 +671,7 @@ adds to it, as the table in [What Each Front End Adds](#what-each-front-end-adds
    restart needed. Editing `.env` likewise triggers a restart, so
    a new or changed secret is re-read by `--env-file` without a
    manual relaunch.
-9. If the change moved a file, added a state type, a page or a UI,
+9. If the change moved a file, added a domain object, a page or a UI,
    changed a command, or taught a rule, update `AGENTS.md` in the
    same change ([`agents-md` skill](../agents-md/SKILL.md)).
 

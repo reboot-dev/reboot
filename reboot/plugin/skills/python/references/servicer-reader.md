@@ -8,7 +8,7 @@ tags: servicer, reader, ReaderContext, state, async
 ## Implement Reader Methods
 
 > **Critical:** `self.state` is **read-only** inside a reader. Mutating
-> it raises at runtime. Multiple readers on the same actor run
+> it raises at runtime. Multiple readers on the same instance run
 > concurrently — they're blocked only by an in-flight writer/transaction.
 
 A method declared with `Reader(...)` in the API file receives a
@@ -54,18 +54,18 @@ and complete.
 
 ## Readers Run Concurrently
 
-Multiple readers on the same actor can run in parallel; they don't block
+Multiple readers on the same instance can run in parallel; they don't block
 each other. They are blocked by an in-flight writer/transaction on that
-actor and resume after it completes.
+instance and resume after it completes.
 
-## Calling Other Actors Is Allowed (But Read-Only)
+## Calling Other Instances Is Allowed (But Read-Only)
 
 A reader may call `await Service.ref(other_id).reader_method(context)` —
 the call propagates the `ReaderContext`. Calling a `Writer` or
 `Transaction` method from a reader is a category error; use a
-`Transaction` method if the work is genuinely cross-actor.
+`Transaction` method if the work is genuinely cross-instance.
 
-A reader of a `Bank` actor calling into per-account readers, run from a
+A reader of a `Bank` instance calling into per-account readers, run from a
 transaction context (which can also call readers):
 
 ```python
@@ -78,7 +78,7 @@ async def balance(account_id: str):
 ## A Reader's Answer Does Not Depend on the Caller
 
 Do not read `context.auth` in a reader body. A reader's response is a
-function of the actor's state and the request, the same for every
+function of the instance's state and the request, the same for every
 caller the authorizer admits; Reboot will cache reader results on
 that basis, and a reader that reads `context.auth` cannot be cached.
 "Who may read this" belongs in the authorizer; "who did this" is
@@ -86,10 +86,10 @@ recorded by a writer. See `auth-context-propagation.md`.
 
 ## See Also
 
-- `rpc-refs.md` — getting an actor ref and the actor's ID. The
+- `rpc-refs.md` — getting an ref and the instance's object ID. The
   recurring trip: `self.state_id` doesn't exist; use
   `self.ref().state_id`.
-- `rpc-calls.md` — kwargs convention for calling other actors.
+- `rpc-calls.md` — kwargs convention for calling other instances.
 - `servicer-authorizer.md` — every Servicer needs `def authorizer(self)`
   returning a constructed rule.
 - `auth-context-propagation.md` — `context.auth` follows a call to

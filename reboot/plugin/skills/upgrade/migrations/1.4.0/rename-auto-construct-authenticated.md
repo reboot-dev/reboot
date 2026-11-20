@@ -2,7 +2,7 @@
 
 The generated static method
 `<StateType>._auto_construct(context, state_id)` on auto-construct
-state types (and on their servicers) is now
+object types (and on their servicers) is now
 `<StateType>._authenticated(context, state_id, claims=None)`. It
 still constructs the state idempotently; the new optional `claims`
 parameter is delivered by the framework and is not something callers

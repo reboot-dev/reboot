@@ -28,7 +28,7 @@ project-level wiring.
 **Incorrect (calling Servicer methods directly without a harness):**
 
 ```python
-# DON'T — there's no actor identity, no context, no persistence.
+# DON'T — there's no instance identity, no context, no persistence.
 servicer = ChatRoomServicer()
 await servicer.send(...)
 ```
@@ -69,7 +69,7 @@ class TestChatRoom(unittest.IsolatedAsyncioTestCase):
 - `Reboot()` constructs the harness.
 - `await rbt.start()` boots the in-process runtime.
 - `await rbt.up(Application(...))` launches the application; pass it
-  the same Servicers and stdlib `libraries=[...]` you'd pass in
+  the same Servicers and standard library `libraries=[...]` you'd pass in
   production.
 - `await rbt.stop()` tears it all down.
 
@@ -81,7 +81,7 @@ configurations (more explicit).
 ## Multi-Servicer Applications
 
 Production apps usually have several servicers. Register all of them
-in one `Application(...)` so cross-actor calls work:
+in one `Application(...)` so cross-instance calls work:
 
 ```python
 await self.rbt.up(
@@ -98,7 +98,7 @@ await self.rbt.up(
 
 Things to know:
 
-- **`libraries=[...]`** — stdlib state types like `OrderedMap` /
+- **`libraries=[...]`** — standard library objects like `OrderedMap` /
   `SortedMap` / `Queue` need their library registered, exactly as
   in `main.py`. See `stdlib-*.md`.
 - **`legacy_grpc_servicers=[...]`** — for mixed pydantic + plain
@@ -218,8 +218,8 @@ be attributed to a user.
 
 ## Auto-Construct Under Auth
 
-If a state type has a real authorizer that gates its constructor —
-typically the case for `User`-shaped front-door types — the framework
+If an object type has a real authorizer that gates its constructor —
+typically the case for `User`-shaped types — the framework
 calls `_authenticated` to create the state for an authenticated user
 whenever a token is minted for them. `create_external_context_as(...)`
 and `make_valid_oauth_access_token(...)` mint a token, so they
@@ -254,7 +254,7 @@ It is possible to subclass a servicer and override `authorizer()` to
 `allow()` for the test suite only. **Don't reach for this** — it
 tests a different application: the one with no authorization. With
 impersonation (above) just as easy to set up, the legitimate uses
-are narrow, e.g. exercising the pure behavior of a state type whose
+are narrow, e.g. exercising the pure behavior of an object type whose
 authorization rules are themselves covered by other tests. If you do
 use it, say why in a comment, and keep at least one test that runs
 the real authorizers.
@@ -265,9 +265,9 @@ a method that calls an external service) is fine — see
 is `authorizer()`: overriding it discards the very code the tests
 exist to protect.
 
-## Use a Unique Actor ID per Test
+## Use a Unique Object ID per Test
 
-Each test should pick its own actor IDs (e.g.
+Each test should pick its own object IDs (e.g.
 `f"test-room-{self.id()}"`, or just embed `self.id()` in the
 external-context `name`). The harness is fresh per test, but using
 `self.id()` keeps trace output identifiable.
@@ -355,9 +355,9 @@ Assert the invariant, not only the exception. A test that checks
 "one of them failed" passes even if the winner corrupted the
 counter on the way through.
 
-Reboot serializes writers on the same actor and rolls transactions
+Reboot serializes writers on the same instance and rolls transactions
 back all-or-nothing, so routing the shared invariant (a counter, a
-quota, a balance) through **one** actor is what makes "exactly one
-wins" true. If the invariant is spread across two actors with no
+quota, a balance) through **one** instance is what makes "exactly one
+wins" true. If the invariant is spread across two instances with no
 transaction covering both, the race is genuinely lossy and no test
 setup will fix it.

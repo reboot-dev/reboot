@@ -24,15 +24,15 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 **Impact:** HIGH
 **Description:** Backend LLM calls and AI agents via the durable `reboot.agents.pydantic_ai.Agent` — a replay-safe wrapper over `pydantic_ai.Agent` that memoizes every model and tool call. Constructing and running the agent inside a `WorkflowContext`, and giving it tools with `@agent.tool` / `@agent.tool_plain`.
 
-## 5. Stdlib (stdlib)
+## 5. Standard Library (stdlib)
 
 **Impact:** HIGH
-**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
+**Description:** First-class standard library objects shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
 
 ## 6. Crypto (crypto)
 
 **Impact:** HIGH
-**Description:** Reboot's managed cryptographic root keys (`REBOOT_CRYPTO_ROOT_KEYS`) and HKDF key derivation (`reboot.crypto.root_keys.derive_key`) for building your own key-deriving library/feature — including the rotation control loop and the `Application.use_root_key_version` / `disuse_root_key_version` usage markers. For ready-made encryption-at-rest + crypto-shredding, use the `Ciphertext` stdlib library instead.
+**Description:** Reboot's managed cryptographic root keys (`REBOOT_CRYPTO_ROOT_KEYS`) and HKDF key derivation (`reboot.crypto.root_keys.derive_key`) for building your own key-deriving library/feature — including the rotation control loop and the `Application.use_root_key_version` / `disuse_root_key_version` usage markers. For ready-made encryption-at-rest + crypto-shredding, use the `Ciphertext` standard library library instead.
 
 ## 7. State (state)
 
@@ -47,7 +47,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 9. RPC (rpc)
 
 **Impact:** MEDIUM
-**Description:** Calling actors via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
+**Description:** Calling instances via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
 
 ## 10. Scheduling (scheduling)
 

@@ -71,11 +71,11 @@ def authorizer(self): return allow()
 Mutations inside a `ReaderContext` raise. If you need to mutate, the
 method needs to be a `Writer` or `Transaction`.
 
-### 8. Cross-Actor Mutations Need a Transaction; All External Calls Need a Workflow
+### 8. Cross-Instance Mutations Need a Transaction; All External Calls Need a Workflow
 
-A `Writer` can only mutate one actor (its own). Cross-actor
+A `Writer` can only mutate one instance (its own). Cross-instance
 mutations belong in a `Transaction(...)` method. A writer or
-transaction **may** call readers on other actors — cross-actor
+transaction **may** call readers on other instances — cross-instance
 reads are fine.
 
 External side effects — any call that leaves the system: SMS,
@@ -120,12 +120,12 @@ You cannot declare a non-zero `default=` on a `Field(tag=N)` —
 non-zero defaults are rejected at import. To seed non-zero state, do
 it in a constructor method using `context.constructor`.
 
-### 12. Register Stdlib Libraries
+### 12. Register Standard Library Objects
 
 `OrderedMap` requires `libraries=[ordered_map_library()]` in the
 `Application(...)` call. Forgetting it gives a runtime error about
-unknown actor type. The same shape applies to every stdlib state
-type with a `<thing>_library()` factory.
+unknown object type. The same shape applies to every standard library
+object with a `<thing>_library()` factory.
 
 ### 13. Servicer Class, Not Instance, in `Application(...)`
 
@@ -174,7 +174,7 @@ async def open(
 
 ### 15. `self.state_id` Doesn't Exist; Use `self.ref().state_id`
 
-Inside a Servicer (writer/reader/transaction), get the actor's ID via
+Inside a Servicer (writer/reader/transaction), get the instance's object ID via
 `self.ref().state_id`. Inside a workflow `@classmethod`, use
 `context.state_id`. Plain `self.state_id` raises `AttributeError: 'XServicer' object has no attribute 'state_id'`.
 
@@ -204,8 +204,7 @@ Set `mcp=None` for non-tool workflows.
 
 A `str`/`bytes` scalar field is plaintext at rest. Passwords, API keys,
 session tokens, and PII must **never** be stored that way — the "it's
-just a string" reflex is the trap. Encrypt with the `Ciphertext` stdlib
-type and store the returned `state_id` instead:
+just a string" reflex is the trap. Encrypt with the `Ciphertext` standard library object and store the returned `state_id` instead:
 
 ```python
 # Wrong — API key in plaintext at rest:
@@ -275,11 +274,11 @@ await TaskList.ref(list_id).get(alice2)
 The error names the fix directly: "Instead create a new
 `WeakReference` for every `Context`."
 
-### 22. The State Type Named `User` Is Auto-Constructed
+### 22. The Object Type Named `User` Is Auto-Constructed
 
-A state type literally named `User` is special: when
+An object type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
-`User` actor per signed-in identity, whose state id **is** the
+`User` instance per signed-in identity, whose object ID **is** the
 `context.auth.user_id`, on first access. Do not write a sign-up
 method that creates it, do not pass an id to `useUser()` in the
 browser, and do not construct it in tests — impersonating a user
@@ -288,7 +287,7 @@ for `User.ref(user_id)` to resolve. The auto-construction happens
 only under `oauth=`; an app with a `User` type and no `oauth=` fails
 to start, except under the test harness, which supplies a test OAuth
 provider when `oauth=` is omitted (`testing-harness.md`). Other
-state types are constructed explicitly, by their factory `create`.
+object types are constructed explicitly, by their factory `create`.
 
 To give a new `User` initial state (e.g. allocate the id of an
 `OrderedMap` index, `state-collections.md`), override its

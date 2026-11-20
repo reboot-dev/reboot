@@ -51,7 +51,7 @@ Predicates can be `async def`. `allow_if` awaits them when needed:
 ```python
 async def is_team_member(*, context, state, request, **kwargs):
     # `members` is a declared `Reader` method on `Team` — reading
-    # another actor always goes through its declared `Reader`s.
+    # another instance always goes through its declared `Reader`s.
     response = await Team.ref(state.team_id).members(context)
     if context.auth.user_id in response.member_ids:
         return errors.Ok()
@@ -152,7 +152,7 @@ mypy run. See `lifecycle-project-setup.md`.
 ## Predicate Signatures
 
 The runtime invokes a predicate with at minimum these keyword args:
-`context` (always a `ReaderContext`), `state` (the actor state, possibly
+`context` (always a `ReaderContext`), `state` (the instance state, possibly
 `None`), and `request` (the request message, possibly `None`). Declare
 the ones the body reads, keyword-only, and always include `**kwargs`
 so the arguments you didn't declare — and any the runtime adds later
@@ -163,7 +163,7 @@ so the arguments you didn't declare — and any the runtime adds later
 `allow_if(all=[...])` evaluates left to right and short-circuits on the
 first non-`Ok`. List cheap auth-establishing predicates first
 (`has_verified_token`) and expensive ones last (predicates that read
-state from another actor):
+state from another instance):
 
 ```python
 # Good — cheap auth check happens first.

@@ -48,8 +48,8 @@ Three predicates are shipped:
 - `has_verified_token` — caller has a verified auth token.
 - `is_app_internal` — call is from the app itself (another Reboot
   servicer, not an external client).
-- `state_id_is_user_id` — the caller's `user_id` equals the actor's
-  state ID. Useful for per-user resources.
+- `state_id_is_user_id` — the caller's `user_id` equals the instance's
+  object ID. Useful for per-user resources.
 
 See `auth-built-in-predicates.md` for details.
 
@@ -77,9 +77,9 @@ When `any=[...]` runs out without finding an `Ok`:
 This shape lets callers know whether to retry with auth (the call was
 unauthenticated) or stop trying entirely (denied).
 
-## Stdlib Uses It Internally
+## The Standard Library Uses It Internally
 
 `OrderedMapServicer` defaults to
 `allow_if(all=[is_app_internal])` — only other Reboot code in the same
-app can call it. Apply the same pattern when a stdlib-style helper
+app can call it. Apply the same pattern when a standard-library-style helper
 shouldn't be reachable from outside.

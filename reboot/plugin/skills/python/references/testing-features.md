@@ -43,7 +43,7 @@ tests/
 
 - **One `.feature` file per capability**, named for the activity:
   `transfers.feature`, `opening_accounts.feature`. Not
-  `bank.feature` or `account.feature`: those name state types, which
+  `bank.feature` or `account.feature`: those name domain objects, which
   the dashboard already indexes as such.
 - **One test module per application configuration.** A module is a
   few lines: the `application` fixture returning the
@@ -214,7 +214,7 @@ And the resulting `account_id` is saved as <alice account id>
   save what `creates` and `spawns` produced. `the result has ...`
   asserts on the last response.
 - **A value is saved as the variable later steps say it by**, `saved as <first account id>`, which may have spaces, and is said back the same way: in a
-  state id (`of <account id>`), a user id, a bearer token, or a
+  object ID (`of <account id>`), a user id, a bearer token, or a
   property value (`amount=<balance>`). A `Scenario Outline`'s columns
   are said the same way, so a save may not use a column's name.
 - **A variable is replaced by its JSON text** before the step runs,

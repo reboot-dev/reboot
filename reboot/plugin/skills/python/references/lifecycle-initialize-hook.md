@@ -9,14 +9,14 @@ tags: initialize, InitializeContext, create, singleton, bootstrap
 
 > **Critical:** `initialize` runs on **every** application start, so
 > its calls get an **auto-generated idempotency key** (one per
-> `actor` + `method`) and run once. Constructors —
+> `instance` + `method`) and run once. Constructors —
 > `Service.create(context, id)` / factory methods — are a no-op on
-> existing actors. The catch: to call the **same method on the same
-> actor more than once** you **must** distinguish the calls with
+> existing instances. The catch: to call the **same method on the same
+> instance more than once** you **must** distinguish the calls with
 > `.idempotently("alias")` (or an explicit `key=`), or the second one
 > raises `ValueError: To call '...' more than once using the same context an idempotency alias or key must be specified`
 > (see below). Don't create singletons in a Servicer's `__init__` —
-> that runs lazily per-actor, not at app start.
+> that runs lazily per-instance, not at app start.
 
 `initialize` is an optional `async` callback passed to `Application(...)`. It
 runs against an `InitializeContext` and is the right place to create
@@ -32,7 +32,7 @@ The callback runs each time the application starts; Reboot's idempotent
 class BankServicer(Bank.Servicer):
     def __init__(self):
         # This won't run "at startup"; it runs the first time
-        # someone references the Bank actor.
+        # someone references the Bank instance.
         Bank.create(...)  # also: no context here
 ```
 
@@ -60,7 +60,7 @@ async def main():
 ## Implicit Constructor on First Write
 
 If a `Type` does **not** declare a `factory=True` method, Reboot will
-implicitly create the actor on the first writer call. A simple chat
+implicitly create the instance on the first writer call. A simple chat
 room can use this — no explicit `ChatRoom.create(...)` is needed when
 `send` is a `Writer`:
 
@@ -77,11 +77,11 @@ or `Transaction(... factory=True ...)`), call it explicitly via
 
 ## Calling the Same Method More Than Once — `.idempotently("alias")`
 
-`initialize` auto-generates an idempotency key per `(actor, method)`,
+`initialize` auto-generates an idempotency key per `(instance, method)`,
 so **one** call to a given method is fine bare — that's why
 `Service.create(...)` followed by a single `ref.send(...)` works
 without any alias. But calling that **same** method on the **same**
-actor again in the same `initialize` raises:
+instance again in the same `initialize` raises:
 
 ```text
 ValueError: To call 'hello.v1.HelloMethods.Send' of 'reboot-hello'
@@ -98,7 +98,7 @@ async def initialize(context: InitializeContext):
         context, "reboot-hello", initial_message="Welcome!",
     )
 
-    # First `send` is fine bare; a second `send` to the same actor
+    # First `send` is fine bare; a second `send` to the same instance
     # needs its own alias, so give BOTH a distinct one.
     await hello.idempotently("Greeting").send(context, message="Hi!")
     await hello.idempotently("Follow-up").send(

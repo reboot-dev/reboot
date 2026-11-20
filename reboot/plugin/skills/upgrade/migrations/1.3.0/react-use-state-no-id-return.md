@@ -12,7 +12,7 @@ This return shape is what lets the UI render right away. Neither
 frontend's provider blocks the subtree waiting for ids: an MCP app's
 `RebootClientProvider` used to hold everything behind a built-in
 "Connecting to MCP host..." placeholder until the host delivered tool
-input carrying the state-id map, and a web app's provider would
+input carrying the object-ID map, and a web app's provider would
 similarly have to wait on `/__/oauth/whoami`; both now render your UI
 immediately, and a no-id hook reports `isLoading` until the ids
 arrive.

@@ -9,8 +9,8 @@ tags: auth, predicate, has_verified_token, is_app_internal, state_id_is_user_id
 
 > **Critical:** three shipped predicates cover most needs:
 > `has_verified_token` (any verified caller), `is_app_internal`
-> (only same-app internal calls — the right gate for stdlib-style
-> helpers), `state_id_is_user_id` (per-user resources where actor IDs
+> (only same-app internal calls — the right gate for standard-library-style
+> helpers), `state_id_is_user_id` (per-user resources where object IDs
 > are user IDs). Compose via `allow_if(all=[...])` / `allow_if(any=[...])`.
 
 `reboot.aio.auth.authorizers` ships three predicate callables. Each takes
@@ -48,7 +48,7 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
 
 Returns `Ok` when the call originates from inside the same Reboot app
 (another Servicer calling this one). External clients always get
-`PermissionDenied`. This is the right gate for stdlib-style internal
+`PermissionDenied`. This is the right gate for standard-library-style internal
 helpers. An app-internal call may still carry a `context.auth` — the
 signed-in person the calling method ran for — so `is_app_internal` and
 an owner rule can both match the same call.
@@ -69,9 +69,9 @@ def state_id_is_user_id(*, context: ReaderContext, **kwargs):
     return PermissionDenied()
 ```
 
-Returns `Ok` only when the actor's `state_id` equals the caller's
-authenticated `user_id`. Use this when an actor _is_ a user — e.g.
-`UserProfileServicer` whose state IDs are user IDs.
+Returns `Ok` only when the instance's `state_id` equals the caller's
+authenticated `user_id`. Use this when an instance _is_ a user — e.g.
+`UserProfileServicer` whose object IDs are user IDs.
 
 ```python
 return allow_if(all=[state_id_is_user_id])
@@ -86,7 +86,7 @@ allow_if(all=[is_app_internal])
 # Public to authenticated users:
 allow_if(all=[has_verified_token])
 
-# Authenticated and matching the actor's user-keyed identity:
+# Authenticated and matching the instance's user-keyed identity:
 allow_if(all=[state_id_is_user_id])  # implies has_verified_token
 
 # Either internal call or authenticated user:
@@ -96,7 +96,7 @@ allow_if(any=[is_app_internal, has_verified_token])
 ## Self-Scheduled Workflows Need `is_app_internal`
 
 If your Servicer has methods that schedule workflows on the
-**same actor** (`self.ref().schedule().<workflow>(context)`),
+**same instance** (`self.ref().schedule().<workflow>(context)`),
 the workflow runs **app-internally** — it has no bearer token and no
 `context.auth`, even when the original transaction was authenticated
 as a user. (A call made directly, not scheduled, does carry the
@@ -106,7 +106,7 @@ scheduled call:
 
 ```python
 # WRONG — user-only auth blocks the framework's scheduled
-# workflow on the same actor.
+# workflow on the same instance.
 def authorizer(self):
     return allow_if(all=[state_id_is_user_id])
 
@@ -123,8 +123,8 @@ def authorizer(self):
 ```
 
 Use `any=[state_id_is_user_id, is_app_internal]` whenever the
-actor has self-scheduled workflows. The pattern is canonical
-for "user-owned actors with background work."
+instance has self-scheduled workflows. The pattern is canonical
+for "user-owned instances with background work."
 
 ## Predicates Always Take `**kwargs`
 

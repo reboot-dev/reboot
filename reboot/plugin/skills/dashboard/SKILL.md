@@ -1,17 +1,17 @@
 ---
 name: dashboard
-description: Start the Reboot developer dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app (see the run skill).
+description: Start the Reboot Dashboard (`rbt dashboard`) for a project and open it in the browser. Puts the minimum files in place (a `pyproject.toml` depending on `reboot[dev]`, a `.rbtrc`, the API directory), starts the dashboard in a background shell if one is not already serving (it opens itself in the browser), and hands the user its URL. Use this while BUILDING an app — the dashboard watches the API directory from before anything is running, so the developer watches the API take shape as it is written. Not for running an app (see the run skill).
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
-# dashboard — Start the Reboot Developer Dashboard
+# dashboard — Start the Reboot Dashboard
 
 > **Version notices:** if `rbt` reports a version mismatch or that a
 > newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
 > says how and when to react.
 
-The developer dashboard is a browser page, served by
+The Reboot Dashboard is a browser page, served by
 `rbt dashboard`, that shows a Reboot application's API (the Models
 page), its features as the `.feature` files under `tests/`
 specify them (the Features page, with each feature's rules and
@@ -128,7 +128,7 @@ code changes.
 
 It also serves the dashboard as MCP Apps at `/mcp`, which Claude or
 ChatGPT can show once they can reach it: the whole dashboard, and a
-card of one feature or one state type, inline, for when the user asks
+card of one feature or one domain object, inline, for when the user asks
 about a specific one; a listing tool gives the host the ids. Step 6
 hands the user the steps for that once the app is built.
 
@@ -146,7 +146,7 @@ the developer chose "Don't reopen automatically"; opening it as well
 gives the developer two tabs.
 
 Tell the user the dashboard is up and what it is for — e.g.
-"Developer dashboard (watch the API as I build it) at
+"Reboot Dashboard (watch the API as I build it) at
 https://dashboard-<app>.localhost/. It can also open in Claude or
 ChatGPT; I'll give you the steps once the app is built." — and get on
 with the build.
@@ -156,7 +156,7 @@ URL; that always works.
 
 ## Step 6 — Required final hand-over: the connector
 
-Required final hand-over: if you started the developer dashboard,
+Required final hand-over: if you started the dashboard,
 include the `cloudflared` command and the Claude and ChatGPT connector
 instructions in your final response. This applies even when the user
 asked only for a standalone web app and never mentioned MCP. Do not

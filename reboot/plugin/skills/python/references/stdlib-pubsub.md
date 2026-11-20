@@ -13,7 +13,7 @@ tags: stdlib, Topic, pubsub, publish, subscribe, broker, fan-out
 > accumulate in the topic and reach nobody. Build BOTH sides:
 >
 > - **Producer:** `await Topic.ref(<id>).publish(context, value=…)`.
-> - **Consumer:** each subscriber owns its own `Queue` actor,
+> - **Consumer:** each subscriber owns its own `Queue` instance,
 >   registers it via
 >   `await Topic.ref(<id>).subscribe(context, queue_id=<their-id>)`,
 >   and pulls items in a workflow with
@@ -22,7 +22,7 @@ tags: stdlib, Topic, pubsub, publish, subscribe, broker, fan-out
 > Other implementation rules:
 >
 > - `Topic` is built on `Queue`, which is in turn backed by an
->   internal stdlib sorted-map actor — register
+>   internal standard library sorted-map instance — register
 >   `pubsub.servicers()` (transitively pulls Queue's servicers)
 >   AND `sorted_map_library()`.
 > - The internal `broker` workflow auto-schedules on first
@@ -32,7 +32,7 @@ tags: stdlib, Topic, pubsub, publish, subscribe, broker, fan-out
 
 `Topic` (`reboot.std.pubsub.v1.pubsub`) implements pub/sub on top of
 `Queue`. Publishers `publish` items to the topic; subscribers register a
-`Queue` actor as a destination and pull items from that queue. A
+`Queue` instance as a destination and pull items from that queue. A
 background `Broker` workflow inside the topic moves items from the
 topic's buffer into each subscriber's queue.
 
@@ -41,13 +41,13 @@ topic's buffer into each subscriber's queue.
 | Method      | Type     | Notes                                                                   |
 | ----------- | -------- | ----------------------------------------------------------------------- |
 | `publish`   | writer   | one of `value` / `bytes` / `any` (single) or `items: list[Item]` (bulk) |
-| `subscribe` | writer   | `queue_id: str` — the `Queue` actor that will receive items             |
+| `subscribe` | writer   | `queue_id: str` — the `Queue` instance that will receive items          |
 | `broker`    | workflow | internal; auto-scheduled on first publish/subscribe                     |
 
 ### Register the Library
 
 `Topic` is built on `Queue`, which is itself backed by an internal
-stdlib sorted-map actor:
+standard library sorted-map instance:
 
 ```python
 from reboot.std.pubsub.v1 import pubsub
@@ -64,7 +64,7 @@ async def main():
 `pubsub.servicers()` returns `[TopicServicer] + queue.servicers()`, so
 you don't need to add `queue.servicers()` separately. The
 `sorted_map_library()` registration is the only place you mention
-the backing sorted-map actor — for a user-facing sorted key/value
+the backing sorted-map instance — for a user-facing sorted key/value
 collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
 ### Subscribe a Queue to a Topic
@@ -87,7 +87,7 @@ class SubscriberServicer(Subscriber.Servicer):
         return AttachResponse()
 ```
 
-Each subscriber owns its own `Queue` actor; the topic's broker copies
+Each subscriber owns its own `Queue` instance; the topic's broker copies
 each published item into every subscriber's queue.
 
 ### Publish

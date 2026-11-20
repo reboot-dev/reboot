@@ -4,7 +4,7 @@ In a `.feature` file, a variable, `<name>`, is now replaced by its
 value's JSON text before the step runs, the way pytest-bdd substitutes
 a column of a `Scenario Outline`: a saved string arrives with its
 double quotes, `"uuid-1"`, a number bare, an object as JSON. So a
-saved string is said bare wherever a step takes a value: a state id,
+saved string is said bare wherever a step takes a value: an object ID,
 a user, a bearer token, a task id, a property value, and what the web
 app shows or is told. The former spelling, `"<name>"`, now reads
 `""uuid-1""` once substituted and fails as not JSON, with an error

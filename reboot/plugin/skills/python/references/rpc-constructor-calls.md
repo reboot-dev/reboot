@@ -12,7 +12,7 @@ tags: rpc, constructor, create, factory
 > for default constructors and `await Service.<CtorMethod>(context, id, ...)`
 > for named ones. Both return a `(ref, response)` tuple.
 
-A method declared with `factory=True` is the actor's creation path.
+A method declared with `factory=True` is the instance's creation path.
 Invoke it via the generated factory call:
 
 - `await Service.create(context, id)` — for the implicit/default
@@ -60,7 +60,7 @@ async def initialize(context: InitializeContext):
     await Bank.create(context, SINGLETON_BANK_ID)
 ```
 
-This is safe to call on every application start; existing actors aren't
+This is safe to call on every application start; existing instances aren't
 re-initialized.
 
 ## Reuse the Returned Ref

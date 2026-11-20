@@ -9,7 +9,7 @@ tags: main, application, asyncio, servicers, libraries
 
 > **Critical:** pass Servicer **classes** to `Application(servicers=[...])`,
 > not instances. `[ChatRoomServicer()]` is wrong; `[ChatRoomServicer]`
-> is right. Stdlib types need `libraries=[ordered_map_library(), ...]`
+> is right. Standard library objects need `libraries=[ordered_map_library(), ...]`
 > registered alongside their `servicers()`.
 
 Every Reboot Python application has an `async def main()` that constructs an
@@ -61,7 +61,7 @@ if __name__ == '__main__':
 ## Pass Servicer Classes, Not Instances
 
 `Application(servicers=[...])` takes the **classes**. Reboot constructs
-instances per actor as needed.
+instances per instance as needed.
 
 **Incorrect:**
 
@@ -75,10 +75,10 @@ await Application(servicers=[ChatRoomServicer()]).run()  # instance, wrong
 await Application(servicers=[ChatRoomServicer]).run()
 ```
 
-## Multiple Servicers and Stdlib Libraries
+## Multiple Servicers and Standard Library Objects
 
-Combine Servicer classes from your code with stdlib `servicers()` factories
-and `libraries=[...]` for stdlib state types:
+Combine Servicer classes from your code with the standard library's `servicers()` factories
+and `libraries=[...]` for standard library objects:
 
 ```python
 import reboot.thirdparty.mailgun
@@ -99,20 +99,20 @@ async def main():
 
 ## See Also
 
-If you're using any stdlib state type, register it the way its
+If you're using any standard library object, register it the way its
 reference says; the wiring differs per type. A `<name>_library()`
 factory in `libraries=[...]` brings its own servicers along, while a
 type without one (or whose library is not used) puts its
 `servicers()` list into `servicers=[...]`. Forgetting the
-registration gives a runtime "unknown actor type" error. What each
+registration gives a runtime "unknown object type" error. What each
 type needs:
 
 - `stdlib-ordered-map.md` — `ordered_map_library()` only
-- `stdlib-queue.md` — `queue.servicers()` + the stdlib map library
-  (`Queue` uses a stdlib sorted-map actor under the hood — see the
+- `stdlib-queue.md` — `queue.servicers()` + the standard library's map library
+  (`Queue` uses a standard library sorted map under the hood — see the
   reference for the exact import)
 - `stdlib-pubsub.md` — `pubsub.servicers()` (transitively pulls
-  `queue.servicers()`) + the stdlib map library
+  `queue.servicers()`) + the standard library's map library
 - `stdlib-presence.md` — `presence_library()` (brings three
   Servicers)
 

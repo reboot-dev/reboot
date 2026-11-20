@@ -196,5 +196,5 @@ revision = await self.rbt.up(
   `at_most_once` external call.
 - **`schedule()`d work** — assert it still fires after a restart
   that spans its due time.
-- **A half-finished multi-actor transaction** — assert it is either
+- **A half-finished multi-instance transaction** — assert it is either
   fully applied or fully rolled back, never half.

@@ -20,9 +20,9 @@ Servicer method and the isolation level applied:
 
 - **`Reader(...)`** — read-only access to `self.state`. Multiple readers
   may run concurrently. Servicer signature: `context: ReaderContext`.
-- **`Writer(...)`** — mutates `self.state` for one actor. Serialized with
-  other writes/transactions on that actor. Signature: `context: WriterContext`.
-- **`Transaction(...)`** — atomic across multiple actors and external
+- **`Writer(...)`** — mutates `self.state` for one instance. Serialized with
+  other writes/transactions on that instance. Signature: `context: WriterContext`.
+- **`Transaction(...)`** — atomic across multiple instances and external
   effects. Signature: `context: TransactionContext`. Must say how it
   holds the lock on its own state with `mode=Exclusive()` (writes its
   own state, or in doubt) or `mode=Shared()` (mostly reads its own
@@ -152,7 +152,7 @@ Both are real, and neither is what you write:**
 ## `factory=True` Marks the Creation Method
 
 A `Writer` or `Transaction` with `factory=True` is the explicit
-creation path for the actor. The Servicer can branch on
+creation path for the instance. The Servicer can branch on
 `context.constructor` to set initial state:
 
 ```python
@@ -167,7 +167,7 @@ open=Writer(
 
 `Reader` and `Workflow` reject `factory=True` at codegen time — see
 `api-pydantic.md` ("`factory=True` Only Works on `Writer` and
-`Transaction`"). To kick off a workflow on actor creation, make the
+`Transaction`"). To kick off a workflow on instance creation, make the
 factory a `Writer(factory=True)` / `Transaction(factory=True)` and
 schedule the workflow from its body.
 
@@ -177,13 +177,13 @@ first write (see `lifecycle-initialize-hook.md`).
 ## Pick the Right Factory
 
 - Reading `self.state` only? → `Reader`
-- Mutating `self.state` for **one** actor, no calls to other actors? → `Writer`
-- Mutating across multiple actors in a single one-shot transaction? → `Transaction`
+- Mutating `self.state` for **one** instance, no calls to other instances? → `Writer`
+- Mutating across multiple instances in a single one-shot transaction? → `Transaction`
 - Long-running, durable, restartable work (control loops, agents,
   multi-step orchestration), or external calls? → `Workflow`
 
 Wrong-factory symptoms include "context type mismatch" runtime errors and
-deadlocks when a `Writer` tries to call into another actor.
+deadlocks when a `Writer` tries to call into another instance.
 
 ## `errors=[...]` Declares Typed Errors
 
@@ -227,12 +227,12 @@ withdraw=Writer(
 ),
 ```
 
-The dev dashboard shows it, and `mcp=Tool()` methods use it as the
+The Reboot Dashboard shows it, and `mcp=Tool()` methods use it as the
 tool's description. Write what a caller cannot derive from the
 signature: the precondition, the side effect, the unit, which error it
 raises and when.
 
-A state type takes one too, via `Type(description=...)`; see
+An object type takes one too, via `Type(description=...)`; see
 `api-pydantic.md`.
 
 ## Every Factory Takes `mcp=`

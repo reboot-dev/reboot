@@ -12,7 +12,7 @@ tags: auth, oauth, development, anonymous, google, github, auth0, provider, prod
 > (Google `sub`, GitHub numeric ID, …) with no mapping between them.
 > Switch providers once you have real users and every user-keyed piece
 > of state — anything gated by `state_id_is_user_id`, anything created
-> with a user ID as its state ID — becomes unreachable. Choose your
+> with a user ID as its object ID — becomes unreachable. Choose your
 > production provider **deliberately, before you have production
 > state**, and don't launch on a throwaway intending to "upgrade
 > later."
@@ -345,8 +345,8 @@ keyed on user ID is then stranded:
   (every caller still has a `user_id`), but they now guard a different
   set of identities — pre-switch callers can't reach post-switch state
   and vice versa.
-- **Anything stored inside `User`-typed actors, or in index actors
-  keyed on user ID.** Same story — the state ID was the user's ID at
+- **Anything stored inside `User`-typed instances, or in index instances
+  keyed on user ID.** Same story — the object ID was the user's ID at
   creation time.
 
 And the migration back is rarely viable: there's no reliable, secure

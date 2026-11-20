@@ -1,13 +1,13 @@
 ---
 title: Implement Transaction Methods
 impact: HIGH
-impactDescription: Cross-actor atomic work requires a transaction
-tags: servicer, transaction, TransactionContext, atomic, multi-actor
+impactDescription: Cross-instance atomic work requires a transaction
+tags: servicer, transaction, TransactionContext, atomic, multi-instance
 ---
 
 ## Implement Transaction Methods
 
-> **Critical:** transactions are **all-or-nothing across actors** —
+> **Critical:** transactions are **all-or-nothing across instances** —
 > any `<Method>Aborted` rolls back **all** mutations in the
 > transaction. Reboot may also retry transactions internally, so the
 > body must be safe to re-run with the same input — and must **never**
@@ -15,21 +15,21 @@ tags: servicer, transaction, TransactionContext, atomic, multi-actor
 
 A method declared with `Transaction(...)` in the API file receives a
 `TransactionContext` and is the only place where you can atomically
-mutate multiple actors. The runtime serializes transactions that touch
-overlapping actors. The declaration's `mode=` says how the transaction
+mutate multiple instances. The runtime serializes transactions that touch
+overlapping instances. The declaration's `mode=` says how the transaction
 holds the lock on its own state: `Exclusive()` takes it exclusive as
-the transaction starts, so concurrent callers of the actor queue, and
+the transaction starts, so concurrent callers of the instance queue, and
 is the choice for a body that writes `state`; `Shared()` takes it
 shared and upgrades only if the body writes `state`, so callers that
 only read proceed concurrently.
 
-**Incorrect (multi-actor work in a writer):**
+**Incorrect (multi-instance work in a writer):**
 
 ```python
 async def transfer(
     self, context: WriterContext, request: Bank.TransferRequest,
 ) -> None:
-    # WRONG — writers can only mutate one actor.
+    # WRONG — writers can only mutate one instance.
     await Account.ref(request.from_id).withdraw(context, ...)
     await Account.ref(request.to_id).deposit(context, ...)
 ```
@@ -76,11 +76,11 @@ class BankServicer(Bank.Servicer):
         )
 ```
 
-## Transactions Are Atomic Across Actors
+## Transactions Are Atomic Across Instances
 
 If any call inside a transaction fails (raises a `<Method>Aborted`), the
 runtime rolls back **all** the mutations made within that transaction —
-across every actor it touched.
+across every instance it touched.
 
 ## External Calls Belong in a Workflow, Not a Transaction
 
@@ -98,8 +98,8 @@ more than once. Values that differ between runs, such as a
 `uuid4()` id, are fine: only one run's mutations are kept.
 
 So a transaction must **never** make an external call itself. It may
-freely call other **in-system actors**, and the correct pattern is for
-one of those actors to **schedule a `Workflow`** that performs the
+freely call other **in-system instances**, and the correct pattern is for
+one of those instances to **schedule a `Workflow`** that performs the
 external call. The
 [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
 `sign_up` transaction sends a welcome email this way:
@@ -124,7 +124,7 @@ async def sign_up(
     return SignUpResponse()
 ```
 
-`mailgun.Message.send` is a `Writer` on an in-system mailgun actor — it
+`mailgun.Message.send` is a `Writer` on an in-system mailgun instance — it
 does not hit the network itself; it **schedules a workflow** that makes
 the actual HTTP send. So the transaction only ever issues in-system
 RPCs, and the un-rollback-able external call lives safely in that
@@ -157,7 +157,7 @@ gather only parallelizes the network/RPC roundtrips.
 
 Don't stash data on `self` inside a transaction — every call may run on a
 fresh Servicer instance, and instance attributes don't persist. State lives
-in `self.state` (per-actor) or external systems.
+in `self.state` (per-instance) or external systems.
 
 ## Transactions May Have No Response
 
@@ -176,9 +176,9 @@ orchestration calls where the caller only needs success/failure
 - `rpc-refs.md` — `self.ref().state_id` (not `self.state_id`).
 - `rpc-calls.md` — kwargs convention; `await ref.method(context, k=v)`.
 - `rpc-forall.md` — `Service.forall(ids).method(context, ...)` for
-  fan-out across many actors.
+  fan-out across many instances.
 - `servicer-constructor.md` — when a transaction also constructs an
-  actor (e.g. `Account.open(context, id)`).
+  instance (e.g. `Account.open(context, id)`).
 - `api-errors.md` — typed errors that roll back the entire transaction.
 - `servicer-workflow.md` — when one-shot atomicity isn't enough and you
   need durable, long-running orchestration.

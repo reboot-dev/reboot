@@ -1,11 +1,11 @@
 ---
-title: Use `Item` for Heterogeneous Values in Stdlib Containers
+title: Use `Item` for Heterogeneous Values in Standard Library Containers
 impact: LOW-MEDIUM
 impactDescription: Queue/Topic accept Items; picking the right value field affects ergonomics across languages
 tags: stdlib, Item, value, bytes, any, Queue, Topic
 ---
 
-## Use `Item` for Heterogeneous Values in Stdlib Containers
+## Use `Item` for Heterogeneous Values in Standard Library Containers
 
 > **Critical:** an `Item` carries **exactly one** of `value`, `bytes`,
 > or `any`. Setting two raises at runtime. Single-item enqueue/publish
@@ -74,7 +74,7 @@ for item in batch.items:
 ### Helper: `reboot.protobuf` for `Value` <-> Python
 
 `reboot.protobuf` exposes `from_str` / `as_str` / `to_json` helpers used
-in stdlib examples (e.g. `from_str(message_id)` to wrap a string into a
+in standard library examples (e.g. `from_str(message_id)` to wrap a string into a
 `Value`). These keep call sites compact:
 
 ```python

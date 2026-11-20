@@ -72,7 +72,7 @@ the old version must stay in `REBOOT_CRYPTO_ROOT_KEYS`.
 
 You tell the platform which versions you still hold via two writers on
 the per-app `Application` singleton, so an operator (or a future
-automated actor) knows when a version has zero holders and is safe to
+automated instance) knows when a version has zero holders and is safe to
 retire:
 
 ```python
@@ -103,7 +103,7 @@ markers as a mirror of it. This buys two correctness properties:
   material under a version, record `use_root_key_version` _in the same
   transaction_ — but only if the version is new to your
   `consuming_versions` set. That closes the window where a key is in
-  use before its marker exists (a retirement actor could otherwise see
+  use before its marker exists (a retirement instance could otherwise see
   the version as unused and drop it), and you touch the shared
   `Application` singleton only **once per version**, not once per key.
 - **Keep the markers a conservative superset of `consuming_versions`.**
@@ -111,7 +111,7 @@ markers as a mirror of it. This buys two correctness properties:
   unused in `Application`. So set the global marker **before** (or in
   the same transaction as) adding the version locally, and clear it
   **after** removing it locally. Erring on the "still in use" side
-  until the end is the safe direction — the retirement actor reads the
+  until the end is the safe direction — the retirement instance reads the
   markers, so a too-early disuse is what loses data.
 
 Two more rules:
