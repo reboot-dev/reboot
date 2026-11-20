@@ -30,3 +30,20 @@ py_test(
         "//tests/reboot:general_boilerplate_py_reboot",
     ],
 )
+
+py_test(
+    name = "tasks_dispatcher_tests_py",
+    srcs = [":tasks_dispatcher_tests.py"],
+    main = "tasks_dispatcher_tests.py",
+    deps = [
+        requirement("googleapis-common-protos"),
+        requirement("protobuf"),
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot:settings_py",
+        "//reboot/aio:tasks_py",
+        "//reboot/aio:types_py",
+        "//reboot/aio/internals:tasks_cache_py",
+        "//reboot/aio/internals:tasks_dispatcher_py",
+    ],
+)

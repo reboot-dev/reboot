@@ -274,6 +274,11 @@ async def task_cancel(args) -> None:
             terminal.fail("Task is not running.")
         elif cancel_task_response.status == tasks_pb2.CancelTaskResponse.Status.CANCELLING:
             terminal.fail("Task is cancelling.")
+        elif cancel_task_response.status == tasks_pb2.CancelTaskResponse.Status.IGNORED:
+            terminal.fail(
+                "Cancellation was ignored, likely because the task is an "
+                "internal task of Reboot and can't be cancelled.",
+            )
     except grpc.aio.AioRpcError as e:
         terminal.fail(f"Failed to cancel task: {e.details()}")
 

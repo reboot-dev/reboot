@@ -18,6 +18,7 @@ from reboot.aio.internals.tasks_cache import TasksCache
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId
 from reboot.run_environments import is_in_test
+from reboot.settings import RUN_STATECHART_ACTIVITY_METHOD
 from reboot.time import DateTimeWithTimeZone
 from typing import Awaitable, Callable, Optional, Protocol, Tuple
 from uuid import UUID
@@ -107,6 +108,10 @@ class TasksDispatcher:
         # try and garbage collect them even if they haven't finished.
         self._dispatched_tasks: dict[bytes, Tuple[asyncio.Task,
                                                   IsCancelled]] = {}
+
+        # The UUID of each dispatched task that runs an activity of a
+        # statechart.
+        self._statechart_activity_task_uuids: set[bytes] = set()
 
         self._keep_waiting_for_cancelled_tasks_task = None
 
@@ -355,6 +360,11 @@ class TasksDispatcher:
             self._dispatched_tasks[task.task_id.task_uuid
                                   ] = (asyncio_task, False)
 
+            if task.method_name == RUN_STATECHART_ACTIVITY_METHOD:
+                self._statechart_activity_task_uuids.add(
+                    task.task_id.task_uuid,
+                )
+
             async def cleanup_async(task: TaskEffect):
                 assert self._complete_task is not None
                 if self.is_task_cancelled(task.task_id.task_uuid):
@@ -388,6 +398,9 @@ class TasksDispatcher:
                         ),
                     )
                 del self._dispatched_tasks[task.task_id.task_uuid]
+                self._statechart_activity_task_uuids.discard(
+                    task.task_id.task_uuid,
+                )
 
             def cleanup(task: TaskEffect, _):
                 loop = asyncio.get_running_loop()
@@ -415,6 +428,16 @@ class TasksDispatcher:
         task_uuid: bytes,
     ) -> tasks_pb2.CancelTaskResponse:
         """Cancel the task with the specified UUID."""
+        # An activity of a statechart is cancelled by the statechart,
+        # when a transition would exit the state that the activity is
+        # of. A task that runs one is left running: were it cancelled,
+        # the statechart would still have the activity as one that is
+        # running, with nothing left to finish it.
+        if task_uuid in self._statechart_activity_task_uuids:
+            return tasks_pb2.CancelTaskResponse(
+                status=tasks_pb2.CancelTaskResponse.Status.IGNORED,
+            )
+
         task, is_cancelled = self._dispatched_tasks.get(
             task_uuid, (None, False)
         )

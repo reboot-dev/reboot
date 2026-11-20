@@ -94,6 +94,9 @@ message CancelTaskResponse {
     OK = 0;
     NOT_FOUND = 1;
     CANCELLING = 2;
+    // The task runs an activity of a statechart, which only the
+    // statechart cancels, so the task was left running.
+    IGNORED = 3;
   }
   Status status = 1;
 }
