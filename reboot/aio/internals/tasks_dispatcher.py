@@ -9,6 +9,7 @@ from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.rpc import status_pb2
 from rbt.v1alpha1 import errors_pb2, tasks_pb2
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio import tracing
 from reboot.aio.aborted import SystemAborted
 from reboot.aio.backoff import Backoff
@@ -64,6 +65,11 @@ class DispatchCallable(Protocol):
 CompleteTaskCallable = Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]
 
+CancelStatechartActivitiesCallable = Callable[
+    [statechart_pb2.Status],
+    None,
+]
+
 IsCancelled = bool
 
 
@@ -84,12 +90,14 @@ class TasksDispatcher:
         tasks_cache: TasksCache,
         ready: asyncio.Event,
         complete_task: CompleteTaskCallable,
+        cancel_statechart_activities: CancelStatechartActivitiesCallable,
     ):
         self._application_id = application_id
         self._dispatch = dispatch
         self._tasks_cache = tasks_cache
         self._ready = ready
         self._complete_task = complete_task
+        self._cancel_statechart_activities = cancel_statechart_activities
 
         # Signal that stop has been requested.
         self._stop_requested = asyncio.Event()
@@ -390,6 +398,17 @@ class TasksDispatcher:
             # just capturing the variable means it might change (see
             # #2832).
             asyncio_task.add_done_callback(partial(cleanup, task))
+
+    def cancel_statechart_activities(
+        self,
+        status: statechart_pb2.Status,
+    ) -> None:
+        """Cancels each activity that is being cancelled, as `status`,
+        which is where the statechart of a state is, says. An activity
+        is run by a task, and what cancels it is the callable that this
+        dispatcher was made with, which is of the state type that the
+        tasks are of."""
+        self._cancel_statechart_activities(status)
 
     async def cancel_task(
         self,

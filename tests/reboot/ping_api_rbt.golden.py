@@ -795,6 +795,7 @@ class PingServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_statechart_activities=self.cancel_statechart_activities,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -3536,6 +3537,7 @@ class PongServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_statechart_activities=self.cancel_statechart_activities,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -5150,6 +5152,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_statechart_activities=self.cancel_statechart_activities,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -8747,6 +8750,7 @@ class CounterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_statechart_activities=self.cancel_statechart_activities,
         )
 
         # Store the type of each method's request so that stored requests can be

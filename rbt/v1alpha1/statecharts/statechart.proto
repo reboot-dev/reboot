@@ -88,7 +88,8 @@ message Statechart {
   }
 
   // An activity: runs while the state is active. The statechart
-  // waits for it to finish before leaving the state.
+  // waits for it to finish before exiting the state, and first
+  // cancels it if it is `cancellable`.
   message Schedule {
     // A function, given what a `workflow` is given, that the state
     // type's implementation provides.
@@ -102,6 +103,11 @@ message Statechart {
     oneof schedule {
       Inline inline = 1;
     }
+
+    // Whether the statechart cancels the schedule, if it is running,
+    // when a transition would exit the state. A schedule that is
+    // cancelled enqueues nothing. Required.
+    optional bool cancellable = 2;
   }
 
   // An activity: enqueues its event after the delay, the sum of
@@ -245,6 +251,11 @@ message Status {
     // The UUID of the task that runs the activity. Left out until the
     // task has been made.
     optional bytes task_uuid = 4;
+
+    // Whether the activity is being cancelled, which a `Timer`, and a
+    // `Schedule` that is `cancellable`, is from when a transition that
+    // would exit its state has fired.
+    bool cancelling = 5;
   }
 
   // The events waiting to be handled, the next one first. An enqueued
@@ -253,8 +264,10 @@ message Status {
 
   // The activities that are running. A state that has a `Schedule`
   // that is running is not exited: a transition that would exit it
-  // waits until the schedule has finished. A `Timer` of a state that
-  // is exited is no longer running.
+  // waits until the schedule has finished, which a schedule that is
+  // `cancellable` is made to do by being cancelled. No transition
+  // waits for a `Timer`: one of a state that a transition would exit
+  // is cancelled, and enqueues nothing when its delay is over.
   repeated Activity activities = 4;
 }
 

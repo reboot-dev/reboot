@@ -108,6 +108,7 @@ def py_reboot_library(
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
             "@com_github_reboot_dev_reboot//reboot:versioning_py",
+            "@com_github_reboot_dev_reboot//reboot:wait_for_tasks_py",
             "@com_github_reboot_dev_reboot//reboot/statecharts:events_py",
             "@com_github_reboot_dev_reboot//reboot/statecharts:interpreter_py",
             "@com_github_reboot_dev_reboot//reboot/mcp:context_py",

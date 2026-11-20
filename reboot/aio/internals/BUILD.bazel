@@ -70,6 +70,7 @@ py_library(
         "//reboot/aio/auth:authorizers_py",
         "//reboot/aio/auth:token_verifiers_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
     ],
 )
 
@@ -87,6 +88,7 @@ py_library(
         "//reboot/aio:types_py",
         "//reboot/aio/backoff:python",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
     ],
 )
 

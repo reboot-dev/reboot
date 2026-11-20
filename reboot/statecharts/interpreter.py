@@ -463,8 +463,7 @@ def _take_transition(
     scheduled.
 
     None of the states that the transition exits has a schedule that
-    is running. A timer of a state that it exits is no longer
-    running."""
+    is running, and each timer of them is being cancelled."""
     exited, entered = states_exited_and_entered_from_transition(
         statechart,
         hierarchical_state_name=status.active,
@@ -523,34 +522,31 @@ def _take_transition(
         if len(superstate_names) > 0:
             history[superstate_names[0]] = hierarchical_state_name
 
-    # A timer of a state that was exited is no longer running. A
-    # schedule of one is not either: the transition would have waited
-    # for it.
-    activities = [
-        activity for activity in status.activities
-        if not activity.HasField("state") or activity.state not in exited
-    ]
-
     return statechart_pb2.Status(
         active=entered[-1] if len(entered) > 0 else status.active,
         history=history,
         queue=injected_events + list(status.queue),
-        activities=activities + activities_to_schedule,
+        activities=list(status.activities) + activities_to_schedule,
     )
 
 
-def _exits_state_with_running_schedule(
+def _try_cancel_running_activities(
     statechart: statechart_pb2.Statechart,
     transition: (
         statechart_pb2.Statechart.On | statechart_pb2.Statechart.When
     ),
     *,
     status: statechart_pb2.Status,
-) -> bool:
-    """Returns whether taking `transition` exits a state that has a
-    schedule that is running, as `status` says, which the statechart
-    waits to finish before it exits the state. It waits for no
-    timer."""
+) -> tuple[statechart_pb2.Status, bool]:
+    """Cancels what can be cancelled of the activities that are
+    running, as `status` says, in the states that taking `transition`
+    exits: each timer, and each schedule that is `cancellable`.
+
+    Returns the status with each of those as one that is being
+    cancelled, which is `status` itself if there is none to mark, and
+    whether the transition must wait, which it must until every
+    schedule that is running in those states has finished, whether or
+    not the schedule is `cancellable`. It waits for no timer."""
     exited, _ = states_exited_and_entered_from_transition(
         statechart,
         hierarchical_state_name=status.active,
@@ -558,9 +554,42 @@ def _exits_state_with_running_schedule(
         history=status.history,
     )
 
-    return any(
-        activity.HasField("schedule") and activity.HasField("state") and
-        activity.state in exited for activity in status.activities
+    def is_exited(activity: statechart_pb2.Status.Activity) -> bool:
+        return activity.HasField("state") and activity.state in exited
+
+    def is_to_be_cancelled(activity: statechart_pb2.Status.Activity) -> bool:
+        return (
+            is_exited(activity) and not activity.cancelling and
+            (activity.HasField("timer") or activity.schedule.cancellable)
+        )
+
+    must_wait = any(
+        is_exited(activity) and activity.HasField("schedule")
+        for activity in status.activities
+    )
+
+    if not any(is_to_be_cancelled(activity) for activity in status.activities):
+        return (status, must_wait)
+
+    activities: list[statechart_pb2.Status.Activity] = []
+
+    for activity in status.activities:
+        if is_to_be_cancelled(activity):
+            cancelling_activity = statechart_pb2.Status.Activity()
+            cancelling_activity.CopyFrom(activity)
+            cancelling_activity.cancelling = True
+            activities.append(cancelling_activity)
+        else:
+            activities.append(activity)
+
+    return (
+        statechart_pb2.Status(
+            active=status.active,
+            history=status.history,
+            queue=status.queue,
+            activities=activities,
+        ),
+        must_wait,
     )
 
 
@@ -585,7 +614,10 @@ def run(
     A transition that would exit a state that has a schedule that is
     running is not taken, and the statechart then has nothing left to
     do until the schedule has finished: an event that such a
-    transition fires for stays at the head of the queue.
+    transition fires for stays at the head of the queue. Each such
+    schedule that is `cancellable` is from then on being cancelled, as
+    is each timer of a state that a transition that fires would exit,
+    which no transition waits for.
 
     `servicer` has the methods that the statechart names, each of
     which is called with `state`, which it may change. `statechart`
@@ -631,14 +663,17 @@ def run(
                 state=state,
             )
         ) is not None:
-            # A transition that would exit a state that has a schedule
-            # that is running is not taken, and the statechart then has
-            # nothing left to do until the schedule has finished.
-            if _exits_state_with_running_schedule(
+            # Each activity of a state that the transition would
+            # exit is cancelled, if it can be. A transition that
+            # would exit a state that has a schedule that is running
+            # is not taken, and the statechart then has nothing left
+            # to do until the schedule has finished.
+            status, must_wait = _try_cancel_running_activities(
                 statechart,
                 when,
                 status=status,
-            ):
+            )
+            if must_wait:
                 return status if status is not given_status else None
 
             status = _take_transition(
@@ -664,17 +699,20 @@ def run(
             state=state,
         )
 
-        # A transition that would exit a state that has a schedule
-        # that is running is not taken, and the statechart then has
-        # nothing left to do until the schedule has finished. The
-        # event that the transition fires for stays at the head of the
-        # queue.
-        if on is not None and _exits_state_with_running_schedule(
-            statechart,
-            on,
-            status=status,
-        ):
-            break
+        # Each activity of a state that the transition would exit is
+        # cancelled, if it can be. A transition that would exit a
+        # state that has a schedule that is running is not taken, and
+        # the statechart then has nothing left to do until the
+        # schedule has finished. The event that the transition fires
+        # for stays at the head of the queue.
+        if on is not None:
+            status, must_wait = _try_cancel_running_activities(
+                statechart,
+                on,
+                status=status,
+            )
+            if must_wait:
+                break
 
         # Take the event from the queue.
         status = statechart_pb2.Status(

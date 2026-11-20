@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from google.protobuf.message import Message
 from logging import Logger
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.aio.auth.authorizers import Authorizer
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.contexts import (
@@ -231,6 +232,16 @@ class Middleware(ABC):
         """Stop the middleware background tasks.
         """
         await self.tasks_dispatcher.stop()
+
+    def cancel_statechart_activities(
+        self,
+        status: statechart_pb2.Status,
+    ) -> None:
+        """Cancels each activity that is being cancelled, as `status`,
+        which is where the statechart of a state of this state type
+        is, says. A state type without a statechart has no
+        activities."""
+        pass
 
     def maybe_raise_effect_validation_retry(
         self,

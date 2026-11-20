@@ -538,26 +538,28 @@ class RunTest(unittest.TestCase):
         )
 
 
-# A statechart with activities. `PACKING` has the schedule `pack` and a
+# A statechart with activities. `PACKING` has the schedule `pack`,
+# the schedule `label`, which is the one that is cancellable, and a
 # timer of five minutes, and the statechart itself has the schedule
-# `audit`. A `Paid` and the
-# order being cancelled each take `PACKING` to `DONE`, and a
-# `Refunded` is handled with a call where the statechart is.
+# `audit`. A `Paid` and the order being cancelled each take `PACKING`
+# to `DONE`, and a `Refunded` is handled with a call where the
+# statechart is.
 STATECHART_WITH_ACTIVITIES = text_format.Parse(
     """
     events: "tests.reboot.statecharts.Paid"
     events: "tests.reboot.statecharts.Refunded"
     initial: "PACKING"
-    entry { schedule { inline { method: "audit" } } }
+    entry { schedule { inline { method: "audit" } cancellable: false } }
     states {
       name: "PACKING"
-      entry { schedule { inline { method: "pack" } } }
+      entry { schedule { inline { method: "pack" } cancellable: false } }
       entry {
         timer {
           minutes: 5
           enqueue { event: "tests.reboot.statecharts.Refunded" }
         }
       }
+      entry { schedule { inline { method: "label" } cancellable: true } }
       transitions {
         on { event: "tests.reboot.statecharts.Paid" to: "DONE" }
       }
@@ -598,6 +600,25 @@ REMIND = statechart_pb2.Status.Activity(
     timer=STATECHART_WITH_ACTIVITIES.states[0].entry[1].timer,
     task_uuid=b"remind",
 )
+LABEL = statechart_pb2.Status.Activity(
+    state="PACKING",
+    schedule=STATECHART_WITH_ACTIVITIES.states[0].entry[2].schedule,
+    task_uuid=b"label",
+)
+# `REMIND` once it is being cancelled.
+REMIND_CANCELLING = statechart_pb2.Status.Activity(
+    state="PACKING",
+    timer=REMIND.timer,
+    task_uuid=b"remind",
+    cancelling=True,
+)
+# `LABEL` once it is being cancelled.
+LABEL_CANCELLING = statechart_pb2.Status.Activity(
+    state="PACKING",
+    schedule=LABEL.schedule,
+    task_uuid=b"label",
+    cancelling=True,
+)
 
 
 class RunActivitiesTest(unittest.TestCase):
@@ -628,6 +649,10 @@ class RunActivitiesTest(unittest.TestCase):
                     statechart_pb2.Status.Activity(
                         state="PACKING",
                         timer=REMIND.timer,
+                    ),
+                    statechart_pb2.Status.Activity(
+                        state="PACKING",
+                        schedule=LABEL.schedule,
                     ),
                 ],
             ),
@@ -674,6 +699,120 @@ class RunActivitiesTest(unittest.TestCase):
 
         self.assertIsNone(status_after)
 
+    def test_event_cancels_cancellable_schedule_of_state_its_transition_exits(
+        self,
+    ) -> None:
+        paid = status_event_from_message(order_pb2.Paid(cents=500))
+
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[paid],
+                activities=[AUDIT, PACK, LABEL],
+            ),
+        )
+
+        # The `Paid` waits, and `label` is being cancelled. `pack`,
+        # which is of `PACKING` as well, is not cancellable, and
+        # `audit` is of no state that the transition exits.
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                queue=[paid],
+                activities=[AUDIT, PACK, LABEL_CANCELLING],
+            ),
+            status_after,
+        )
+
+    def test_when_transition_cancels_cancellable_schedule_of_state_it_exits(
+        self,
+    ) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(cancelled=True),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                activities=[AUDIT, LABEL],
+            ),
+        )
+
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                activities=[AUDIT, LABEL_CANCELLING],
+            ),
+            status_after,
+        )
+
+    def test_transition_that_waits_cancels_timer_of_state_it_exits(
+        self,
+    ) -> None:
+        paid = status_event_from_message(order_pb2.Paid(cents=500))
+
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[paid],
+                activities=[AUDIT, PACK, REMIND],
+            ),
+        )
+
+        # The `Paid` waits for `pack`, which is not cancellable, and
+        # the timer of `PACKING` is being cancelled from now on.
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                queue=[paid],
+                activities=[AUDIT, PACK, REMIND_CANCELLING],
+            ),
+            status_after,
+        )
+
+    def test_schedule_that_is_being_cancelled_is_still_waited_for(
+        self,
+    ) -> None:
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
+                activities=[AUDIT, LABEL_CANCELLING],
+            ),
+        )
+
+        self.assertIsNone(status_after)
+
+    def test_transition_that_exits_no_state_cancels_no_schedule(self) -> None:
+        refunded = order_pb2.Refunded(cents=1)
+
+        status_after = interpreter.run(
+            STATECHART_WITH_ACTIVITIES,
+            servicer=Servicer(),
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="PACKING",
+                queue=[status_event_from_message(refunded)],
+                activities=[AUDIT, LABEL],
+            ),
+        )
+
+        self.assertEqual(
+            statechart_pb2.Status(
+                active="PACKING",
+                activities=[AUDIT, LABEL],
+            ),
+            status_after,
+        )
+
     def test_transition_that_exits_no_state_is_taken_during_schedule(
         self,
     ) -> None:
@@ -715,10 +854,16 @@ class RunActivitiesTest(unittest.TestCase):
             ),
         )
 
-        # The timer of `PACKING`, which was exited, is no longer
-        # running.
+        # The timer of `PACKING`, which was exited, is being
+        # cancelled.
         self.assertEqual(
-            statechart_pb2.Status(active="DONE", activities=[AUDIT]),
+            statechart_pb2.Status(
+                active="DONE",
+                activities=[
+                    AUDIT,
+                    REMIND_CANCELLING,
+                ],
+            ),
             status_after,
         )
 

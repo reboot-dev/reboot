@@ -21,8 +21,9 @@ class ShipmentServicer(Shipment.Servicer):
     """A shipment whose statechart, which is in `shipment.proto`,
     starts in `PACKING`. That state has two schedules: `pack`, which
     ends in a `Packed`, on which the shipment is `SHIPPED`, and
-    `label`, which ends in no event. A `Cancelled` makes a shipment
-    that is `PACKING` `CANCELLED`.
+    `label`, which ends in no event and is the one that is
+    cancellable. A `Cancelled` makes a shipment that is `PACKING`
+    `CANCELLED`.
 
     `SHIPPED` has a timer of one second, after which the shipment is
     `DELIVERED`, unless a `Returned` has made it `RETURNED`. That
@@ -32,10 +33,16 @@ class ShipmentServicer(Shipment.Servicer):
     # Set by a test to let `pack` finish.
     packed: asyncio.Event
 
+    # Set for `label` to finish, which a test clears to keep it
+    # running.
+    labelled: asyncio.Event
+
     # How many more times `label` is to fail before it finishes, which
-    # a test sets, and how many times it has been called.
+    # a test sets, how many times it has been called, and how many
+    # times it has been cancelled.
     label_failures: int
     label_calls: int
+    label_cancellations: int
 
     def authorizer(self):
         return allow()
@@ -50,6 +57,14 @@ class ShipmentServicer(Shipment.Servicer):
     async def cancel(
         self,
         context: WriterContext,
+        request: Empty,
+    ) -> Empty:
+        await self.statechart(context).enqueue(shipment_pb2.Cancelled())
+        return Empty()
+
+    async def cancel_in_transaction(
+        self,
+        context: TransactionContext,
         request: Empty,
     ) -> Empty:
         await self.statechart(context).enqueue(shipment_pb2.Cancelled())
@@ -92,6 +107,11 @@ class ShipmentServicer(Shipment.Servicer):
         if ShipmentServicer.label_failures > 0:
             ShipmentServicer.label_failures -= 1
             raise RuntimeError("Failed to label")
+        try:
+            await ShipmentServicer.labelled.wait()
+        except asyncio.CancelledError:
+            ShipmentServicer.label_cancellations += 1
+            raise
 
 
 def running_schedules(status: statechart_pb2.Status) -> list[str]:
@@ -105,12 +125,22 @@ def running_schedules(status: statechart_pb2.Status) -> list[str]:
 
 
 def running_timers(status: statechart_pb2.Status) -> list[tuple[str, str]]:
-    """Returns the state and the event of each timer that is running,
-    as `status` says."""
+    """Returns the state and the event of each timer that is running
+    and is not being cancelled, as `status` says."""
     return [
         (activity.state, activity.timer.enqueue.event)
         for activity in status.activities
-        if activity.HasField("timer")
+        if activity.HasField("timer") and not activity.cancelling
+    ]
+
+
+def cancelling_timers(status: statechart_pb2.Status) -> list[tuple[str, str]]:
+    """Returns the state and the event of each timer that is being
+    cancelled, as `status` says."""
+    return [
+        (activity.state, activity.timer.enqueue.event)
+        for activity in status.activities
+        if activity.HasField("timer") and activity.cancelling
     ]
 
 
@@ -121,8 +151,11 @@ class ActivityTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         ShipmentServicer.packed = asyncio.Event()
+        ShipmentServicer.labelled = asyncio.Event()
+        ShipmentServicer.labelled.set()
         ShipmentServicer.label_failures = 0
         ShipmentServicer.label_calls = 0
+        ShipmentServicer.label_cancellations = 0
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -135,8 +168,10 @@ class ActivityTest(unittest.IsolatedAsyncioTestCase):
         self.shipment, _ = await Shipment.Create(self.context, "shipment")
 
     async def asyncTearDown(self) -> None:
-        # Let `pack` finish, so that its task is not left running.
+        # Let `pack` and `label` finish, so that their tasks are not
+        # left running.
         ShipmentServicer.packed.set()
+        ShipmentServicer.labelled.set()
         await self.rbt.stop()
 
     async def status_once(self, holds) -> statechart_pb2.Status:
@@ -205,6 +240,87 @@ class ActivityTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(statechart_pb2.Status(active="CANCELLED"), status)
 
+    async def test_cancellable_schedule_of_state_to_exit_is_cancelled(
+        self,
+    ) -> None:
+        ShipmentServicer.labelled.clear()
+
+        await self.create_shipment()
+
+        await self.status_once(
+            lambda status: running_schedules(status) == ["pack", "label"],
+        )
+
+        await self.shipment.Cancel(self.context)
+
+        # `label` is cancelled, and has finished once it is. `pack` is
+        # not cancellable, so the transition for the `Cancelled` still
+        # waits for it.
+        status = await self.status_once(
+            lambda status: running_schedules(status) == ["pack"],
+        )
+
+        self.assertEqual(1, ShipmentServicer.label_cancellations)
+        self.assertEqual("PACKING", status.active)
+        self.assertEqual(
+            [status_event_from_message(shipment_pb2.Cancelled())],
+            list(status.queue),
+        )
+
+        ShipmentServicer.packed.set()
+
+        status = await self.status_once(
+            lambda status: status.active == "CANCELLED",
+        )
+
+        self.assertEqual(statechart_pb2.Status(active="CANCELLED"), status)
+
+        # `label` was not called again once it had been cancelled.
+        self.assertEqual(1, ShipmentServicer.label_calls)
+
+    async def test_schedule_is_cancelled_once_transaction_has_committed(
+        self,
+    ) -> None:
+        ShipmentServicer.labelled.clear()
+
+        await self.create_shipment()
+
+        await self.status_once(
+            lambda status: running_schedules(status) == ["pack", "label"],
+        )
+
+        await self.shipment.CancelInTransaction(self.context)
+
+        await self.status_once(
+            lambda status: running_schedules(status) == ["pack"],
+        )
+
+        self.assertEqual(1, ShipmentServicer.label_cancellations)
+
+    async def test_schedule_cancelled_while_not_running_is_not_run_again(
+        self,
+    ) -> None:
+        # `label` fails every time it is called, so it is waiting to
+        # be run again whenever it is not, briefly, being called.
+        ShipmentServicer.label_failures = 1000000
+
+        await self.create_shipment()
+
+        await self.status_once(
+            lambda status: running_schedules(status) == ["pack", "label"],
+        )
+
+        await self.shipment.Cancel(self.context)
+
+        # `label` has finished though it never did so itself: its
+        # task, when it was next run, found that it was being
+        # cancelled.
+        await self.status_once(
+            lambda status: running_schedules(status) == ["pack"],
+        )
+
+        self.assertGreater(ShipmentServicer.label_failures, 0)
+
     async def test_schedule_that_fails_is_run_again(self) -> None:
         ShipmentServicer.label_failures = 1
 
@@ -253,11 +369,15 @@ class ActivityTest(unittest.IsolatedAsyncioTestCase):
         # `SHIPPED` is over.
         await self.shipment.SendBack(self.context)
 
-        # The transition did not wait for the timer, and the timer of
-        # `SHIPPED` is no longer running: that of `RETURNED` is.
+        # The transition did not wait for the timer of `SHIPPED`,
+        # which is being cancelled, and that of `RETURNED` is running.
         status = await self.shipment.Status(self.context)
 
         self.assertEqual("RETURNED", status.active)
+        self.assertEqual(
+            [("SHIPPED", "tests.reboot.statecharts.Delivered")],
+            cancelling_timers(status),
+        )
         self.assertEqual(
             [("RETURNED", "tests.reboot.statecharts.Reimbursed")],
             running_timers(status),

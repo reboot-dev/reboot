@@ -454,7 +454,12 @@ class ValidationTest(unittest.TestCase):
               entry {
                 timer { minutes: 30 enqueue { event: "shop.v1.TimedOut" } }
               }
-              entry { schedule { inline { method: "remind" } } }
+              entry {
+                schedule {
+                  inline { method: "remind" }
+                  cancellable: false
+                }
+              }
             }
             """,
         )
@@ -822,7 +827,7 @@ class ValidationTest(unittest.TestCase):
             initial: "SHIPPING"
             states {
               name: "SHIPPING"
-              entry { schedule { inline {} } }
+              entry { schedule { inline {} cancellable: false } }
             }
             """,
         )
@@ -834,11 +839,29 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_a_schedule_says_whether_it_is_cancellable(self) -> None:
+        statechart = make_statechart(
+            """
+            initial: "SHIPPING"
+            states {
+              name: "SHIPPING"
+              entry { schedule { inline { method: "ship" } } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "in an `entry` of state `SHIPPING`: the `schedule` does not "
+                "say whether it is `cancellable`"
+            ],
+        )
+
     def test_a_schedule_that_says_nothing_of_how_has_no_method(self) -> None:
         statechart = make_statechart(
             """
             initial: "SHIPPING"
-            entry { schedule {} }
+            entry { schedule { cancellable: false } }
             states { name: "SHIPPING" }
             """,
         )
@@ -1346,6 +1369,7 @@ class ValidationTest(unittest.TestCase):
               entry {
                 schedule {
                   inline { method: "ship" enqueues: "shop.v1.Shipped" }
+                  cancellable: false
                 }
               }
             }
@@ -1648,6 +1672,7 @@ class ValidationTest(unittest.TestCase):
               entry {
                 schedule {
                   inline { method: "ship" enqueues: "shop.v1.Shipped" }
+                  cancellable: false
                 }
               }
             }
@@ -1814,7 +1839,12 @@ class ValidationTest(unittest.TestCase):
               initial: "SHIPPING"
               states {
                 name: "SHIPPING"
-                entry { schedule { inline { method: "ship" } } }
+                entry {
+                  schedule {
+                    inline { method: "ship" }
+                    cancellable: false
+                  }
+                }
               }
             }
             """,
@@ -2168,7 +2198,12 @@ class ValidationTest(unittest.TestCase):
             initial: "SHIPPING"
             states {
               name: "SHIPPING"
-              entry { schedule { inline { method: "ship__order" } } }
+              entry {
+                schedule {
+                  inline { method: "ship__order" }
+                  cancellable: false
+                }
+              }
             }
             """,
         )
@@ -2212,7 +2247,12 @@ class ValidationTest(unittest.TestCase):
             }
             states {
               name: "PENDING"
-              entry { schedule { inline { method: "remind_after_2_days" } } }
+              entry {
+                schedule {
+                  inline { method: "remind_after_2_days" }
+                  cancellable: false
+                }
+              }
               transitions {
                 on {
                   event: "shop.v1.Paid"

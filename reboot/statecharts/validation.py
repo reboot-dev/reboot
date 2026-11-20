@@ -117,7 +117,8 @@ def _check_schedule(
     schedule: statechart_pb2.Statechart.Schedule,
 ) -> list[str]:
     """Returns every problem with `schedule`: it names a method, by a
-    name that a method can have."""
+    name that a method can have, and it says whether it is
+    `cancellable`."""
     problems: list[str] = []
 
     if not schedule.inline.method:
@@ -129,6 +130,11 @@ def _check_schedule(
                 "the `schedule` has the method "
                 f"`{schedule.inline.method}`, which {problem}",
             )
+
+    if not schedule.HasField("cancellable"):
+        problems.append(
+            "the `schedule` does not say whether it is `cancellable`",
+        )
 
     return problems
 

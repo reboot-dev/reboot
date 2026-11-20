@@ -43,9 +43,15 @@ message Shipment {
             enqueues: "tests.reboot.statecharts.Packed"
             enqueues: "tests.reboot.statecharts.Cancelled"
           }
+          cancellable: false
         }
       }
-      entry { schedule { inline { method: "label" } } }
+      entry {
+        schedule {
+          inline { method: "label" }
+          cancellable: true
+        }
+      }
       transitions {
         on { event: "tests.reboot.statecharts.Packed" to: "SHIPPED" }
       }
@@ -99,6 +105,14 @@ service ShipmentMethods {
   // Enqueues a `Cancelled`.
   rpc Cancel(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Enqueues a `Cancelled`, as `Cancel` does, but in a transaction.
+  rpc CancelInTransaction(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      exclusive: {}
     };
   }
 

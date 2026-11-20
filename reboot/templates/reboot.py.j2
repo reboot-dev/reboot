@@ -118,6 +118,7 @@ import reboot.settings as IMPORT_reboot_settings
 {% if states | selectattr('has_statechart') | list | length > 0 %}
 import reboot.statecharts.events as IMPORT_reboot_statecharts_events
 import reboot.statecharts.interpreter as IMPORT_reboot_statecharts_interpreter
+import reboot.wait_for_tasks as IMPORT_reboot_wait_for_tasks
 {% endif %}
 import reboot.nodejs.python as IMPORT_reboot_nodejs_python
 from reboot.time import DateTimeWithTimeZone as IMPORT_reboot_time_DateTimeWithTimeZone
@@ -466,6 +467,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_statechart_activities=self.cancel_statechart_activities,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -538,6 +540,27 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         )
         {% endfor %}
 
+{% if state.has_statechart %}
+    def cancel_statechart_activities(
+        self,
+        status: rbt.v1alpha1.statecharts.statechart_pb2.Status,
+    ) -> None:
+        """Implementation of `Middleware.cancel_statechart_activities()`."""
+        for activity in status.activities:
+            if not activity.cancelling:
+                continue
+
+            # An activity that is being cancelled and is not running
+            # in this process has no event here: its task finishes it
+            # without running it when the task is next run.
+            cancelled = {{ state.proto.name }}BaseServicer._statechart_activity_cancellations.get(
+                activity.task_uuid,
+            )
+
+            if cancelled is not None:
+                cancelled.set()
+
+{% endif %}
     async def inspect(self, state_ref: IMPORT_reboot_aio_types.StateRef) -> IMPORT_typing.AsyncIterator[IMPORT_google_protobuf_message.Message]:
         """Implementation of `Middleware.inspect()`."""
         context = self.create_context(
@@ -3596,25 +3619,40 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             self._status = status
             self._status_modified = True
 
-        def _finish_activity(self, task_uuid: bytes) -> bool:
+        async def _finish_activity(
+            self,
+            task_uuid: bytes,
+            *,
+            event: IMPORT_typing.Any,
+        ) -> None:
             """Takes the activity that the task that has `task_uuid`
-            runs from those that are running. Returns whether it was
-            one of them: a timer of a state that has been exited is
-            not."""
-            activities = [
-                activity for activity in self._status.activities
-                if activity.task_uuid != task_uuid
-            ]
+            runs from those that are running, and enqueues `event`, if
+            there is one, unless the activity was being cancelled."""
+            cancelling: IMPORT_typing.Optional[bool] = None
 
-            if len(activities) == len(self._status.activities):
-                return False
+            activities: list[rbt.v1alpha1.statecharts.statechart_pb2.Status.Activity] = []
+
+            for activity in self._status.activities:
+                if activity.task_uuid == task_uuid:
+                    cancelling = activity.cancelling
+                else:
+                    activities.append(activity)
+
+            # Only this takes the activity from those that are running,
+            # and the write that calls it is made once for the task.
+            assert cancelling is not None
 
             del self._status.activities[:]
             self._status.activities.extend(activities)
 
             self._status_modified = True
 
-            return True
+            if event is not None and not cancelling:
+                await self.enqueue(event)
+
+    # The event that is set to cancel each activity that is running in
+    # this process, by the UUID of the task that runs the activity.
+    _statechart_activity_cancellations: dict[bytes, IMPORT_asyncio.Event] = {}
 
     async def _{{ RUN_STATECHART_ACTIVITY_METHOD }}(
         self,
@@ -3624,47 +3662,97 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         """Runs an activity of the statechart. A `schedule` is run by
         calling its method, as a workflow of the servicer is called,
         and what it enqueues is the event that the method returns, if
-        it returns one. A `timer`, whose delay is over by now,
-        enqueues its event. Then, in one write, the activity is taken
-        from those that are running and the event is enqueued."""
+        it returns one. A schedule that is cancelled enqueues nothing.
+        A `timer`, whose delay is over by now, enqueues its event.
+        An activity that is being cancelled is not run and enqueues
+        nothing. Then, in one write, the activity is taken from those
+        that are running and the event is enqueued."""
         task = context.task
 
         assert task is not None
+
+        task_uuid = task.task_id.task_uuid
+
+        # An activity is run only while it is running and is not being
+        # cancelled. One that is being cancelled is finished without
+        # being run, which is how one that was not running when it
+        # was cancelled finishes, and one that has finished already,
+        # which this task was run again after, is left as it is. This
+        # is read every time the task is run, for what is stored by
+        # then.
+        _, statechart = await {{ state.proto.name }}.ref().always().read(context)
+
+        should_run = any(
+            activity.task_uuid == task_uuid and not activity.cancelling
+            for activity in statechart.status().activities
+        )
 
         # The event to enqueue, if any. What it is depends on the
         # activity, and `enqueue()` checks that it is one of the
         # events of the statechart.
         event: IMPORT_typing.Any = None
 
-        if request.HasField("schedule"):
-            event = await getattr(type(self), request.schedule.inline.method)(
-                context,
-            )
-        else:
-            assert request.HasField("timer")
+        if should_run:
+            if request.HasField("schedule"):
+                # The method of the schedule is run in an asyncio task
+                # of its own, so that it can be cancelled, by the event
+                # being set, without this task being cancelled.
+                cancelled = IMPORT_asyncio.Event()
 
-            status_event = rbt.v1alpha1.statecharts.statechart_pb2.Status.Event(
-                event=request.timer.enqueue.event,
-            )
+                {{ state.proto.name }}BaseServicer._statechart_activity_cancellations[
+                    task_uuid
+                ] = cancelled
 
-            if request.timer.enqueue.HasField("value"):
-                status_event.value.CopyFrom(request.timer.enqueue.value)
+                schedule_task = IMPORT_asyncio.create_task(
+                    getattr(type(self), request.schedule.inline.method)(
+                        context,
+                    ),
+                )
+                cancelled_task = IMPORT_asyncio.create_task(cancelled.wait())
 
-            event = IMPORT_reboot_statecharts_events.message_from_status_event(
-                status_event,
-            )
+                try:
+                    await IMPORT_asyncio.wait(
+                        [schedule_task, cancelled_task],
+                        return_when=IMPORT_asyncio.FIRST_COMPLETED,
+                    )
+
+                    # A schedule that is cancelled enqueues nothing.
+                    if schedule_task.done():
+                        event = schedule_task.result()
+                finally:
+                    del {{ state.proto.name }}BaseServicer._statechart_activity_cancellations[
+                        task_uuid
+                    ]
+
+                    # Cancel whichever of the two is still running,
+                    # which the schedule is if it is being cancelled,
+                    # and wait until both have finished, also when
+                    # this task is itself cancelled meanwhile.
+                    await IMPORT_reboot_wait_for_tasks.wait_for_tasks(
+                        [schedule_task, cancelled_task],
+                        cancel=True,
+                    )
+            else:
+                assert request.HasField("timer")
+
+                status_event = rbt.v1alpha1.statecharts.statechart_pb2.Status.Event(
+                    event=request.timer.enqueue.event,
+                )
+
+                if request.timer.enqueue.HasField("value"):
+                    status_event.value.CopyFrom(request.timer.enqueue.value)
+
+                event = IMPORT_reboot_statecharts_events.message_from_status_event(
+                    status_event,
+                )
 
         async def finish_activity(
             state: {{ state.proto.name }}.State,
             statechart: {{ state.proto.name }}BaseServicer.Statechart,
         ) -> None:
-            # A timer of a state that has been exited is no longer
-            # running, and enqueues nothing.
-            if not statechart._finish_activity(task.task_id.task_uuid):
-                return
-
-            if event is not None:
-                await statechart.enqueue(event)
+            # An activity that is being cancelled enqueues nothing,
+            # which it may be only since it was read above.
+            await statechart._finish_activity(task_uuid, event=event)
 
         await {{ state.proto.name }}.ref().write(context, finish_activity)
 

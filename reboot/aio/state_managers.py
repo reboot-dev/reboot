@@ -4915,6 +4915,12 @@ class SidecarStateManager(
                     )
                     if effects.tasks is not None:
                         tasks_dispatcher.dispatch(effects.tasks)
+                    # An activity is cancelled once the status that
+                    # says it is being cancelled has been stored.
+                    if effects.statechart_status is not None:
+                        tasks_dispatcher.cancel_statechart_activities(
+                            effects.statechart_status,
+                        )
                 else:
                     # NOTE: we do this store while holding the
                     # transaction lock so any outstanding readers
@@ -6919,6 +6925,13 @@ class SidecarStateManager(
                     if len(transaction.tasks) > 0:
                         transaction.tasks_dispatcher.dispatch(
                             transaction.tasks
+                        )
+
+                    # An activity is cancelled once the status that
+                    # says it is being cancelled has been committed.
+                    if transaction.statechart_status is not None:
+                        transaction.tasks_dispatcher.cancel_statechart_activities(
+                            transaction.statechart_status,
                         )
 
                     if not state_was_cached:
