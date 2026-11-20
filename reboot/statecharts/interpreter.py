@@ -414,19 +414,19 @@ def _take_transition(
     state: Any,
     status: statechart_pb2.Status,
     event: Optional[Message],
-) -> Optional[statechart_pb2.Status]:
+) -> statechart_pb2.Status:
     """Takes `transition`, which has fired, for `event` if it is an
     `on` transition: exits each state that it exits, innermost
     first, runs each of its actions, and enters each state that it
     enters, outermost first. Only an action of an `on` transition is
     given `event`.
 
-    Returns the status that the statechart then has, or `None` if that
-    is `status`: that of `status`, with the innermost of the states
-    that were entered as the state that is active, with each state
-    that was exited as what the state it is within was last in, and
-    with each event that was injected ahead of every event that is
-    waiting."""
+    Returns the status that the statechart then has, which is `status`
+    itself if the transition left it as it is: that of `status`, with
+    the innermost of the states that were entered as the state that is
+    active, with each state that was exited as what the state it is
+    within was last in, and with each event that was injected ahead of
+    every event that is waiting."""
     exited, entered = states_exited_and_entered_from_transition(
         statechart,
         hierarchical_state_name=status.active,
@@ -468,7 +468,7 @@ def _take_transition(
     # A transition that exits and enters nothing, and whose actions
     # inject nothing, leaves the status as it is.
     if (len(exited) == 0 and len(entered) == 0 and len(injected_events) == 0):
-        return None
+        return status
 
     history = dict(status.history)
     for hierarchical_state_name in exited:
@@ -513,13 +513,14 @@ def run(
     if len(statechart.states) == 0:
         return None
 
-    # The status that the statechart has come to, once that is other
-    # than `status`. Where the statechart is now is therefore
-    # `modified_status or status`.
-    modified_status: Optional[statechart_pb2.Status] = None
+    # The status that we were given, to tell at the end whether the
+    # statechart has come to another: nothing changes a status, so the
+    # statechart is where it was if and only if `status` is still this
+    # one.
+    given_status = status
 
     if not status.HasField("active"):
-        modified_status = _start(
+        status = _start(
             statechart,
             servicer=servicer,
             state=state,
@@ -543,51 +544,49 @@ def run(
         while (
             when := maybe_when_transition(
                 statechart,
-                hierarchical_state_name=(modified_status or status).active,
+                hierarchical_state_name=status.active,
                 servicer=servicer,
                 state=state,
             )
         ) is not None:
-            modified_status = _take_transition(
+            status = _take_transition(
                 statechart,
                 when,
                 servicer=servicer,
                 state=state,
-                status=modified_status or status,
+                status=status,
                 event=None,
-            ) or modified_status
+            )
             count_transition_or_fail_if_possible_infinite_loop()
 
-        if len((modified_status or status).queue) == 0:
+        if len(status.queue) == 0:
             break
 
         # Take the event at the head of the queue from it.
-        event = message_from_status_event(
-            (modified_status or status).queue[0],
-        )
-        modified_status = statechart_pb2.Status(
-            active=(modified_status or status).active,
-            history=(modified_status or status).history,
-            queue=(modified_status or status).queue[1:],
+        event = message_from_status_event(status.queue[0])
+        status = statechart_pb2.Status(
+            active=status.active,
+            history=status.history,
+            queue=status.queue[1:],
         )
 
         on = maybe_on_transition(
             statechart,
-            hierarchical_state_name=modified_status.active,
+            hierarchical_state_name=status.active,
             event=event,
             servicer=servicer,
             state=state,
         )
 
         if on is not None:
-            modified_status = _take_transition(
+            status = _take_transition(
                 statechart,
                 on,
                 servicer=servicer,
                 state=state,
-                status=modified_status,
+                status=status,
                 event=event,
-            ) or modified_status
+            )
             count_transition_or_fail_if_possible_infinite_loop()
 
-    return modified_status
+    return status if status is not given_status else None
