@@ -584,7 +584,8 @@ def _check_exits(
 ) -> list[str]:
     """Returns every problem with the exits of `statechart`, or of
     `state`, and of every state within it: each exit is a `call` or an
-    `inject`. `hierarchical_state_name` is that of `state`."""
+    `inject`, and no exit of the statechart itself injects an event.
+    `hierarchical_state_name` is that of `state`."""
     # `subject` is what a message calls the statechart or the state.
     if statechart is not None:
         subject = "the statechart"
@@ -611,6 +612,19 @@ def _check_exits(
                     f"an `exit` of {subject} is neither a `call` nor an "
                     "`inject`",
                 )
+
+    # The statechart is exited when it has entered a final state of
+    # its own, and a final state has no transitions: none would fire
+    # for an event that is injected then.
+    if statechart is not None and any(
+        exit.HasField("inject") or
+        (exit.HasField("call") and len(exit.call.inline.injects) > 0)
+        for exit in exits
+    ):
+        problems.append(
+            "the statechart cannot inject an event in an `exit`: it is in "
+            "a final state by then, so no transition fires for the event",
+        )
 
     for substate in substates:
         problems.extend(

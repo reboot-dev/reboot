@@ -205,7 +205,9 @@ message Statechart {
   repeated State states = 2;
   repeated Transition transitions = 3;
   // What the statechart itself does when it starts, as a state does
-  // when it is entered, and what it does when it is exited.
+  // when it is entered, and what it does when it is exited, which it
+  // is when a final state of its own, rather than one within another
+  // state, has been entered.
   //
   // TODO: show these in whatever the dashboard draws of a statechart,
   // beside those of its states.

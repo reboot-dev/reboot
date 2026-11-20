@@ -762,13 +762,15 @@ class ValidationTest(unittest.TestCase):
         statechart = make_statechart(
             """
             initial: "PENDING"
-            exit { inject {} }
-            states { name: "PENDING" }
+            states {
+              name: "PENDING"
+              exit { inject {} }
+            }
             """,
         )
         self.assertEqual(
             check_statechart(statechart),
-            ["in an `exit` of the statechart: the `inject` has no `event`"],
+            ["in an `exit` of state `PENDING`: the `inject` has no `event`"],
         )
 
     def test_an_inject_in_an_on_has_an_event(self) -> None:
@@ -1155,6 +1157,49 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(
             check_statechart(statechart),
             ["state `CANCELLED` is final and cannot inject an event"],
+        )
+
+    def test_the_statechart_has_no_exit_that_injects(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Refunded"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Refunded" } }
+            exit { inject { event: "shop.v1.Refunded" } }
+            states { name: "CANCELLED" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart cannot inject an event in an `exit`: it is in "
+                "a final state by then, so no transition fires for the event"
+            ],
+        )
+
+    def test_the_statechart_has_no_exit_with_call_that_may_inject(
+        self,
+    ) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Refunded"
+            initial: "CANCELLED"
+            transitions { on { event: "shop.v1.Refunded" } }
+            exit {
+              call {
+                description: "Refund"
+                inline { method: "refund" injects: "shop.v1.Refunded" }
+              }
+            }
+            states { name: "CANCELLED" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the statechart cannot inject an event in an `exit`: it is in "
+                "a final state by then, so no transition fires for the event"
+            ],
         )
 
     def test_a_final_state_has_no_exit(self) -> None:

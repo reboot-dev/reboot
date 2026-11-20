@@ -354,16 +354,36 @@ def _enter_state(
     list[statechart_pb2.Status.Activity],
 ]:
     """Enters the state of `statechart` that has
-    `hierarchical_state_name`: runs each `entry` of it, in order.
-    Returns each event that was injected, and each activity that is to
-    be scheduled."""
-    return _run_entries(
+    `hierarchical_state_name`: runs each `entry` of it, in order. If
+    it is a final state of the statechart itself, the statechart is
+    then exited. Returns each event that was injected, and each
+    activity that is to be scheduled."""
+    injected_events, activities_to_schedule = _run_entries(
         states_by_hierarchical_state_name(statechart)
         [hierarchical_state_name].entry,
         hierarchical_state_name=hierarchical_state_name,
         servicer=servicer,
         state=state,
     )
+
+    if _is_final_state_of_statechart(statechart, hierarchical_state_name):
+        # A final state injects no event and has no activities, so
+        # there is nothing left for the statechart to do.
+        assert len(injected_events) == 0
+        assert len(activities_to_schedule) == 0
+
+        # Exit the statechart: run each `exit` of it, in order. None
+        # of them injects an event.
+        injected_events = _run_actions(
+            statechart.exit,
+            servicer=servicer,
+            state=state,
+            event=None,
+        )
+
+        assert len(injected_events) == 0
+
+    return (injected_events, activities_to_schedule)
 
 
 def _exit_state(
@@ -385,6 +405,22 @@ def _exit_state(
     )
 
 
+def _is_final_state_of_statechart(
+    statechart: statechart_pb2.Statechart,
+    hierarchical_state_name: str,
+) -> bool:
+    """Returns whether the state that has `hierarchical_state_name` is
+    a final state of `statechart` itself, rather than one within
+    another state."""
+    superstate_names = hierarchical_state_name_and_superstate_names(
+        hierarchical_state_name,
+    )[1:]
+
+    states = states_by_hierarchical_state_name(statechart)
+
+    return len(superstate_names) == 0 and states[hierarchical_state_name].final
+
+
 def _start(
     statechart: statechart_pb2.Statechart,
     *,
@@ -394,7 +430,8 @@ def _start(
 ) -> statechart_pb2.Status:
     """Starts `statechart`, which has states and, as `status` says, has
     not started: enters the statechart, and then its `initial` and on
-    into the states within that, outermost first.
+    into the states within that, outermost first. A statechart that
+    has entered a final state of its own by then is exited.
 
     Returns the status that the statechart then has: that of
     `status`, with the innermost of the states that were entered as
@@ -452,7 +489,8 @@ def _take_transition(
     `on` transition: exits each state that it exits, innermost
     first, runs each of its actions, and enters each state that it
     enters, outermost first. Only an action of an `on` transition is
-    given `event`.
+    given `event`. A statechart that has entered a final state of its
+    own by then is exited.
 
     Returns the status that the statechart then has, which is `status`
     itself if the transition left it as it is: that of `status`, with

@@ -538,6 +538,41 @@ class RunTest(unittest.TestCase):
         )
 
 
+# A statechart with a final state: it has an `exit` of its own and the
+# final state `CLOSED`, which a `Paid` takes `OPEN` to. A `Refunded` takes
+# `OPEN` to `REVIEW`, and so into `REVIEW/DONE`, which is a final
+# state within a state.
+STATECHART_WITH_FINAL_STATE = text_format.Parse(
+    """
+    events: "tests.reboot.statecharts.Paid"
+    events: "tests.reboot.statecharts.Refunded"
+    initial: "OPEN"
+    exit { call { description: "Void" inline { method: "void" } } }
+    states {
+      name: "OPEN"
+      transitions {
+        on { event: "tests.reboot.statecharts.Paid" to: "CLOSED" }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Refunded" to: "REVIEW" }
+      }
+    }
+    states {
+      name: "CLOSED"
+      final: true
+      entry {
+        call { description: "Enter" inline { method: "enter_closed" } }
+      }
+    }
+    states {
+      name: "REVIEW"
+      initial: "DONE"
+      states { name: "DONE" final: true }
+    }
+    """,
+    statechart_pb2.Statechart(),
+)
+
 # A statechart with activities. `PACKING` has the schedule `pack`,
 # the schedule `label`, which is the one that is cancellable, and a
 # timer of five minutes, and the statechart itself has the schedule
@@ -619,6 +654,66 @@ LABEL_CANCELLING = statechart_pb2.Status.Activity(
     task_uuid=b"label",
     cancelling=True,
 )
+
+
+class RunFinalStateTest(unittest.TestCase):
+    """Tests `run` with `STATECHART_WITH_FINAL_STATE` and a `Servicer`."""
+
+    def test_statechart_that_enters_final_state_of_its_own_is_exited(
+        self,
+    ) -> None:
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="OPEN",
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
+            ),
+        )
+
+        self.assertEqual(statechart_pb2.Status(active="CLOSED"), status_after)
+        # The `entry` of `CLOSED`, and then the `exit` of the
+        # statechart.
+        self.assertEqual([("enter_closed",), ("void",)], servicer.called)
+
+    def test_statechart_in_final_state_is_not_exited_again(self) -> None:
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="CLOSED",
+                queue=[status_event_from_message(order_pb2.Paid(cents=500))],
+            ),
+        )
+
+        # The `Paid` is dropped: a final state has no transitions.
+        self.assertEqual(statechart_pb2.Status(active="CLOSED"), status_after)
+        self.assertEqual([], servicer.called)
+
+    def test_final_state_within_state_does_not_exit_statechart(self) -> None:
+        servicer = Servicer()
+
+        status_after = interpreter.run(
+            STATECHART_WITH_FINAL_STATE,
+            servicer=servicer,
+            state=order_pb2.Order(),
+            status=statechart_pb2.Status(
+                active="OPEN",
+                queue=[status_event_from_message(order_pb2.Refunded(cents=1))],
+            ),
+        )
+
+        self.assertEqual(
+            statechart_pb2.Status(active="REVIEW/DONE"),
+            status_after,
+        )
+        self.assertEqual([], servicer.called)
 
 
 class RunActivitiesTest(unittest.TestCase):
