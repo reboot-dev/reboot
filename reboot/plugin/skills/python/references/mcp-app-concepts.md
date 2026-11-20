@@ -126,7 +126,7 @@ provider.)
 Consequences for authorizers:
 
 - **Write `authorizer()` on every Servicer from day one.** Don't
-  defer it "until prod." Identity is wired the same in dev and prod,
+  defer it "until production." Identity is wired the same in development and production,
   so production-shaped rules (`allow_if(all=[state_id_is_user_id])`,
   `allow_if(all=[has_verified_token])`, etc.) work immediately.
 - **Don't use `allow()` as a default.** It declares "this endpoint

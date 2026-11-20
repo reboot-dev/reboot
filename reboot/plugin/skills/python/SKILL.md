@@ -574,7 +574,7 @@ generate --react=frontend/api
 each one. Do **not** add `mcp=Tool()` or `UI()`; those are MCP App
 only.
 
-**Authorizers:** the dev-vs-prod sign-in sequence is
+**Authorizers:** the development-vs-production sign-in sequence is
 [`references/auth-web-apps.md`](references/auth-web-apps.md). Calling
 an external service as the user:
 

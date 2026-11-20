@@ -18,11 +18,11 @@ instance (e.g. `allow_if(all=[has_verified_token])`). Reboot evaluates
 that rule against `context.auth` before each method call. Identity
 comes from one of two sources on `Application(...)`:
 
-| Identity source on `Application(...)`                                                                                            | When identity is available                                                                                                   | Implication for authorizer rules                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `oauth=OAuth(provider=<OAuthProviderSelector>)` (e.g. `OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=...))`) | **Always** — every caller gets a verified `context.auth.user_id` (a `dev-{hash}` under `Development()`), in dev and in prod. | Write real `allow_if(...)` rules **from day one**. They work in dev exactly as in production. |
-| `token_verifier=<TokenVerifier>`                                                                                                 | **Only when the verifier is wired** — typically requires integrating an external IdP (Auth0, Firebase, JWT issuer, …).       | Until the verifier is in place, no caller has identity. Defer rules (see below).              |
-| Neither                                                                                                                          | Never.                                                                                                                       | All rules that need identity will fail.                                                       |
+| Identity source on `Application(...)`                                                                                            | When identity is available                                                                                                                 | Implication for authorizer rules                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `oauth=OAuth(provider=<OAuthProviderSelector>)` (e.g. `OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=...))`) | **Always** — every caller gets a verified `context.auth.user_id` (a `dev-{hash}` under `Development()`), in development and in production. | Write real `allow_if(...)` rules **from day one**. They work in dev exactly as in production. |
+| `token_verifier=<TokenVerifier>`                                                                                                 | **Only when the verifier is wired** — typically requires integrating an external IdP (Auth0, Firebase, JWT issuer, …).                     | Until the verifier is in place, no caller has identity. Defer rules (see below).              |
+| Neither                                                                                                                          | Never.                                                                                                                                     | All rules that need identity will fail.                                                       |
 
 `Development()` (the typical `dev` arm, wired via
 `oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=...))`) is a
@@ -54,7 +54,7 @@ identity available).
   identity is wired by construction. **Write `authorizer()` on every
   Servicer up front**, using `allow_if(...)` with predicates like
   `has_verified_token` and `state_id_is_user_id`. The rules execute
-  identically in dev and prod; no second pass before shipping. This
+  identically in development and production; no second pass before shipping. This
   is the typical and recommended pattern for **both** MCP Apps
   and standalone web apps — the same OAuth server serves both
   frontends, browsers via a `rbt_session` cookie and MCP clients via

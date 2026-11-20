@@ -10,7 +10,7 @@ tags: auth, allow, deny, authorizer, rule
 > **Critical:** `allow()` is **not** the "default" authorizer to slap
 > on every Servicer. In `rbt dev` you can omit `authorizer()` entirely;
 > the runtime allows the call and logs a warning that flags real
-> production work. See `servicer-authorizer.md` for the dev-vs-prod
+> production work. See `servicer-authorizer.md` for the development-vs-production
 > rules.
 
 `allow()` returns an `Ok` decision for every call. `deny()` returns
@@ -60,7 +60,7 @@ Common anti-patterns the agent should refuse:
   identity wiring for your app instead:
   `Application(oauth=OAuth(provider=OAuthProviderByEnvironment(dev=Development(), prod=...)))`
   gives every caller a verified `dev-{hash}` identity in dev (and a real
-  one in prod), letting you write real `allow_if(...)` rules from day
+  one in production), letting you write real `allow_if(...)` rules from day
   one — typical for MCP Apps; and `Application(token_verifier=...)`
   integrates an external IdP (typical for web apps; until it's wired,
   omit `authorizer()` so the dev-mode warning flags what's
