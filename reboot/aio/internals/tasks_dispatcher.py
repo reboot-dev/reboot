@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import log.log  # type: ignore[import]
 import logging
 from datetime import timedelta
@@ -332,7 +333,13 @@ class TasksDispatcher:
                     task.schedule,
                 )
 
-            asyncio_task = asyncio.create_task(
+            # A task is run as a request of its own, so it starts with
+            # an empty asyncio context rather than a copy of the
+            # context of the request that dispatched it. An asyncio
+            # task copies the context that it is created in, which is
+            # why it is created in an empty one.
+            asyncio_task = contextvars.Context().run(
+                asyncio.create_task,
                 dispatch_retry_loop(task, response_future),
                 name=f'dispatch_retry_loop(...) in {__name__}',
             )
