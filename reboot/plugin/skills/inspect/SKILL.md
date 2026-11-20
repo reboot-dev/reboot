@@ -1,6 +1,6 @@
 ---
 name: inspect
-description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's object types, lists the object IDs for a type, and prints a single actor's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what object types does this app have?", "which actors of this type exist?", or "what is stored in this actor right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
+description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's object types, lists the object IDs for a type, and prints a single instance's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what object types does this app have?", "which instances of this type exist?", or "what is stored in this instance right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
 argument-hint: "[type list | state list --type=<full.Name> | state get --type=<full.Name> --id=<id>]"
 allowed-tools: Bash, Read
 ---
@@ -15,11 +15,11 @@ allowed-tools: Bash, Read
 application — the same data the inspect page (`/__/inspect`) shows,
 but from the terminal so it is scriptable and pipeable. Reach for it
 to debug what an app has actually stored: which object types exist,
-which actors of a type exist, and what a single actor currently holds.
+which instances of a type exist, and what a single instance currently holds.
 
 Use it whenever the question is about _runtime state_ rather than
 code — e.g. "did `create` actually persist this field?", "which
-account IDs exist?", "what does actor `alice` look like right now?".
+account IDs exist?", "what does instance `alice` look like right now?".
 It does not modify anything; it only reads.
 
 > This skill **inspects** a running app; it does not start one. To
@@ -36,14 +36,14 @@ rbt inspect type list --application-url=<url>
 # 2. List the known object IDs for one type.
 rbt inspect state list --type=<full.Type.Name> --application-url=<url>
 
-# 3. Print a single actor's state as JSON.
+# 3. Print a single instance's state as JSON.
 rbt inspect state get --type=<full.Type.Name> --id=<object-id> \
   --application-url=<url>
 ```
 
 The usual flow is to drill down: `type list` to discover the exact
 type name to pass to `--type`, then `state list` to find the
-`--id`, then `state get` to dump that actor.
+`--id`, then `state get` to dump that instance.
 
 - `--type` takes the **full, package-qualified** type name exactly as
   `type list` prints it (e.g. `bank.v1.Account`, `tests.reboot.Echo`)
@@ -103,7 +103,7 @@ rbt inspect state get \
 
 - **Read-only.** `rbt inspect` never mutates state; it is safe to run
   against production.
-- **`state get` routes to the actor's host automatically**, even in a
+- **`state get` routes to the instance's host automatically**, even in a
   multi-server deployment, and reassembles large states transparently.
 - **Pipeable output.** `type list` and `state list` print one entry
   per line; `state get` prints a single JSON object. None of it is

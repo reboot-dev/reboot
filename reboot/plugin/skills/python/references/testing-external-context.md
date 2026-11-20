@@ -10,7 +10,7 @@ tags: testing, external-context, RPC, harness, aborted, errors, mocking, workflo
 > **Critical:** never instantiate `ReaderContext`/`WriterContext`/etc.
 > directly — those are runtime-managed. Use
 > `rbt.create_external_context(name=...)` and pass it as the
-> `context=` argument to actor method calls. One context can drive
+> `context=` argument to method calls. One context can drive
 > many calls in a single test.
 
 A test invokes the application using a context created by
@@ -80,7 +80,7 @@ async def test_chat_room(self) -> None:
 
 External contexts can call `transaction` methods directly — no
 in-app caller needed. This makes them suitable for testing
-cross-actor flows like a transfer between two `Account` actors.
+cross-instance flows like a transfer between two `Account` instances.
 
 ## Multiple Contexts for Multi-User Tests
 

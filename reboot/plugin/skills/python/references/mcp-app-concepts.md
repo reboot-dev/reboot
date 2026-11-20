@@ -48,7 +48,7 @@ the same instance serialize, makes a login step contend with a persona
 edit and a background workflow's state writes. Split each concern
 into its own `Type` and have `User` reference it by ID. The signals
 that warn you are accreting concerns, and the split pattern, are in
-`python/references/state-actor-decomposition.md`.
+`python/references/state-object-decomposition.md`.
 
 Full pydantic shape in
 [`python/references/api-method-types.md`](api-method-types.md);

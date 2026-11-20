@@ -1,7 +1,7 @@
 ---
 title: Handle Constructor Methods
 impact: HIGH
-impactDescription: Initial state set in the wrong place leaks across actors or never runs
+impactDescription: Initial state set in the wrong place leaks across instances or never runs
 tags: servicer, constructor, context.constructor, create, initialization
 ---
 
@@ -14,7 +14,7 @@ tags: servicer, constructor, context.constructor, create, initialization
 > `context.constructor` for set-once initial state.
 
 A method declared with `factory=True` on its `Writer(...)` or
-`Transaction(...)` factory is the explicit creation path for an actor.
+`Transaction(...)` factory is the explicit creation path for an instance.
 The Servicer implementation is just an ordinary writer/transaction
 method — the _constructor-ness_ shows up in two places:
 
@@ -67,7 +67,7 @@ class AccountServicer(Account.Servicer):
 
 ## `context.constructor` Distinguishes Create from Re-Open
 
-A constructor method may also be invokable on an existing actor; branch
+A constructor method may also be invokable on an existing instance; branch
 on `context.constructor` so set-once fields aren't overwritten on a
 second call.
 
@@ -83,7 +83,7 @@ async def initialize(context: InitializeContext):
 
 ## Calling from a Transaction
 
-A transaction can create and operate on a new actor in one atomic step:
+A transaction can create and operate on a new instance in one atomic step:
 
 ```python
 async def sign_up(
@@ -94,7 +94,7 @@ async def sign_up(
 ```
 
 `Account.open(context, id)` here is the constructor (the `open` method
-declared `factory=True`) and returns the actor reference plus the
+declared `factory=True`) and returns the instance reference plus the
 response (or `None` when `response=None`).
 
 ## See Also

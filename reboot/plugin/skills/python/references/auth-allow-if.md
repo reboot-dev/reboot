@@ -48,7 +48,7 @@ Three predicates are shipped:
 - `has_verified_token` — caller has a verified auth token.
 - `is_app_internal` — call is from the app itself (another Reboot
   servicer, not an external client).
-- `state_id_is_user_id` — the caller's `user_id` equals the actor's
+- `state_id_is_user_id` — the caller's `user_id` equals the instance's
   object ID. Useful for per-user resources.
 
 See `auth-built-in-predicates.md` for details.

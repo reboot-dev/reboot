@@ -10,7 +10,7 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 > **Critical:** Reach for the standard library `Queue` for any durable FIFO —
 > work queues, job queues, intake queues, jobs-pulled-off-a-queue.
 > Do **not** define your own `Queue` `Type` or hand-roll a
-> list-as-queue on actor state — both lose durability, ordering,
+> list-as-queue on instance state — both lose durability, ordering,
 > and the blocking-`dequeue` consumer pattern. The standard library `Queue` > _is_ the primitive.
 >
 > Implementation rules:
@@ -20,9 +20,9 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 > - For a non-blocking pull from a transaction, use `try_dequeue`.
 > - Register `queue.servicers()` AND `sorted_map_library()` in
 >   your `Application(...)`. `Queue` uses an internal standard library
->   sorted-map actor to back its storage; you don't interact with
+>   sorted-map instance to back its storage; you don't interact with
 >   it directly, but its library still needs to be registered.
->   Forgetting either fails at boot with "unknown actor type."
+>   Forgetting either fails at boot with "unknown object type."
 
 `Queue` (`reboot.std.collections.queue.v1.queue`) is a durable FIFO of
 `Item` values. Producers `enqueue` from any context; consumers `dequeue`
@@ -41,7 +41,7 @@ available). A `try_dequeue` exists for one-shot non-blocking pulls from
 
 ### Register the Library
 
-`Queue` is backed by an internal standard library sorted-map actor — its
+`Queue` is backed by an internal standard library sorted-map instance — its
 servicers list pulls those in, and the matching library factory
 must be registered. Use the `queue.servicers()` helper:
 
@@ -58,7 +58,7 @@ async def main():
 ```
 
 The `sorted_map_library()` registration is the only place you
-mention the backing sorted-map actor — you should not reach for
+mention the backing sorted-map instance — you should not reach for
 its types directly in application code. For a user-facing sorted
 key/value collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
@@ -151,7 +151,7 @@ mid-implementation:
   `at_most_once` for non-trivial per-item processing where you want
   memoization across replays.
 - `lifecycle-application-entry.md` — register `queue.servicers()`
-  and `sorted_map_library()` (Queue's internal storage actor).
+  and `sorted_map_library()` (Queue's internal storage instance).
 
 For the producer side, any context that mutates state can `enqueue` —
 no workflow needed there.

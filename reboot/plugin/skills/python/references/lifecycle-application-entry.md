@@ -61,7 +61,7 @@ if __name__ == '__main__':
 ## Pass Servicer Classes, Not Instances
 
 `Application(servicers=[...])` takes the **classes**. Reboot constructs
-instances per actor as needed.
+instances per instance as needed.
 
 **Incorrect:**
 
@@ -104,7 +104,7 @@ reference says; the wiring differs per type. A `<name>_library()`
 factory in `libraries=[...]` brings its own servicers along, while a
 type without one (or whose library is not used) puts its
 `servicers()` list into `servicers=[...]`. Forgetting the
-registration gives a runtime "unknown actor type" error. What each
+registration gives a runtime "unknown object type" error. What each
 type needs:
 
 - `stdlib-ordered-map.md` — `ordered_map_library()` only

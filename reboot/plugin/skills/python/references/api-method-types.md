@@ -73,13 +73,13 @@ The rule:
   object ID is the tool call's target, implicit — no `request=`
   needed.
 - **User-scoped UI** ("show my dashboard", "browse all my
-  Persons") → `UI()` on `User`. The actor is the user itself.
+  Persons") → `UI()` on `User`. The instance is the user itself.
 
 **Why the entity-Type placement works.** When a `UI()` lives
 on a `Type`, the generated MCP tool takes that Type's object ID
 as its argument and the generated `use<Type>()`
 React hook used in the UI's component auto-resolves its target with
-no arguments needed. The actor reference is end-to-end implicit:
+no arguments needed. The instance reference is end-to-end implicit:
 the AI calls `person_show(person_id=...)`, the React UI
 materializes for that exact `Person`, no props plumbing, no risk
 of mixing up which entity ID goes where. (Mechanism documented

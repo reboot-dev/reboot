@@ -9,7 +9,7 @@ tags: agent, llm, tools, pydantic-ai, workflow
 
 > **Critical:** an `@agent.tool` function takes a **`WorkflowContext`
 > first** and a pydantic_ai `RunContext[Deps]` **second**, then its
-> own arguments — that is how a tool reaches Reboot actors (call
+> own arguments — that is how a tool reaches Reboot instances (call
 > `Service.ref(id).method(context, ...)` with the `WorkflowContext`).
 > Use `@agent.tool_plain` for a pure tool that touches no Reboot
 > state. Every tool call is memoized via `at_least_once`, so a
@@ -22,7 +22,7 @@ run. Register them on a Reboot `Agent` exactly as you would on a
 durable `WorkflowContext` as its **first** parameter.
 
 **Incorrect (raw pydantic_ai tool signature — no `WorkflowContext`,
-so it cannot call Reboot actors):**
+so it cannot call Reboot instances):**
 
 ```python
 @agent.tool
@@ -49,7 +49,7 @@ async def get_page(
 ) -> dict:
     """Read a page's title and content."""
     # The `WorkflowContext` is what lets the tool reach a Reboot
-    # actor — calls flow through the same durable envelope.
+    # instance — calls flow through the same durable envelope.
     state = await Page.ref(page_id).get(context)
     return {"title": state.title, "content": state.content}
 ```
@@ -57,7 +57,7 @@ async def get_page(
 ## `@agent.tool_plain` for State-Free Tools
 
 A tool that needs neither a `WorkflowContext` nor a `RunContext`
-(no Reboot actors, no agent deps) uses `@agent.tool_plain`:
+(no Reboot instances, no agent deps) uses `@agent.tool_plain`:
 
 ```python
 @agent.tool_plain
@@ -103,6 +103,6 @@ body does not run again. Two consequences:
 ## Related
 
 - `agent-pydantic-ai.md` — constructing and running the `Agent`.
-- `rpc-calls.md` — calling actor methods (`await ref.method( context, ...)`) from inside a tool.
+- `rpc-calls.md` — calling methods (`await ref.method( context, ...)`) from inside a tool.
 - `servicer-workflow.md` — the memoization primitive behind
   every tool call.

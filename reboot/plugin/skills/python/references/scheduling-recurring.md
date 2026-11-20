@@ -109,7 +109,7 @@ keeps it pinned.
 ## The Recurring-Job Shape: `start` / `tick` / `run`
 
 The canonical shape for a recurring job is three methods on **one**
-actor:
+instance:
 
 1. **`start()`** — a `factory=True` writer that kicks off the first
    tick.
@@ -156,7 +156,7 @@ class NightlyReportServicer(NightlyReport.Servicer):
         ...
 ```
 
-Create the actor once (e.g. from the `initialize` hook, idempotently)
+Create the instance once (e.g. from the `initialize` hook, idempotently)
 and the chain runs forever; stop it by clearing `active` (see
 [Stopping a recurring schedule](#stopping-a-recurring-schedule)).
 
@@ -175,7 +175,7 @@ never holds up the cadence:
 
 - **`run()` doesn't have to be a workflow.** If one occurrence is just
   a state mutation — no external calls, no multi-step durability — make
-  `run()` a `Writer` (or a `Transaction` if it spans several actors).
+  `run()` a `Writer` (or a `Transaction` if it spans several instances).
   Pick the kind of method by the usual rules (see `servicer-workflow.md`,
   `servicer-writer.md`, `servicer-transaction.md`).
 - **Pause the recurrence while a `run()` can't complete.** The shape

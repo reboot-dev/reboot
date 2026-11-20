@@ -9,7 +9,7 @@ tags: stdlib, ciphertext, encryption, envelope, crypto-shred, gdpr, right-to-era
 
 > **Critical:** register **both** `ciphertext_library()` **and** > `ordered_map_library()` in `Application(libraries=[...])` —
 > `Ciphertext` depends on `OrderedMap`; forgetting either fails at boot
-> with "unknown actor type." `associated_data` must be supplied
+> with "unknown object type." `associated_data` must be supplied
 > **byte-for-byte identical** at decrypt as at encrypt — build it with
 > `make_associated_data`, never an ad-hoc string. These methods are
 > **app-internal by default** (no authorizer); call them from within

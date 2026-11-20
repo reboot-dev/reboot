@@ -1,11 +1,11 @@
 ---
-title: Call Actor Methods with Kwargs and a Context
+title: Call Instance Methods with Kwargs and a Context
 impact: HIGH
 impactDescription: Calling with Request wrappers fails at type-check or runtime
 tags: rpc, call, kwargs, context, await
 ---
 
-## Call Actor Methods with Kwargs and a Context
+## Call Instance Methods with Kwargs and a Context
 
 > **Critical:** pass arguments as **kwargs**, not as a Request wrapper.
 > `await ref.deposit(context, amount=10)` — not
@@ -13,7 +13,7 @@ tags: rpc, call, kwargs, context, await
 > calls return a `(ref, response)` tuple — reuse the returned ref
 > instead of re-constructing one.
 
-Actor methods are called as `await ref.method(context, **kwargs)`. The
+Instance methods are called as `await ref.method(context, **kwargs)`. The
 context is always positional; the request fields are passed as **keyword
 arguments** matching the request `Model`. Do not construct and pass
 a `Request` wrapper.
@@ -35,11 +35,11 @@ await account.deposit(context, amount=100)
 
 `reader` methods accept any of `ReaderContext`, `WriterContext`,
 `TransactionContext`. `writer` methods require a `WriterContext` (own
-actor) or `TransactionContext`. `transaction` methods require a
+instance) or `TransactionContext`. `transaction` methods require a
 `TransactionContext`.
 
 When in doubt, call from a `transaction` context — it can call any method
-on any actor.
+on any instance.
 
 ## Returns the Response Message
 
@@ -52,7 +52,7 @@ print(response.messages)
 ```
 
 Constructor calls return a `(ref, response)` tuple — the ref to the
-newly-constructed actor and the response from the method:
+newly-constructed instance and the response from the method:
 
 ```python
 account, _ = await Account.open(context, request.account_id)

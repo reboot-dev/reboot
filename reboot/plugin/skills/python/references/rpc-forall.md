@@ -1,7 +1,7 @@
 ---
 title: Fan Out Calls with `Service.forall(ids).method(context)`
 impact: MEDIUM
-impactDescription: Hand-rolled gather over many actors is more code and misses framework optimizations
+impactDescription: Hand-rolled gather over many instances is more code and misses framework optimizations
 tags: rpc, forall, fan-out, batch, parallel
 ---
 
@@ -13,7 +13,7 @@ tags: rpc, forall, fan-out, batch, parallel
 > Same context-type rules as a single call.
 
 `Service.forall(ids).method(context, **kwargs)` calls the same method on
-many actors at once and returns the list of responses, in the same order
+many instances at once and returns the list of responses, in the same order
 as the input ids. It's the framework-native fan-out, more compact than
 `asyncio.gather` and able to batch internally.
 
@@ -61,7 +61,7 @@ parallelizes the call shape you'd write anyway.
 
 ## Use for Read-Mostly Fan-Out
 
-The canonical use is reading many actors of the same type in parallel:
+The canonical use is reading many instances of the same type in parallel:
 
 ```python
 # Fetch each message's details from a list of message IDs.

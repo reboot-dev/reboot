@@ -345,7 +345,7 @@ keyed on user ID is then stranded:
   (every caller still has a `user_id`), but they now guard a different
   set of identities — pre-switch callers can't reach post-switch state
   and vice versa.
-- **Anything stored inside `User`-typed actors, or in index actors
+- **Anything stored inside `User`-typed instances, or in index instances
   keyed on user ID.** Same story — the object ID was the user's ID at
   creation time.
 

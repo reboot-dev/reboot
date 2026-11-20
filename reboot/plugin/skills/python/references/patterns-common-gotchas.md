@@ -71,11 +71,11 @@ def authorizer(self): return allow()
 Mutations inside a `ReaderContext` raise. If you need to mutate, the
 method needs to be a `Writer` or `Transaction`.
 
-### 8. Cross-Actor Mutations Need a Transaction; All External Calls Need a Workflow
+### 8. Cross-Instance Mutations Need a Transaction; All External Calls Need a Workflow
 
-A `Writer` can only mutate one actor (its own). Cross-actor
+A `Writer` can only mutate one instance (its own). Cross-instance
 mutations belong in a `Transaction(...)` method. A writer or
-transaction **may** call readers on other actors — cross-actor
+transaction **may** call readers on other instances — cross-instance
 reads are fine.
 
 External side effects — any call that leaves the system: SMS,
@@ -124,7 +124,7 @@ it in a constructor method using `context.constructor`.
 
 `OrderedMap` requires `libraries=[ordered_map_library()]` in the
 `Application(...)` call. Forgetting it gives a runtime error about
-unknown actor type. The same shape applies to every standard library
+unknown object type. The same shape applies to every standard library
 object with a `<thing>_library()` factory.
 
 ### 13. Servicer Class, Not Instance, in `Application(...)`
@@ -278,7 +278,7 @@ The error names the fix directly: "Instead create a new
 
 An object type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
-`User` actor per signed-in identity, whose object ID **is** the
+`User` instance per signed-in identity, whose object ID **is** the
 `context.auth.user_id`, on first access. Do not write a sign-up
 method that creates it, do not pass an id to `useUser()` in the
 browser, and do not construct it in tests — impersonating a user

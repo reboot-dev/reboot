@@ -13,7 +13,7 @@ build on each other, and the call-classification model in
 [Classify every `await`](#classify-every-await) is the spine of
 everything below it.
 
-A workflow is a long-running, durable function attached to an actor.
+A workflow is a long-running, durable function attached to an instance.
 The runtime persists progress so the workflow can resume after a
 restart from where it left off — it can run for seconds, hours, or
 days. The runtime checkpoints progress at every memoized primitive
@@ -94,7 +94,7 @@ not depend on `self`. Marking it `@classmethod` makes that explicit
 and enforced. Read state inside a workflow via
 `Service.ref().read(context)` (returns the `self.state`-equivalent);
 mutate it via `Service.ref().write(context, callback)` (see
-[Mutating this actor's state](#mutating-this-actors-state)).
+[Mutating this instance's state](#mutating-this-instances-state)).
 
 ### Workflows Often Have No Response
 
@@ -134,7 +134,7 @@ rejects it with
 `Message type "rbt.v1alpha1.WorkflowMethodOptions" has no field named "constructor"`. (`factory: bool` on the base class is permissive at
 type-check time but the codegen rejects the bad shape.)
 
-To make actor creation kick off a workflow, use a
+To make instance creation kick off a workflow, use a
 `Writer(factory=True)` or `Transaction(factory=True)` constructor
 that schedules the workflow as its last step:
 
@@ -146,7 +146,7 @@ class GreeterServicer(Greeter.Servicer):
         context: TransactionContext,
         request: Greeter.HelloRequest,
     ) -> None:
-        # `hello` is `Transaction(factory=True)` — creates the actor.
+        # `hello` is `Transaction(factory=True)` — creates the instance.
         # Schedule the workflow to run after this transaction commits.
         await self.ref().schedule().run_hello(context, name=request.name)
 
@@ -163,14 +163,14 @@ class GreeterServicer(Greeter.Servicer):
 ```
 
 Caller-side: `await Greeter.Hello(ctx, "alice", name="alice")` both
-creates the actor and (by virtue of the schedule call) kicks off
+creates the instance and (by virtue of the schedule call) kicks off
 `run_hello`.
 
 ## Classify Every `await`
 
 > **Critical:** which primitive to use depends first on **what you're
 > calling**, not on how it feels. Reboot-internal calls (calls to
-> another actor, calls to `Service.ref().write(context, fn)`) and
+> another instance, calls to `Service.ref().write(context, fn)`) and
 > external-system calls (HTTP, SMS, payment, LLM) have **different
 > rule sets**. Get the category wrong and you'll pick from the wrong
 > menu.
@@ -181,14 +181,14 @@ any operation that has effects or side-effects is always: _given that
 this may run again, is it safe to run more than once?_ If yes, you
 want **at-least-once** semantics; if a second run would be harmful and
 can't be made safe, you want **at-most-once** semantics. Concretely,
-every operation that talks to something — another actor, this actor's
+every operation that talks to something — another instance, this instance's
 state, or an external system — falls into one of three buckets.
 Classify before you write the call.
 
 | What you're calling                                                                                                                                                             | Bucket                 | Primitives in play                                             |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------- |
-| `await SomeType.ref(id).method(context, ...)` — reader / writer / transaction / scheduled workflow on another (or this) actor                                                   | **Reboot-internal**    | `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` |
-| `await Service.ref().write(context, fn)` — inline state mutation on this workflow's actor                                                                                       | **Reboot-internal**    | `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` |
+| `await SomeType.ref(id).method(context, ...)` — reader / writer / transaction / scheduled workflow on another (or this) instance                                                | **Reboot-internal**    | `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` |
+| `await Service.ref().write(context, fn)` — inline state mutation on this workflow's instance                                                                                    | **Reboot-internal**    | `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` |
 | `await agent.run(context, prompt)` — Reboot `Agent` (LLM)                                                                                                                       | **Reboot-internal** \* | none — the `Agent` memoizes the model call for you             |
 | `await client.get(url)`, `await stripe.PaymentIntent.create(...)`, `await twilio.messages.create(...)`, `await s3.put_object(...)` — anything that talks to a non-Reboot system | **External**           | `at_least_once(...)` (default), or `at_most_once(...)`         |
 | `await until(...)`, `await until_changes(...)` — block the workflow until a callable derived from Reboot state goes truthy / changes                                            | **Reactive wait**      | `until(...)` / `until_changes(...)` (their own primitives)     |
@@ -202,7 +202,7 @@ as a Reboot-internal call.
 
 Before each `await` inside a workflow, classify the call:
 
-- Calling another Reboot actor (reader/writer/transaction/schedule)
+- Calling another Reboot instance (reader/writer/transaction/schedule)
   or doing an inline state write? →
   `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()`
   on the ref. **Never** `at_least_once` / `at_most_once` /
@@ -227,8 +227,8 @@ Before each `await` inside a workflow, classify the call:
 - Wait until something is true → `until`. React every time a value
   flips → `until_changes` inside `context.loop`. See
   [Bucket 3](#bucket-3--reactive-waiting-on-reboot-state).
-- Mutate this actor's state →
-  `Service.ref().<scope>.write(context, fn)`. Mutate another actor's
+- Mutate this instance's state →
+  `Service.ref().<scope>.write(context, fn)`. Mutate another instance's
   state → call its writer/transaction method with a scope.
 
 ### Naming Aliases
@@ -322,7 +322,7 @@ iterations. Three choices:
   Use for: live reads where you want the freshest value
   every time the workflow is woken, regardless of replay scope.
 
-All three forms are available both on actor refs (for method calls
+All three forms are available both on refs (for method calls
 and scheduling) and on the workflow's own `.ref()` (for inline
 `write(context, fn)`). They are **the canonical surface** for
 expressing call intent inside a workflow.
@@ -427,7 +427,7 @@ the `initialize` hook (which re-runs on every app start),
 `.idempotently("alias")` is the right and primary tool. See
 `lifecycle-initialize-hook.md`.
 
-### Mutating This Actor's State
+### Mutating This Instance's State
 
 > **Critical:** workflow methods are `@classmethod` — there is **no
 > `self.state`**. Mutate via
@@ -520,14 +520,14 @@ async for iteration in context.loop("Watch"):
         ...
 ```
 
-For mutations of **other** actors, call their declared `Writer` /
+For mutations of **other** instances, call their declared `Writer` /
 `Transaction` method with a scope (e.g.
 `await Service.ref(id).per_workflow("Step").method(context, ...)`);
-use `.write(context, fn)` only to mutate **this** workflow actor's
+use `.write(context, fn)` only to mutate **this** workflow instance's
 state directly. The same boundary applies to reads: inline `.read()`
 exists **only on the no-arg `ref()`** — a ref with an explicit id has
 no `.read()` / `.write()` (calling them raises a `RuntimeError`), so
-observe another actor through its declared `Reader` methods.
+observe another instance through its declared `Reader` methods.
 
 ## Iterating with `context.loop(...)`
 
@@ -1067,7 +1067,7 @@ twice".
 
 > **Critical:** `until` and `until_changes` work **only with Reboot
 > types** — the callable they take must derive its answer from Reboot
-> state: a declared `Reader` call on another actor (e.g.
+> state: a declared `Reader` call on another instance (e.g.
 > `Order.ref(id).get(context)`), the workflow's own state via the
 > no-arg `Service.ref().read(context)`, or a standard library object. **Never put
 > an external API call (HTTP poll, SDK status check, filesystem
@@ -1091,7 +1091,7 @@ runtime can only infer from Reboot-state reads.
 `until(alias, context, callable)` reactively re-runs `callable` until
 it returns a truthy value, then memoizes that value and resolves.
 Use it whenever a workflow needs to wait for a Reboot-state
-condition: an approval to land in the actor's state, a standard library value
+condition: an approval to land in the instance's state, a standard library value
 to flip, state to reach a particular shape.
 
 **Incorrect (busy-waiting with sleep):**
@@ -1115,7 +1115,7 @@ from reboot.aio.workflows import until
 @classmethod
 async def control_loop(cls, context: WorkflowContext, request):
     # `get` is a declared `Reader` method on `Order`; inside `until`
-    # its result is tracked reactively. Observing *another* actor
+    # its result is tracked reactively. Observing *another* instance
     # always goes through a declared `Reader` — inline `.read()`
     # exists only on the workflow's own no-arg `ref()`.
     async def is_approved() -> bool:
@@ -1155,9 +1155,9 @@ another caller can change the same state (claim the same slot, flip
 the same flag). To make "wait until X, then act on X" a single atomic
 step, put the check **and** the mutation in an inline writer and let
 `until` wait on the writer's return value. Because the inline writer
-runs as one atomic operation on the actor, the read-decide-mutate
+runs as one atomic operation on the instance, the read-decide-mutate
 can't be interleaved. An inline writer exists only on the workflow's
-own no-arg `ref()`, so this pattern applies to the actor the workflow
+own no-arg `ref()`, so this pattern applies to the instance the workflow
 runs on — here, a workflow on the `Worker` being claimed:
 
 ```python
@@ -1175,7 +1175,7 @@ class WorkerServicer(Worker.Servicer):
             return False
 
         # `until` re-runs the writer reactively until it returns truthy;
-        # the actor guarantees no other caller claims the slot first.
+        # the instance guarantees no other caller claims the slot first.
         await until(
             "Claim slot",
             context,
@@ -1185,9 +1185,9 @@ class WorkerServicer(Worker.Servicer):
 
 This works because an inline `write(context, fn)` callback may return
 a value and `.write(...)` propagates it (see
-[Mutating this actor's state](#mutating-this-actors-state)) — so the
+[Mutating this instance's state](#mutating-this-instances-state)) — so the
 truthy return both performs the claim and satisfies the wait. To
-claim atomically on **another** actor, declare a `Writer` method on
+claim atomically on **another** instance, declare a `Writer` method on
 it that does the check-and-mutate and returns the decision, and have
 `until` wait on that method's return value instead.
 
@@ -1225,7 +1225,7 @@ from reboot.aio.workflows import until_changes
 @classmethod
 async def control_loop(cls, context: WorkflowContext, request):
     # `get` is a declared `Reader` method on `Order` (see the note
-    # on `until` above — inline `.read()` is own-actor-only).
+    # on `until` above — inline `.read()` is own-instance-only).
     async def order_status() -> str:
         response = await Order.ref(request.order_id).get(context)
         return response.status
@@ -1287,7 +1287,7 @@ await until("Job done", context, job_done)
 Two ways to flip the Reboot state instead:
 
 1. **Webhook / callback** — the external system POSTs to a Reboot
-   `Writer` (or `Transaction`) that updates the actor's state. The
+   `Writer` (or `Transaction`) that updates the instance's state. The
    right pattern when the external system supports callbacks.
 2. **Poll from inside a `context.loop`** — call an `at_least_once`
    that hits the external API and writes the result into Reboot
@@ -1470,7 +1470,7 @@ the callable (the `try/except` shape used throughout
   `<Type>.<Workflow>Aborted(<Error>(...))`.
 - **Continue with degraded state** → record the failure in state
   (inline writer with a scope) and proceed.
-- **Try a fallback path** → call a different actor/method.
+- **Try a fallback path** → call a different instance/method.
 - **Retry the whole workflow** → let an undeclared exception
   propagate from the workflow body (rare; usually retrying just the
   failed step — by not catching the exception in the callable — is

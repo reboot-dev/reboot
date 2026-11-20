@@ -15,7 +15,7 @@ tags: patterns, idempotency, initialize, constructor, restart
 The `initialize` hook runs every time the application starts. Anything it
 does must be safe to do repeatedly. Reboot's `Service.create(context, id)`
 is the canonical idempotent creation primitive: calling it on an existing
-actor is a no-op.
+instance is a no-op.
 
 **Incorrect (initialize that double-creates on every boot):**
 
@@ -36,7 +36,7 @@ async def initialize(context: InitializeContext):
 
 ## Branch on `context.constructor` for Set-Once Fields
 
-When a constructor method may be called more than once on the same actor,
+When a constructor method may be called more than once on the same instance,
 guard set-once fields with `context.constructor`:
 
 ```python

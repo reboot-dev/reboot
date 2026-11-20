@@ -16,7 +16,7 @@ tags: api, schema, evolution, backwards-compatibility, migration, deploy, expung
 > and fields rather than deleting or repurposing existing ones.
 > (Renaming a _field_ is fine as long as its `tag` is unchanged.)
 
-Reboot persists every actor's state durably, together with the
+Reboot persists every instance's state durably, together with the
 schema it was written under. On startup the runtime compares the
 application's current API against that stored schema. If any change
 is backwards-incompatible, boot fails with:
@@ -42,7 +42,7 @@ live data, before any damage is done.
 
 | Change                                                          | Compatible?                |
 | --------------------------------------------------------------- | -------------------------- |
-| Add a new state `Type`                                          | yes                        |
+| Add a new object type                                           | yes                        |
 | Add a new method to an existing `Type`                          | yes                        |
 | Add a field with a (zero-value) default                         | yes                        |
 | Rename a field, keeping its `tag`                               | yes (data is keyed by tag) |
@@ -50,8 +50,8 @@ live data, before any damage is done.
 | Change a method between `Writer` and `Transaction`              | yes                        |
 | Add or remove declared `errors=`                                | yes                        |
 | Change `mcp=` options (add/remove/modify `Tool()`)              | yes                        |
-| Delete a state `Type`                                           | **NO**                     |
-| Rename a state `Type`                                           | **NO** (a delete + an add) |
+| Delete a object type                                            | **NO**                     |
+| Rename a object type                                            | **NO** (a delete + an add) |
 | Delete a method                                                 | **NO**                     |
 | Rename a method                                                 | **NO** (a delete + an add) |
 | Delete a field                                                  | **NO**                     |
@@ -138,7 +138,7 @@ api = API(
 
 **Change a field's type or shape** — add a new field with a new
 `tag`, and migrate lazily inside writers: when a writer touches an
-actor that still has data only in the old field, copy it into the
+instance that still has data only in the old field, copy it into the
 new field. The old field stays declared (reads as its zero value
 once unused) — that is expected and harmless.
 
@@ -151,7 +151,7 @@ class CartState(Model):
 ```
 
 **Restructure state across types** — add the new `Type` alongside
-the old one and migrate actors on access (or via a `Workflow` that
+the old one and migrate instances on access (or via a `Workflow` that
 walks them). Don't delete the old `Type`; once empty and unused it
 is inert.
 

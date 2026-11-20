@@ -1,13 +1,13 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
+description: Reboot Python framework for building transactional microservices with durable state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with Gherkin feature files run by `reboot.bdd` (and, for crash recovery, the `Reboot()` test harness).
 license: Apache-2.0
 metadata:
   author: reboot
   version: "1.0.0"
   organization: Reboot
   date: April 2026
-  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, the workflow call-classification model (Reboot scopes `.per_workflow` / `.per_iteration` / `.always()` for Reboot calls; external-call primitives `at_least_once` / `at_most_once`; reactive-waiting primitives `until` / `until_changes`), actor refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
+  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, the workflow call-classification model (Reboot scopes `.per_workflow` / `.per_iteration` / `.always()` for Reboot calls; external-call primitives `at_least_once` / `at_most_once`; reactive-waiting primitives `until` / `until_changes`), refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
 ---
 
 # Reboot Python Best Practices
@@ -34,7 +34,7 @@ Reference these guidelines when:
 - Changing the API of an application that has persisted state or has
   been deployed — read `references/api-schema-evolution.md` first
 - Implementing or modifying a Servicer
-- Calling another actor via `Service.ref(id).method(context, ...)`
+- Calling another instance via `Service.ref(id).method(context, ...)`
 - Building a durable workflow with `WorkflowContext`, picking the right
   primitive per `servicer-workflow.md` (Reboot calls use
   `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()`;
@@ -228,12 +228,12 @@ messages nested as attributes, the `Servicer` base class, and the
   description, and describe the value, not the type: "What the
   account holds, in dollars, never below zero", not "The balance
   (float)".
-- Cross-actor and external-service calls belong in `TransactionContext`
+- Cross-instance and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
 - **Changing an API after the application has persisted state or has
   been deployed?** Read `references/api-schema-evolution.md` to
   understand the rules you must follow for API schema evolution.
-- Pass arguments to actor methods as **kwargs**, not as Request wrappers:
+- Pass arguments to methods as **kwargs**, not as Request wrappers:
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
 - **`Queue`, `Topic`, `OrderedMap`, `Presence`, `Item` are
@@ -307,7 +307,7 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 - `references/api-errors.md` — typed error declaration
 - `references/state-collections.md` — **always read when modeling
   any collection**: decide whether each contained item should be
-  its own state `Type`, and pick between in-state `list[Sub]`,
+  its own object type, and pick between in-state `list[Sub]`,
   in-state `list[str]` of foreign IDs, or an `OrderedMap` of
   foreign IDs. The most common modeling mistake — packing an
   entity collection like `list[Person]` into one parent's state —
@@ -341,7 +341,7 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 
 If your design calls for any of the concepts in the left column,
 the standard library already provides the canonical object type. Read the
-reference **before** writing your own actor type — defining your
+reference **before** writing your own object type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
@@ -359,7 +359,7 @@ and forfeits durability, ordering, and concurrency guarantees:
 Each standard library reference also lists its library registration —
 forgetting `<thing>_library()` and the standard library object's
 `<thing>.servicers()` in your `Application(...)` fails at boot
-with "unknown actor type."
+with "unknown object type."
 
 ### Encryption & key derivation
 
@@ -505,7 +505,7 @@ example prompts the design names.
   `Optional[X] = Field(tag=N, default=None)` hydrated in factory
   `create` (the gotcha "Nested `Model` fields can't take
   `default_factory` or `default`" in `patterns-mcp-app-gotchas.md`).
-  The state-inside-state regression and how to compose state actors
+  The state-inside-state regression and how to compose instances
   via string ID + `ref(id)`.
 - [`references/patterns-mcp-app-gotchas.md`](references/patterns-mcp-app-gotchas.md)
   — the numbered MCP App backend trip list: `mcp=Tool()`/`mcp=None` required,

@@ -28,7 +28,7 @@ project-level wiring.
 **Incorrect (calling Servicer methods directly without a harness):**
 
 ```python
-# DON'T — there's no actor identity, no context, no persistence.
+# DON'T — there's no instance identity, no context, no persistence.
 servicer = ChatRoomServicer()
 await servicer.send(...)
 ```
@@ -81,7 +81,7 @@ configurations (more explicit).
 ## Multi-Servicer Applications
 
 Production apps usually have several servicers. Register all of them
-in one `Application(...)` so cross-actor calls work:
+in one `Application(...)` so cross-instance calls work:
 
 ```python
 await self.rbt.up(
@@ -355,9 +355,9 @@ Assert the invariant, not only the exception. A test that checks
 "one of them failed" passes even if the winner corrupted the
 counter on the way through.
 
-Reboot serializes writers on the same actor and rolls transactions
+Reboot serializes writers on the same instance and rolls transactions
 back all-or-nothing, so routing the shared invariant (a counter, a
-quota, a balance) through **one** actor is what makes "exactly one
-wins" true. If the invariant is spread across two actors with no
+quota, a balance) through **one** instance is what makes "exactly one
+wins" true. If the invariant is spread across two instances with no
 transaction covering both, the race is genuinely lossy and no test
 setup will fix it.

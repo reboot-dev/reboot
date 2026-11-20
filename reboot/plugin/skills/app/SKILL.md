@@ -110,7 +110,7 @@ above says where they are listed.
   declares any.
 - `python/references/state-collections.md` — **always read when the
   app has any "list of X" concept.** Decides whether each X should
-  be its own state `Type` (most of the time, yes) and picks between
+  be its own object type (most of the time, yes) and picks between
   in-state `list[Sub]`, in-state `list[str]` of foreign IDs, or an
   `OrderedMap` of foreign IDs. The trap is defaulting to
   `list[Person]`/`list[Post]`/`list[Task]` on `User` for entity
@@ -121,11 +121,11 @@ above says where they are listed.
   it bounded.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
-- `python/references/state-actor-decomposition.md` — the orthogonal
-  decomposition: when one state `Type` has accreted multiple
+- `python/references/state-object-decomposition.md` — the orthogonal
+  decomposition: when one object type has accreted multiple
   unrelated concerns (auth/session, persona, background-engine,
   transient cache), split each into its own `Type`. Critical for the
-  `User` object type, which otherwise turns into a God actor and
+  `User` object type, which otherwise turns into a God object and
   serializes unrelated writers.
 
 **Before writing the servicer:**
@@ -371,7 +371,7 @@ document is per-account").
 
 Collection shape reasoning — BAD, uses skill-internal terms:
 
-> `people_index_id: str` — ID of an OrderedMap actor that
+> `people_index_id: str` — ID of an OrderedMap instance that
 > holds this user's Persons (Shape C from state-collections.md
 > — unbounded; PRM is explicitly called out as a Shape C case).
 
@@ -390,7 +390,7 @@ Nested model reasoning — GOOD:
 
 > Relationship and Event live inline on Person as
 > `list[Relationship]` / `list[Event]`. They don't get their
-> own state actors because they have no lifecycle, methods, or
+> own instances because they have no lifecycle, methods, or
 > auth independent of the Person they belong to.
 
 **Escape hatch.** When the precise type name _is_ what the reader
@@ -409,10 +409,10 @@ Before writing code, analyze the user's request:
    accounts, …). **Each entity becomes its own `Type` with its own
    state**, even when "each User only has a few of them". Anything
    you can imagine the user `add`-ing / `remove`-ing / `find`-ing by
-   name has its own identity and belongs in its own actor. The
+   name has its own identity and belongs in its own object type. The
    default wrong move is packing everything into one parent's state
    as `list[Person]` (or `list[Post]`, `list[Task]`, …) — that
-   flattens N actors into one, prevents per-entity auth/methods,
+   flattens N instances into one, prevents per-entity auth/methods,
    and forces a full rewrite when the collection grows. A
    collection your app **syncs or scrapes from an external
    system** (a GitHub repo's issues, a mailbox, an RSS feed) is an
@@ -478,7 +478,7 @@ Before writing code, analyze the user's request:
    locked down, …? See `python/references/auth-*.md`.
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation change several
-   state instances? If they must change together or not at all, and
+   instances? If they must change together or not at all, and
    the operation is quick, use a `Transaction`. A transaction locks
    every state it touches until it finishes, so a slow one (an
    external call, a long loop) blocks every other write to them:
@@ -490,26 +490,26 @@ Before writing code, analyze the user's request:
 ## When Correct Decomposition Fights the UI
 
 The React references show **one `use<Type>()` subscription per
-UI** — one hook, one actor, one live feed. That is the easy,
+UI** — one hook, one instance, one live feed. That is the easy,
 documented path, and it quietly pressures you to flatten an entity
-collection into `list[Item]` on a single actor just so the dashboard
+collection into `list[Item]` on a single instance just so the dashboard
 can read it in one subscription.
 
 **Resolve the tension the other way: the data model wins.** When
 a collection is its own entity type (Assessment step 1) or
-unbounded (step 3, Shape C), keep it decomposed — one actor per
+unbounded (step 3, Shape C), keep it decomposed — one instance per
 item, an `OrderedMap` index on the parent — even though that is
-more than one actor. Do **not** collapse the model to fit the
+more than one instance. Do **not** collapse the model to fit the
 single-subscription pattern. A demo-correct `list[Item]` that
 must be torn apart the moment a real data source is pointed at it
 is the exact failure this skill exists to prevent.
 
 The UI still gets its single subscription. Add a **composing
 reader** on the `User` type: a `Reader` that ranges the
-parent's `OrderedMap` for one page of IDs, reads each item actor,
+parent's `OrderedMap` for one page of IDs, reads each item instance,
 and returns a page of fully-hydrated objects plus a `next_cursor`.
 The React UI subscribes to that one reader and pages by cursor —
-the fan-out across item actors happens server-side, inside the
+the fan-out across item instances happens server-side, inside the
 reader. The composing-reader pattern (backend reader + React
 subscription) is in
 [`frontend/references/react-app-tsx.md`](../frontend/references/react-app-tsx.md);

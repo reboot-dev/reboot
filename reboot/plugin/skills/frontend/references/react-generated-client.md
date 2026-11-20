@@ -105,7 +105,7 @@ to skip" mode. `id: ''` throws
 throws inside `stateIdToRef`. Identity often resolves
 asynchronously, so the fix is **not** a placeholder id —
 `useFoo({ id: id || '__none__' })` makes every loading session
-subscribe to the same shared actor. Don't mount the component until
+subscribe to the same shared instance. Don't mount the component until
 the id is real: guard at the parent and pass a guaranteed-real id
 down.
 

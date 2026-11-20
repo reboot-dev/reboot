@@ -175,12 +175,12 @@ the same change.
 
 ## Method Factories
 
-| Factory            | Context type         | Use for                                                 |
-| ------------------ | -------------------- | ------------------------------------------------------- |
-| `Reader(...)`      | `ReaderContext`      | Read-only access to `self.state`                        |
-| `Writer(...)`      | `WriterContext`      | Mutate `self.state` for one actor                       |
-| `Transaction(...)` | `TransactionContext` | Atomic mutations across multiple actors / external work |
-| `Workflow(...)`    | `WorkflowContext`    | Durable, long-running, restartable methods              |
+| Factory            | Context type         | Use for                                                    |
+| ------------------ | -------------------- | ---------------------------------------------------------- |
+| `Reader(...)`      | `ReaderContext`      | Read-only access to `self.state`                           |
+| `Writer(...)`      | `WriterContext`      | Mutate `self.state` for one instance                       |
+| `Transaction(...)` | `TransactionContext` | Atomic mutations across multiple instances / external work |
+| `Workflow(...)`    | `WorkflowContext`    | Durable, long-running, restartable methods                 |
 
 Attach typed errors via `errors=[ErrorModel, ...]`. Mark a method as a
 constructor with `factory=True` (only valid on `Writer` and
@@ -219,15 +219,15 @@ hello=Workflow(... factory=True ...),    # codegen error
 get=Reader(... factory=True ...),        # codegen error
 ```
 
-To kick off a workflow on actor creation, make the factory a
+To kick off a workflow on instance creation, make the factory a
 `Writer(factory=True)` or `Transaction(factory=True)` and have
 its body call `self.ref().schedule().<workflow_name>(context, ...)`.
 See `servicer-workflow.md` for the full pattern.
 
 Calling `<Type>.<MethodPascalCase>(ctx, <object-id>, **kwargs)`
-both creates the actor AND runs the factory method. Don't try
+both creates the instance AND runs the factory method. Don't try
 to call factory methods through `<Type>.ref(<id>).<method>(...)`
-— the actor doesn't exist yet.
+— the instance doesn't exist yet.
 
 ### Every Method Factory Takes a Required `mcp=` Argument
 

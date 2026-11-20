@@ -2,7 +2,7 @@
 title: React App.tsx — Generated Hooks and Component Patterns
 impact: HIGH
 impactDescription: The generated `use<Type>()` hook returns reader subscriptions and mutation functions; both go directly to the Reboot backend. Reboot snake_case Python field names become camelCase in TypeScript. Each `App.tsx` lives next to a CSS module and consumes the per-UI props passed via `UI(request=...)`.
-tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, composing-reader, pagination, ordered-map, multi-actor
+tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, composing-reader, pagination, ordered-map, multi-instance
 ---
 
 ## React App.tsx — Generated Hooks and Component Patterns
@@ -21,7 +21,7 @@ tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, 
 ```tsx
 import { useCounter } from "@api/<pkg>/v1/<name>_rbt_react";
 
-// useCounter() connects to the Counter state instance.
+// useCounter() connects to the Counter instance.
 const counter = useCounter();
 
 // Reader (a live subscription — pushed on every change):
@@ -312,32 +312,32 @@ export const ClickerApp: FC = () => {
 Adapt the CSS module to your app's needs. The CSS variables from
 `index.css` provide consistent theming.
 
-## Reading Across Many Actors — the Composing Reader
+## Reading Across Many Instances — the Composing Reader
 
-The Counter example above is the single-actor case: one
-`use<Type>()` hook, one actor, one live feed. It does **not**
+The Counter example above is the single-instance case: one
+`use<Type>()` hook, one instance, one live feed. It does **not**
 generalize to a collection that has been correctly decomposed —
-each item its own state `Type`, indexed by an `OrderedMap` on the
+each item its own object type, indexed by an `OrderedMap` on the
 parent (Shape C in `python/references/state-collections.md`).
-There each item is a separate actor, and there is no
+There each item is a separate instance, and there is no
 `use<Item>()` call that renders the whole list at once.
 
 The wrong fix is to flatten the model back into `list[Item]` on
-one actor so the dashboard regains a single subscription — see
+one instance so the dashboard regains a single subscription — see
 "When Correct Decomposition Fights the UI" in
 [`app/SKILL.md`](../../app/SKILL.md). The right fix keeps the decomposition
 and gives the `User` type a **composing reader**: the UI
 still has exactly one subscription, and the fan-out across item
-actors happens server-side.
+instances happens server-side.
 
 ### Backend: a composing `Reader` on the `User` type
 
 The reader ranges the parent's `OrderedMap` for one page of IDs,
-reads each item actor, and returns a page of hydrated objects
+reads each item instance, and returns a page of hydrated objects
 plus a cursor for the next page:
 
 ```python
-# `Item` is the per-item state `Type`. `items_index_id` is the
+# `Item` is the per-item object type. `items_index_id` is the
 # `OrderedMap` ID — a field on the parent's state, allocated once in
 # the parent's constructor. Never synthesize the map ID inline from
 # `self.ref().state_id` or `context.state_id` — see "Relationships
@@ -390,7 +390,7 @@ export const Dashboard: FC = () => {
   const [cursor, setCursor] = useState("");
 
   // One reader subscription. The composing reader fans out across
-  // the item actors server-side, so the UI still sees one live
+  // the item instances server-side, so the UI still sees one live
   // feed — no per-item hooks.
   const { response, isLoading } = user.useDashboard({ cursor });
 

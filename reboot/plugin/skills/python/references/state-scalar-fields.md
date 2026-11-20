@@ -120,7 +120,7 @@ class IntegrationState(Model):
 
 ```python
 class IntegrationState(Model):
-    # ID of the `Ciphertext` actor holding the encrypted API key.
+    # ID of the `Ciphertext` instance holding the encrypted API key.
     api_key_id: str = Field(tag=1, default="")
 ```
 

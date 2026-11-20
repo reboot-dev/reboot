@@ -1,18 +1,18 @@
 ---
-title: Get Actor References with `Service.ref(id)`
+title: Get Instance References with `Service.ref(id)`
 impact: MEDIUM
-impactDescription: Wrong ref-construction calls hit nonexistent actors or crash at startup
-tags: rpc, ref, actor, identity
+impactDescription: Wrong ref-construction calls hit nonexistent instances or crash at startup
+tags: rpc, ref, instance, identity
 ---
 
-## Get Actor References with `Service.ref(id)`
+## Get Instance References with `Service.ref(id)`
 
 > **Critical:** `self.state_id` does **not** exist on a Servicer
 > instance. Use `self.ref().state_id` inside writer/reader/transaction
 > methods, and `context.state_id` inside `@classmethod` workflows. Plain
 > `self.state_id` raises `AttributeError`.
 
-`Service.ref(id)` returns a typed handle to the actor with the given
+`Service.ref(id)` returns a typed handle to the instance with the given
 string ID. The ref is cheap to construct, doesn't hit storage, and can be
 made anywhere a context is in scope.
 
@@ -48,7 +48,7 @@ self.state.account_ids_map_id = str(uuid4())
 # OrderedMap is constructed implicitly on the first `insert`.
 ```
 
-## `self.ref()` Inside a Servicer Refers to the Current Actor
+## `self.ref()` Inside a Servicer Refers to the Current Instance
 
 A Servicer can get a ref to itself with `self.ref()`. Useful for
 self-scheduling:
@@ -96,13 +96,13 @@ async def control_loop(cls, context: WorkflowContext, request):
 ```
 
 This is also why composite-key patterns (e.g. naming an `OrderedMap`
-after the parent actor) reach for `self.ref().state_id` from a writer/
+after the parent instance) reach for `self.ref().state_id` from a writer/
 transaction and `context.state_id` from a workflow.
 
-## Refs Don't Materialize Actors
+## Refs Don't Materialize Instances
 
-Calling `Service.ref(id)` does **not** create the actor. The actor exists
+Calling `Service.ref(id)` does **not** create the instance. The instance exists
 when its constructor (explicit or implicit) has been called. A reader call
-on a non-existent actor returns the zero-valued state; a writer
+on a non-existent instance returns the zero-valued state; a writer
 call against a state without an explicit constructor implicitly creates
-the actor and proceeds.
+the instance and proceeds.
