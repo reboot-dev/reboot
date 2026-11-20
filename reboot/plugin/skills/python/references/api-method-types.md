@@ -1,11 +1,11 @@
 ---
-title: API Definition — Method Types and Tool Exposure
+title: API Definition — Kinds of Method and Tool Exposure
 impact: CRITICAL
 impactDescription: The pydantic API file is the source of truth for both Reboot codegen AND MCP tool surface. `UI()` is MCP App-only; every method (including `User`'s) requires explicit `mcp=`; application types need `factory=True` on their `create` Writer.
 tags: api, pydantic, ui, tool, mcp, reader, writer, transaction, workflow, factory, user
 ---
 
-## API Definition — Method Types and Tool Exposure
+## API Definition — Kinds of Method and Tool Exposure
 
 The pydantic API rules — zero-value defaults, `Optional[<Model>]` +
 `default=None` for nested Models — are in
@@ -17,7 +17,7 @@ What's _MCP App-specific_ about these files:
 - A `User` type with empty (or near-empty) state and `Transaction`
   methods that create application-type instances.
 - `factory=True` on each application type's `create` Writer.
-- The `UI()` method type for opening React UIs (MCP-only — no plain
+- The `UI()` kind of method, for opening React UIs (MCP-only — no plain
   `python` analogue).
 - Every method declares `mcp=Tool()` or `mcp=None`.
 - `api = API(User=Type(...), <AppType>=Type(...))` registers the
@@ -93,8 +93,7 @@ the AI now has to plumb the entity ID through a request Model,
 the React component receives it as a prop and must call
 `usePerson({ id: personId })` explicitly, and every other
 per-Person operation already lives on `Person` — so the UI is
-the one method that doesn't fit. The framing of "the User is
-the front door" is for **creating and locating** entity
+the one method that doesn't fit. The `User` type is for **creating and locating** entity
 instances. Once the AI has an entity's ID, _everything_
 specific to that entity — Readers, Writers, UIs — belongs on
 that entity's `Type`.

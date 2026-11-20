@@ -104,17 +104,17 @@ The Reboot backend is identical. The deltas are all on the frontend:
 
 | Concern      | MCP App                                                                                        | Web App                                                                                     |
 | ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                       | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.      |
+| `User`       | MCP host (ChatGPT, Claude, …) creates a `User` per user.                                       | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity.      |
 | API exposure | `mcp=Tool()` on writer/transaction methods.                                                    | Methods exposed only through the generated React client.                                    |
 | UI shape     | `UI()` methods → artifacts embedded in the MCP host.                                           | An SPA at `frontend/web/` opened at a URL.                                                  |
 | Vite config  | The MCP App scaffolding's: one-file `dist/mcp/<name>/index.html` per UI, served through Envoy. | A stock Vite SPA config rooted at `web/`, built to `dist/web/` at `base: "/"`.              |
 | Test surface | MCPJam inspector.                                                                              | Scenarios that drive the app through Playwright (`frontend/references/testing-web-app.md`). |
-| `User` type  | Required — the MCP entry point.                                                                | Optional — only if your app needs per-user state.                                           |
+| `User` type  | Required — how the AI creates and finds things.                                                | Optional — only if your app needs per-user state.                                           |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
-scheduling, stdlib actors, errors, auth predicates, testing) are
+scheduling, standard library objects, errors, auth predicates, testing) are
 **unchanged** — load them from `python`. What makes an app an MCP
-App on the backend — the `User` front door, `mcp=Tool()`, `UI()`,
+App on the backend — the `User` object type, `mcp=Tool()`, `UI()`,
 `oauth=` and example prompts — is
 [`python/references/mcp-app-concepts.md`](../../python/references/mcp-app-concepts.md);
 a web app's sign-in is

@@ -176,7 +176,7 @@ never holds up the cadence:
 - **`run()` doesn't have to be a workflow.** If one occurrence is just
   a state mutation — no external calls, no multi-step durability — make
   `run()` a `Writer` (or a `Transaction` if it spans several actors).
-  Pick the method type by the usual rules (see `servicer-workflow.md`,
+  Pick the kind of method by the usual rules (see `servicer-workflow.md`,
   `servicer-writer.md`, `servicer-transaction.md`).
 - **Pause the recurrence while a `run()` can't complete.** The shape
   above never skips an occurrence — a failed `run()` doesn't interrupt

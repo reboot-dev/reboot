@@ -326,11 +326,11 @@ The wrong fix is to flatten the model back into `list[Item]` on
 one actor so the dashboard regains a single subscription — see
 "When Correct Decomposition Fights the UI" in
 [`app/SKILL.md`](../../app/SKILL.md). The right fix keeps the decomposition
-and gives the front-door type a **composing reader**: the UI
+and gives the `User` type a **composing reader**: the UI
 still has exactly one subscription, and the fan-out across item
 actors happens server-side.
 
-### Backend: a composing `Reader` on the front-door type
+### Backend: a composing `Reader` on the `User` type
 
 The reader ranges the parent's `OrderedMap` for one page of IDs,
 reads each item actor, and returns a page of hydrated objects
@@ -378,7 +378,7 @@ parent allocating and writing the index.
 
 ### Frontend: one subscription, cursor pagination
 
-The UI keeps a single `use<FrontDoorType>()` subscription — the
+The UI keeps a single `use<User>()` subscription — the
 same shape as the Counter example — and pages by cursor:
 
 ```tsx

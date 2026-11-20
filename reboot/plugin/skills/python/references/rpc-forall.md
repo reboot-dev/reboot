@@ -52,7 +52,7 @@ for mid, response in zip(message_ids, responses):
     print(mid, response.details)
 ```
 
-## Method Type Restrictions
+## Restrictions by Kind of Method
 
 Apply the same context-type rules as a single call: a `reader` method
 needs a `ReaderContext` (or higher); a `writer`/`transaction`/`workflow`
@@ -74,7 +74,7 @@ mine = [m for m in messages if m.author == request.name]
 
 ## Use for Cross-Cutting Writes from Workflows
 
-Workflow brokers in stdlib use `forall` to fan items out to many queues
+Workflow brokers in the standard library use `forall` to fan items out to many queues
 in one call:
 
 ```python

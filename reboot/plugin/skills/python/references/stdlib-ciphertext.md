@@ -1,7 +1,7 @@
 ---
 title: Use `Ciphertext` for Envelope Encryption and Crypto-Shredding
 impact: HIGH
-impactDescription: Hand-rolled encryption-at-rest / right-to-erasure is easy to get wrong; the stdlib library is auditable and handles key rotation for you.
+impactDescription: Hand-rolled encryption-at-rest / right-to-erasure is easy to get wrong; the standard library's version is auditable and handles key rotation for you.
 tags: stdlib, ciphertext, encryption, envelope, crypto-shred, gdpr, right-to-erasure, shred, scope, key-manager, associated-data
 ---
 

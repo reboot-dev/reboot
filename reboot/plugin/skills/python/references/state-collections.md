@@ -63,11 +63,11 @@ Three shapes show up. They differ along two axes: **what's stored**
 (sub-records vs. IDs of other state actors) and **how big the
 collection can get**.
 
-| Shape                                                       | When to pick                                                                                                                                                                                            | Pitfalls                                                                                                      |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.                                 |
-| **B. `list[str]` / `dict[str, str]` of foreign object IDs** | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.                            |
-| **C. `OrderedMap` of foreign object IDs**                   | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration.                                                              | Extra hop to a stdlib actor. Entry values use the `value` / `bytes` / `any` envelope. `range` needs `limit=`. |
+| Shape                                                       | When to pick                                                                                                                                                                                            | Pitfalls                                                                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.                                            |
+| **B. `list[str]` / `dict[str, str]` of foreign object IDs** | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.                                       |
+| **C. `OrderedMap` of foreign object IDs**                   | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration.                                                              | Extra hop to a standard library object. Entry values use the `value` / `bytes` / `any` envelope. `range` needs `limit=`. |
 
 > **"Bounded" is a domain fact, not a knob you control.** You do
 > not get to make a collection bounded by adding a size cap. If
@@ -383,7 +383,7 @@ cleared state as gone.
   string at every callsite, and skips the constructor allocation
   that marks ownership. Add a `<thing>_index_id` field and
   reference via `OrderedMap.ref(self.state.<id>)`. The same rule
-  applies to every cross-`Type` reference, stdlib or user-defined
+  applies to every cross-`Type` reference, standard library or user-defined
   — see "Relationships Between Object Types" above.
 
 ### See Also

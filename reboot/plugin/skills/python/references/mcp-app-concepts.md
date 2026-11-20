@@ -1,8 +1,8 @@
 ---
-title: MCP App Concepts — the User Front Door, Tools, UI(), Sign-in, Example Prompts
+title: MCP App Concepts — `User`, Tools, UI(), Sign-in, Example Prompts
 impact: CRITICAL
-impactDescription: What makes a Reboot app an MCP App, all of it declared in the API file and the servicers. Getting the front door, the tool surface or a UI's placement wrong means reworking the API and every file generated from it.
-tags: mcp, user, front-door, tool, ui, oauth, authorizer, example-prompts
+impactDescription: What makes a Reboot app an MCP App, all of it declared in the API file and the servicers. Getting `User`, the tool surface or a UI's placement wrong means reworking the API and every file generated from it.
+tags: mcp, user, tool, ui, oauth, authorizer, example-prompts
 ---
 
 # MCP App Concepts
@@ -11,7 +11,7 @@ tags: mcp, user, front-door, tool, ui, oauth, authorizer, example-prompts
 
 Every MCP App has a `User` type and one or more application types:
 
-- **`User`** is the AI's entry point for **creating and locating**
+- **`User`** is how the AI goes about **creating and locating**
   application-type instances. It is not a container for all of the
   app's state:
   - `User` holds the user's identity (for example, a display name)
@@ -67,7 +67,7 @@ Every method must explicitly declare its MCP exposure:
 - **`Tool(name="...", title="...")`** — override the default tool
   name or add a human-readable title.
 
-## Method Types
+## Kinds of Method
 
 The `Reader` / `Writer` / `Transaction` / `Workflow` markers come from
 `reboot.api` and behave exactly as [`python/references/api-methods.md`](api-methods.md)
@@ -221,8 +221,7 @@ a worked set are in
 An MCP App's design includes, besides its application types and
 method map:
 
-- The `User` type and its methods (the MCP front door
-  for creating new application-type instances and locating
+- The `User` type and its methods (for creating new application-type instances and locating
   existing ones).
 - Tool surface: what the AI will see as callable tools.
 - Example prompts: the ~3 named chat scenarios the
@@ -236,8 +235,8 @@ And the app skill's
 [State Model Assessment](../../app/SKILL.md#state-model-assessment)
 adds, for an MCP App:
 
-- **The `User` type.** An MCP App always has one: it is the front
-  door.
+- **The `User` type.** An MCP App always has one, and the AI
+  creates and finds everything else through it.
 - **Tool surface**: Which operations need explicit tool
   exposure (`mcp=Tool()`)? Default Servicer methods to `mcp=Tool()`
   if the AI should call them, `mcp=None` otherwise.

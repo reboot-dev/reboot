@@ -69,7 +69,7 @@ class TestChatRoom(unittest.IsolatedAsyncioTestCase):
 - `Reboot()` constructs the harness.
 - `await rbt.start()` boots the in-process runtime.
 - `await rbt.up(Application(...))` launches the application; pass it
-  the same Servicers and stdlib `libraries=[...]` you'd pass in
+  the same Servicers and standard library `libraries=[...]` you'd pass in
   production.
 - `await rbt.stop()` tears it all down.
 
@@ -219,7 +219,7 @@ be attributed to a user.
 ## Auto-Construct Under Auth
 
 If an object type has a real authorizer that gates its constructor —
-typically the case for `User`-shaped front-door types — the framework
+typically the case for `User`-shaped types — the framework
 calls `_authenticated` to create the state for an authenticated user
 whenever a token is minted for them. `create_external_context_as(...)`
 and `make_valid_oauth_access_token(...)` mint a token, so they

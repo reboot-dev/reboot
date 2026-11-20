@@ -9,7 +9,7 @@ tags: main, application, asyncio, servicers, libraries
 
 > **Critical:** pass Servicer **classes** to `Application(servicers=[...])`,
 > not instances. `[ChatRoomServicer()]` is wrong; `[ChatRoomServicer]`
-> is right. Stdlib types need `libraries=[ordered_map_library(), ...]`
+> is right. Standard library objects need `libraries=[ordered_map_library(), ...]`
 > registered alongside their `servicers()`.
 
 Every Reboot Python application has an `async def main()` that constructs an
@@ -75,9 +75,9 @@ await Application(servicers=[ChatRoomServicer()]).run()  # instance, wrong
 await Application(servicers=[ChatRoomServicer]).run()
 ```
 
-## Multiple Servicers and Stdlib Libraries
+## Multiple Servicers and Standard Library Objects
 
-Combine Servicer classes from your code with stdlib `servicers()` factories
+Combine Servicer classes from your code with the standard library's `servicers()` factories
 and `libraries=[...]` for standard library objects:
 
 ```python
@@ -108,11 +108,11 @@ registration gives a runtime "unknown actor type" error. What each
 type needs:
 
 - `stdlib-ordered-map.md` — `ordered_map_library()` only
-- `stdlib-queue.md` — `queue.servicers()` + the stdlib map library
-  (`Queue` uses a stdlib sorted-map actor under the hood — see the
+- `stdlib-queue.md` — `queue.servicers()` + the standard library's map library
+  (`Queue` uses a standard library sorted map under the hood — see the
   reference for the exact import)
 - `stdlib-pubsub.md` — `pubsub.servicers()` (transitively pulls
-  `queue.servicers()`) + the stdlib map library
+  `queue.servicers()`) + the standard library's map library
 - `stdlib-presence.md` — `presence_library()` (brings three
   Servicers)
 

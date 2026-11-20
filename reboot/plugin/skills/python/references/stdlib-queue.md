@@ -7,11 +7,11 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 
 ## Use `Queue` for Durable FIFO Work Queues
 
-> **Critical:** Reach for the stdlib `Queue` for any durable FIFO —
+> **Critical:** Reach for the standard library `Queue` for any durable FIFO —
 > work queues, job queues, intake queues, jobs-pulled-off-a-queue.
 > Do **not** define your own `Queue` `Type` or hand-roll a
 > list-as-queue on actor state — both lose durability, ordering,
-> and the blocking-`dequeue` consumer pattern. The stdlib `Queue` > _is_ the primitive.
+> and the blocking-`dequeue` consumer pattern. The standard library `Queue` > _is_ the primitive.
 >
 > Implementation rules:
 >
@@ -19,7 +19,7 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 >   available; only callable from a `WorkflowContext`.
 > - For a non-blocking pull from a transaction, use `try_dequeue`.
 > - Register `queue.servicers()` AND `sorted_map_library()` in
->   your `Application(...)`. `Queue` uses an internal stdlib
+>   your `Application(...)`. `Queue` uses an internal standard library
 >   sorted-map actor to back its storage; you don't interact with
 >   it directly, but its library still needs to be registered.
 >   Forgetting either fails at boot with "unknown actor type."
@@ -41,7 +41,7 @@ available). A `try_dequeue` exists for one-shot non-blocking pulls from
 
 ### Register the Library
 
-`Queue` is backed by an internal stdlib sorted-map actor — its
+`Queue` is backed by an internal standard library sorted-map actor — its
 servicers list pulls those in, and the matching library factory
 must be registered. Use the `queue.servicers()` helper:
 
@@ -131,7 +131,7 @@ response = await Queue.ref(WORK_QUEUE_ID).try_dequeue(
 The response shape is the same as `dequeue`; an empty queue returns no
 items rather than blocking.
 
-### Watch the Workflow Method Type
+### `dequeue` Is a Workflow Method
 
 `dequeue` is a `workflow` method (not a `writer`). Calling it from a
 `writer` or `transaction` is a context-type error. Set up a workflow

@@ -49,7 +49,7 @@ more than one concern and should be split:
 - **A "transient" cache field** — a picker snapshot, a draft
   scratchpad, a UI hint — sits next to durable business state on the
   same actor. Caches have a different lifecycle and a different read
-  pattern; promote them to their own `Type` (or a stdlib `Item`).
+  pattern; promote them to their own `Type` (or a standard library `Item`).
 
 ### Why It Matters in Reboot Specifically
 

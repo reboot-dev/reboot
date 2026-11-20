@@ -1,4 +1,4 @@
-## Stdlib libraries take `authorizer` by keyword only
+## Standard library registrations take `authorizer` by keyword only
 
 `ordered_map_library`, `sorted_map_library`, `queue_library`,
 `pubsub_library` and `presence_library`, and the `Library` classes

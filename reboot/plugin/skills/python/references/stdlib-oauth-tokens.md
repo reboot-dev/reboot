@@ -1,7 +1,7 @@
 ---
 title: Store Provider OAuth Tokens in `OAuthTokenManager`, Not Hand-Rolled `Ciphertext`
 impact: HIGH
-impactDescription: OAuth access/refresh tokens are secrets at rest; the stdlib manager encrypts, indexes, and crypto-shreds them per user for you — a plain `str` field leaks them, and hand-rolling `Ciphertext` re-implements what already exists.
+impactDescription: OAuth access/refresh tokens are secrets at rest; the standard library manager encrypts, indexes, and crypto-shreds them per user for you — a plain `str` field leaks them, and hand-rolling `Ciphertext` re-implements what already exists.
 tags: stdlib, oauth, tokens, access-token, refresh-token, store-tokens, ciphertext, encryption, crypto-shred, google, github, secret
 ---
 
@@ -10,7 +10,7 @@ tags: stdlib, oauth, tokens, access-token, refresh-token, store-tokens, cipherte
 > **Critical:** never store an external provider's OAuth access/refresh
 > token in a plain `str` state field — that is a secret in plaintext at
 > rest. And don't hand-roll `Ciphertext` for it either: the
-> `OAuthTokenManager` stdlib type already wraps `Ciphertext` plus the
+> `OAuthTokenManager` standard library object already wraps `Ciphertext` plus the
 > pointer index, per-service key manager, and per-user crypto-shred
 > scope. For non-OAuth secrets/PII, use `Ciphertext` directly
 > (`stdlib-ciphertext.md`); for OAuth provider tokens, use this.

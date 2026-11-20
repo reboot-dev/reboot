@@ -31,7 +31,7 @@ repository is the canonical example.
 **Incorrect (free-floating decls that aren't wired up via `API(...)`):**
 
 ```python
-# DON'T — Methods is the binding from name to method type; declarations
+# DON'T — Methods is the binding from name to kind of method; declarations
 # outside of an API(...) block never reach the generator.
 from reboot.api import API, Field, Methods, Model, Writer
 

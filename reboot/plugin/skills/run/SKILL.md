@@ -45,7 +45,7 @@ strongest first.
 **MCP App** — any of:
 
 - An API file under `api/` uses `mcp=Tool(` or `UI(` (the `UI()`
-  method type). `mcp=None` says nothing: every method of every app
+  kind of method). `mcp=None` says nothing: every method of every app
   requires the `mcp=` argument, so a Web App has `mcp=None` on all
   of them.
 - There is a `frontend/mcp/<name>/index.html`.

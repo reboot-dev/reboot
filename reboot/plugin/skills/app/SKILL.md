@@ -17,7 +17,7 @@ builds it step by step. What it builds with lives in two other
 skills, read at the step that needs them:
 
 - the [`python` skill](../python/SKILL.md) for the backend: the API,
-  servicers, state, sign-in, and the MCP App's front door and tools;
+  servicers, state, sign-in, and the MCP App's `User` and tools;
 - the [`frontend` skill](../frontend/SKILL.md) for the React side: the
   generated client, the web app, and the MCP App UIs.
 
@@ -125,7 +125,7 @@ above says where they are listed.
   decomposition: when one state `Type` has accreted multiple
   unrelated concerns (auth/session, persona, background-engine,
   transient cache), split each into its own `Type`. Critical for the
-  `User` front door, which otherwise turns into a God actor and
+  `User` object type, which otherwise turns into a God actor and
   serializes unrelated writers.
 
 **Before writing the servicer:**
@@ -224,7 +224,7 @@ recursive grep.
 ## Workflow: Settle the Design, Then Build
 
 **Always settle the design before writing code.** The state model
-is the foundation — getting entities, field types, or method types
+is the foundation — getting entities, field types, or kinds of method
 wrong means regenerating everything across 12+ files.
 
 ### Design Phase
@@ -311,7 +311,7 @@ wrong means regenerating everything across 12+ files.
 2. State the design you are about to build:
 
    - Application types: state shape (fields, types, tags).
-   - Method map: which operations, which method type
+   - Method map: which operations, which kind of method
      (Reader/Writer/Transaction/Workflow).
    - The design items of each frontend you build: see
      [What Each Frontend Adds](#what-each-frontend-adds) above.
@@ -361,7 +361,7 @@ They mean nothing outside this skill:
   decision, but never as the explanation.
 
 **For every design choice, give the what + the why.** The _what_
-is the concrete data structure, method type, or route. The _why_
+is the concrete data structure, kind of method, or route. The _why_
 is a one-clause reason rooted in the user's domain ("grows
 without bound, so we need pagination"; "no methods or auth of
 its own, so it lives inline"; "logged-in users only, because the
@@ -454,7 +454,7 @@ Before writing code, analyze the user's request:
    `Transaction` on `User` that calls `<Type>.create(context)` and
    registers the new ID in the appropriate container (Shape B or C
    above). For anonymous or shared-state apps without `User`, put
-   creation and registration on the shared parent or front-door type
+   creation and registration on the shared parent or `User` type
    chosen in the design instead.
 5. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
@@ -466,7 +466,7 @@ Before writing code, analyze the user's request:
    Full rules + examples in
    [`python/references/api-state-shapes.md`](../python/references/api-state-shapes.md)
    and `python/references/api-pydantic.md`.
-6. **Operations**: Map to the right method type:
+6. **Operations**: Map to the right kind of method:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
    - `Transaction` — multi-state atomic operations (e.g. transfer
@@ -505,7 +505,7 @@ must be torn apart the moment a real data source is pointed at it
 is the exact failure this skill exists to prevent.
 
 The UI still gets its single subscription. Add a **composing
-reader** on the front-door type: a `Reader` that ranges the
+reader** on the `User` type: a `Reader` that ranges the
 parent's `OrderedMap` for one page of IDs, reads each item actor,
 and returns a page of fully-hydrated objects plus a `next_cursor`.
 The React UI subscribes to that one reader and pages by cursor —

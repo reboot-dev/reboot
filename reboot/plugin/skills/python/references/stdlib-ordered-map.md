@@ -1,7 +1,7 @@
 ---
 title: Use `OrderedMap` for Distributed Sorted Key/Value Storage
 impact: HIGH
-impactDescription: Without a stdlib sorted map, large or paginated collections must be hand-rolled
+impactDescription: Without a standard library sorted map, large or paginated collections must be hand-rolled
 tags: stdlib, OrderedMap, B-tree, collections, range, paginated, ordered
 ---
 
@@ -33,7 +33,7 @@ via `OrderedMap.ref(self.state.<id>)`.
 > It "works" but hides the parent → map relationship from the state
 > schema, repeats the magic string at every callsite, and skips the
 > constructor allocation that marks ownership. The full rationale,
-> and the generalization to every cross-`Type` reference (stdlib or
+> and the generalization to every cross-`Type` reference (standard library or
 > user-defined), is in `state-collections.md`'s "Relationships
 > Between Object Types" section.
 

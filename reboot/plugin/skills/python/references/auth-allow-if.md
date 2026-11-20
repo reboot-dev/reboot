@@ -77,9 +77,9 @@ When `any=[...]` runs out without finding an `Ok`:
 This shape lets callers know whether to retry with auth (the call was
 unauthenticated) or stop trying entirely (denied).
 
-## Stdlib Uses It Internally
+## The Standard Library Uses It Internally
 
 `OrderedMapServicer` defaults to
 `allow_if(all=[is_app_internal])` — only other Reboot code in the same
-app can call it. Apply the same pattern when a stdlib-style helper
+app can call it. Apply the same pattern when a standard-library-style helper
 shouldn't be reachable from outside.

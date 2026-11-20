@@ -22,7 +22,7 @@ tags: stdlib, Topic, pubsub, publish, subscribe, broker, fan-out
 > Other implementation rules:
 >
 > - `Topic` is built on `Queue`, which is in turn backed by an
->   internal stdlib sorted-map actor — register
+>   internal standard library sorted-map actor — register
 >   `pubsub.servicers()` (transitively pulls Queue's servicers)
 >   AND `sorted_map_library()`.
 > - The internal `broker` workflow auto-schedules on first
@@ -47,7 +47,7 @@ topic's buffer into each subscriber's queue.
 ### Register the Library
 
 `Topic` is built on `Queue`, which is itself backed by an internal
-stdlib sorted-map actor:
+standard library sorted-map actor:
 
 ```python
 from reboot.std.pubsub.v1 import pubsub

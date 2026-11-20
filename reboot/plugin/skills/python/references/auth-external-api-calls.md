@@ -152,7 +152,7 @@ API key, personal access token, or webhook secret into your UI instead.
 `OAuthTokenManager` is purpose-built for OAuth tokens; don't shoehorn an
 API key into it. The key is still a secret at rest, so the rule from
 `state-scalar-fields.md` applies: **never a plain `str` field** — encrypt
-it with the `Ciphertext` stdlib type and keep the returned `state_id` (a
+it with the `Ciphertext` standard library object and keep the returned `state_id` (a
 harmless `str`) in your state as the reference to the encrypted value.
 This path needs only `ciphertext_library()` + `ordered_map_library()`
 (no `oauth_library()`).

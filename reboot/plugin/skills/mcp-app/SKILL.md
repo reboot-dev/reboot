@@ -1,6 +1,6 @@
 ---
 name: mcp-app
-description: Build a complete Reboot MCP App for ChatGPT, Claude, VSCode, Goose, and other MCP hosts. Starts the app skill's whole build with the frontend already chosen as an MCP App. Use when the user asks for an MCP App, an MCP server or tool, or something to use from Claude or ChatGPT. What is specific to MCP Apps is in the python skill (the User-type front door, MCP tool exposure, the UI() method type) and the frontend skill (the React UIs and their Vite scaffolding).
+description: Build a complete Reboot MCP App for ChatGPT, Claude, VSCode, Goose, and other MCP hosts. Starts the app skill's whole build with the frontend already chosen as an MCP App. Use when the user asks for an MCP App, an MCP server or tool, or something to use from Claude or ChatGPT. What is specific to MCP Apps is in the python skill (the User object type, MCP tool exposure, the UI() kind of method) and the frontend skill (the React UIs and their Vite scaffolding).
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---

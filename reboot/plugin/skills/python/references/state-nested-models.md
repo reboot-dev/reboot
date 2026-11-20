@@ -13,7 +13,7 @@ tags: state, nested, models, sub-objects, structure
 > reference via `<OtherType>.ref(id)`. This is the same rule as
 > "collections of entities live in their own actors" — see
 > `state-collections.md` for the three container shapes (in-state
-> `list[Sub]`, in-state `list[str]` of IDs, stdlib map of IDs) and
+> `list[Sub]`, in-state `list[str]` of IDs, standard library map of IDs) and
 > when to pick each.
 
 A state `Model`'s fields can themselves be `Model`s. Use nested
@@ -77,5 +77,5 @@ lifecycle, or methods (i.e. `X` would be a state `Type`), don't
 inline them — make `X` its own `Type(state=X)` and have the parent
 hold IDs instead of `X` instances. The three container shapes for
 holding those IDs (in-state `list[str]`, `dict[str, str]`, or a
-stdlib `OrderedMap`) and the decision flow between them are in
+standard library `OrderedMap`) and the decision flow between them are in
 `state-collections.md`.

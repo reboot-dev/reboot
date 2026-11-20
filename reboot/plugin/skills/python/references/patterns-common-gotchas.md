@@ -120,12 +120,12 @@ You cannot declare a non-zero `default=` on a `Field(tag=N)` —
 non-zero defaults are rejected at import. To seed non-zero state, do
 it in a constructor method using `context.constructor`.
 
-### 12. Register Stdlib Libraries
+### 12. Register Standard Library Objects
 
 `OrderedMap` requires `libraries=[ordered_map_library()]` in the
 `Application(...)` call. Forgetting it gives a runtime error about
-unknown actor type. The same shape applies to every stdlib state
-type with a `<thing>_library()` factory.
+unknown actor type. The same shape applies to every standard library
+object with a `<thing>_library()` factory.
 
 ### 13. Servicer Class, Not Instance, in `Application(...)`
 
@@ -204,8 +204,7 @@ Set `mcp=None` for non-tool workflows.
 
 A `str`/`bytes` scalar field is plaintext at rest. Passwords, API keys,
 session tokens, and PII must **never** be stored that way — the "it's
-just a string" reflex is the trap. Encrypt with the `Ciphertext` stdlib
-type and store the returned `state_id` instead:
+just a string" reflex is the trap. Encrypt with the `Ciphertext` standard library object and store the returned `state_id` instead:
 
 ```python
 # Wrong — API key in plaintext at rest:

@@ -10,7 +10,7 @@ tags: state, scalar, fields, defaults, secret, token, password, credential, api-
 > **Stop before typing `str` for a secret.** If a field holds a
 > password, API key, session token, or PII, do **not** store it as a
 > plain `str`/`bytes` scalar — that is plaintext at rest. Encrypt it
-> with the `Ciphertext` stdlib type and store the returned `state_id`
+> with the `Ciphertext` standard library object and store the returned `state_id`
 > (a `str`) instead. **OAuth access/refresh tokens are a special case:
 > use the purpose-built `OAuthTokenManager` (`stdlib-oauth-tokens.md`),
 > not `Ciphertext` directly.** See "Never Store Secrets in Plain Scalar
@@ -88,7 +88,7 @@ a scalar field. This includes passwords, API keys, session tokens, and
 PII. The reflex "it's just a string, give it a `str` field" is exactly
 the trap.
 
-Instead, encrypt the value with the `Ciphertext` stdlib type (envelope
+Instead, encrypt the value with the `Ciphertext` standard library object (envelope
 encryption + per-scope crypto-shredding) and store the returned
 `state_id` — itself a harmless `str` — on your state. Decrypt on demand.
 Full method surface, library registration, and `associated_data` rules

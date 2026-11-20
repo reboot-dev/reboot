@@ -55,20 +55,20 @@ Reference these guidelines when:
 
 ## Rule Categories by Priority
 
-| Priority | Category   | Impact     | Prefix        |
-| -------- | ---------- | ---------- | ------------- |
-| 1        | Lifecycle  | CRITICAL   | `lifecycle-`  |
-| 2        | API        | CRITICAL   | `api-`        |
-| 3        | Servicer   | HIGH       | `servicer-`   |
-| 4        | Agent      | HIGH       | `agent-`      |
-| 5        | Stdlib     | HIGH       | `stdlib-`     |
-| 6        | Crypto     | HIGH       | `crypto-`     |
-| 7        | State      | HIGH       | `state-`      |
-| 8        | Auth       | HIGH       | `auth-`       |
-| 9        | RPC        | MEDIUM     | `rpc-`        |
-| 10       | Scheduling | MEDIUM     | `scheduling-` |
-| 11       | Testing    | LOW-MEDIUM | `testing-`    |
-| 12       | Patterns   | LOW-MEDIUM | `patterns-`   |
+| Priority | Category         | Impact     | Prefix        |
+| -------- | ---------------- | ---------- | ------------- |
+| 1        | Lifecycle        | CRITICAL   | `lifecycle-`  |
+| 2        | API              | CRITICAL   | `api-`        |
+| 3        | Servicer         | HIGH       | `servicer-`   |
+| 4        | Agent            | HIGH       | `agent-`      |
+| 5        | Standard library | HIGH       | `stdlib-`     |
+| 6        | Crypto           | HIGH       | `crypto-`     |
+| 7        | State            | HIGH       | `state-`      |
+| 8        | Auth             | HIGH       | `auth-`       |
+| 9        | RPC              | MEDIUM     | `rpc-`        |
+| 10       | Scheduling       | MEDIUM     | `scheduling-` |
+| 11       | Testing          | LOW-MEDIUM | `testing-`    |
+| 12       | Patterns         | LOW-MEDIUM | `patterns-`   |
 
 The `Workflow(...)` context method is the fourth servicer context
 type alongside reader / writer / transaction; its (large) reference
@@ -237,14 +237,14 @@ messages nested as attributes, the `Servicer` base class, and the
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
 - **`Queue`, `Topic`, `OrderedMap`, `Presence`, `Item` are
-  stdlib actor names — use them, don't redefine them.** If a
+  standard library object names — use them, don't redefine them.** If a
   design or task names any of these (e.g. "publish to a
   `Topic`", "track members in an `OrderedMap`", "subscribe a
   `Queue`", "presence shows who's online"), the answer is to
-  _import_ the stdlib actor — not to declare a pydantic `Model`
+  _import_ the standard library object — not to declare a pydantic `Model`
   with the same name. Defining your own `Topic` / `Queue` /
   etc. forfeits durability, ordering, blocking semantics, and
-  concurrency guarantees the stdlib already provides. See the
+  concurrency guarantees the standard library already provides. See the
   trigger table under "How to Use → Using Standard Library Objects"
   below.
 
@@ -340,7 +340,7 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 ### Using Standard Library Objects
 
 If your design calls for any of the concepts in the left column,
-the stdlib already provides the canonical actor. Read the
+the standard library already provides the canonical object type. Read the
 reference **before** writing your own actor type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
@@ -356,8 +356,8 @@ and forfeits durability, ordering, and concurrency guarantees:
 | A field holds a password/API key/secret/PII       | `Ciphertext`        | `stdlib-ciphertext.md`   |
 | Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext`        | `stdlib-ciphertext.md`   |
 
-Each stdlib reference also lists its library registration —
-forgetting `<thing>_library()` and the stdlib actor's
+Each standard library reference also lists its library registration —
+forgetting `<thing>_library()` and the standard library object's
 `<thing>.servicers()` in your `Application(...)` fails at boot
 with "unknown actor type."
 
@@ -481,7 +481,7 @@ is the frontend skill's
 
 **Design:**
 [`references/mcp-app-concepts.md`](references/mcp-app-concepts.md)
-— the `User` front door, tool exposure, `UI()`, `oauth=` and
+— the `User` object type, tool exposure, `UI()`, `oauth=` and
 example prompts the design names.
 
 **Project files:**
@@ -495,7 +495,7 @@ example prompts the design names.
 **API definition:**
 
 - [`references/api-method-types.md`](references/api-method-types.md)
-  — the pydantic API file for an MCP App: `User`-type front door,
+  — the pydantic API file for an MCP App: the `User` object type,
   `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI
   props), `factory=True` on `create`, the `Workflow(...)`
   declaration shape. Full Counter API example.
@@ -614,7 +614,7 @@ above lists the right ones grouped by task type. The full catalog:
 **MCP App**:
 
 - `references/mcp-app-concepts.md` — what makes an app an MCP App: the
-  `User` front door, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
+  `User` object type, `mcp=Tool()`, `UI()`, `oauth=`, example prompts
 
 **API** (`api-`):
 
@@ -624,7 +624,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-schema-evolution.md` — schema evolution rules for
   deployed applications / persisted state
 - `references/api-method-types.md` — an MCP App's API file: the
-  `User` front door, `mcp=Tool()` / `mcp=None`, `UI()`
+  `User` object type, `mcp=Tool()` / `mcp=None`, `UI()`
 - `references/api-state-shapes.md` — `list[Item]` and nested `Model`
   sub-objects in state
 
@@ -640,7 +640,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
 - `references/servicer-patterns.md` — an MCP App's servicers: the
-  `User` front door creating application types, workflows on
+  `User` creating application types, workflows on
   `MyType.ref()`
 
 **Agent** (`agent-`):
@@ -648,7 +648,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/agent-pydantic-ai.md`
 - `references/agent-tools.md`
 
-**Stdlib** (`stdlib-`):
+**Standard library** (`stdlib-`):
 
 - `references/stdlib-ordered-map.md`
 - `references/stdlib-queue.md`

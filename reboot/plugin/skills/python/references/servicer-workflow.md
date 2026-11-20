@@ -1069,7 +1069,7 @@ twice".
 > types** — the callable they take must derive its answer from Reboot
 > state: a declared `Reader` call on another actor (e.g.
 > `Order.ref(id).get(context)`), the workflow's own state via the
-> no-arg `Service.ref().read(context)`, or a stdlib actor. **Never put
+> no-arg `Service.ref().read(context)`, or a standard library object. **Never put
 > an external API call (HTTP poll, SDK status check, filesystem
 > read) inside the callable.** The runtime detects "the answer
 > might have changed" by tracking Reboot-state dependencies; an
@@ -1091,7 +1091,7 @@ runtime can only infer from Reboot-state reads.
 `until(alias, context, callable)` reactively re-runs `callable` until
 it returns a truthy value, then memoizes that value and resolves.
 Use it whenever a workflow needs to wait for a Reboot-state
-condition: an approval to land in the actor's state, a stdlib value
+condition: an approval to land in the actor's state, a standard library value
 to flip, state to reach a particular shape.
 
 **Incorrect (busy-waiting with sleep):**
@@ -1514,7 +1514,7 @@ wraps the underlying model call in `at_least_once` for you. The
 - `api-methods.md` — the `Workflow(...)` factory and `errors=[...]`.
 - `api-errors.md` / `patterns-error-handling.md` — the typed-error
   contract behind declared aborts.
-- `stdlib-queue.md` / `stdlib-pubsub.md` — the stdlib actors most
+- `stdlib-queue.md` / `stdlib-pubsub.md` — the standard library objects most
   often driven from a workflow control loop.
 - `scheduling-recurring.md` — recurring / "cron" jobs: a
   self-rescheduling writer tick that dispatches one of these workflows

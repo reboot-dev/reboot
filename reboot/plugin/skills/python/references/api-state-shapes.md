@@ -11,7 +11,7 @@ The pydantic foundation rules (zero-value defaults; non-Optional
 `Model`-typed fields reject defaults) are in
 `python/references/api-pydantic.md`. The full three-way decision
 between in-state `list[Sub]`, in-state `list[str]` of foreign IDs,
-and a stdlib `OrderedMap` of foreign IDs — including when to
+and a standard library `OrderedMap` of foreign IDs — including when to
 **decompose** an entity collection into its own state `Type` —
 lives in `python/references/state-collections.md`. **Read it
 before settling on a list-based state shape.** This file covers
@@ -67,7 +67,7 @@ of IDs (unbounded or paginated) — full code patterns in
 > `OrderedMap.ref(self.state.items_index_id)`. **Do not** synthesize
 > it inline from the parent's `state_id`
 > (`OrderedMap.ref(f"{self.ref().state_id}-items")`). Same rule for
-> any cross-`Type` reference, stdlib or user-defined — full
+> any cross-`Type` reference, standard library or user-defined — full
 > rationale and code in "Relationships Between Object Types" in
 > `python/references/state-collections.md`.
 
@@ -155,6 +155,6 @@ nested actor via `<Type>.ref(<id>)`. A Model referenced as
 The corollary is that **collections of state actors** also live in
 the parent as collections-of-IDs, not collections-of-objects: in
 the parent's state you store `list[str]`, `dict[str, str]`, or the
-ID of a stdlib `OrderedMap` — never `list[<StateModel>]`. See
+ID of a standard library `OrderedMap` — never `list[<StateModel>]`. See
 `python/references/state-collections.md` for the three shapes and
 when to pick each.

@@ -9,7 +9,7 @@ tags: auth, predicate, has_verified_token, is_app_internal, state_id_is_user_id
 
 > **Critical:** three shipped predicates cover most needs:
 > `has_verified_token` (any verified caller), `is_app_internal`
-> (only same-app internal calls — the right gate for stdlib-style
+> (only same-app internal calls — the right gate for standard-library-style
 > helpers), `state_id_is_user_id` (per-user resources where object IDs
 > are user IDs). Compose via `allow_if(all=[...])` / `allow_if(any=[...])`.
 
@@ -48,7 +48,7 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
 
 Returns `Ok` when the call originates from inside the same Reboot app
 (another Servicer calling this one). External clients always get
-`PermissionDenied`. This is the right gate for stdlib-style internal
+`PermissionDenied`. This is the right gate for standard-library-style internal
 helpers. An app-internal call may still carry a `context.auth` — the
 signed-in person the calling method ran for — so `is_app_internal` and
 an owner rule can both match the same call.

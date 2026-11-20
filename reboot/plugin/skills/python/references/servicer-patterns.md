@@ -1,11 +1,11 @@
 ---
-title: Servicer Patterns — User Front Door, Workflow Magic, Scheduling
+title: Servicer Patterns — `User` Creates Instances, Workflow Magic, Scheduling
 impact: CRITICAL
-impactDescription: Three MCP App-specific servicer patterns layered on top of `python`'s Servicer rules. The User-side `create_<X>` Transaction is the front door for every application-type instance; Workflow methods need `MyType.ref()` (no-arg) magic instead of `cls.ref()` or `self.ref()`; workflows kicked off from a Transaction must be `.schedule()`-d, not awaited.
+impactDescription: Three MCP App-specific servicer patterns layered on top of `python`'s Servicer rules. The User-side `create_<X>` Transaction creates every application-type instance; Workflow methods need `MyType.ref()` (no-arg) magic instead of `cls.ref()` or `self.ref()`; workflows kicked off from a Transaction must be `.schedule()`-d, not awaited.
 tags: servicer, user, transaction, workflow, ref, schedule, classmethod, inline-writer, per_workflow, per_iteration, always
 ---
 
-## Servicer Patterns — User Front Door, Workflow Magic, Scheduling
+## Servicer Patterns — `User` Creates Instances, Workflow Magic, Scheduling
 
 The base Servicer pattern, context types, and core trips
 (`self.ref().state_id` not `self.state_id`, kwargs not Request
