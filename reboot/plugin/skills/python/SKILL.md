@@ -209,7 +209,7 @@ messages nested as attributes, the `Servicer` base class, and the
 - `.rbtrc` is **line-based**, not YAML. Each line is `<subcommand> <flag>`.
   Use `--application-name=<app>` (canonical since Reboot 1.0.4; `--name`
   still works as a deprecated alias but warns).
-- The actor's ID is `self.ref().state_id` inside writer/reader/
+- The instance's object ID is `self.ref().state_id` inside writer/reader/
   transaction methods, and `context.state_id` inside workflows.
   `self.state_id` does not exist and raises `AttributeError`.
 - **Every `Field(tag=N)` needs an explicit zero-value default**

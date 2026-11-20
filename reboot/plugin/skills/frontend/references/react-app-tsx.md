@@ -41,7 +41,7 @@ await myType.reorderItem({ fromIndex: 0, toIndex: 1 });
 await myType.addItem({ text: "New item" });
 ```
 
-## Actor ID Resolution: Zero-Arg `use<Type>()` for UIs on the Type
+## Object ID Resolution: Zero-Arg `use<Type>()` for UIs on the Type
 
 For a `UI()` declared on an application `Type` (e.g.
 `Person.show=UI(...)`, `Counter.show_clicker=UI(...)`), call the
@@ -55,9 +55,9 @@ const counter = useCounter();
 const person = usePerson();
 ```
 
-The hook reads the actor ID from `toolData.ids["<pkg>.<Type>"]`,
+The hook reads the object ID from `toolData.ids["<pkg>.<Type>"]`,
 which the framework populates from the MCP tool call's target.
-That target is the state ID the AI passes when invoking the
+That target is the object ID the AI passes when invoking the
 generated `<type>_<method>` tool — so the React UI always
 materializes for exactly the entity the AI asked about. No
 props plumbing, no risk of cross-wiring entity IDs.

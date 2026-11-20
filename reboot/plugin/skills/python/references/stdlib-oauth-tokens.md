@@ -18,7 +18,7 @@ tags: stdlib, oauth, tokens, access-token, refresh-token, store-tokens, cipherte
 `OAuthTokenManager`
 (`reboot.std.oauth.v1.oauth` / `rbt.std.oauth.v1.oauth_rbt`) holds the
 OAuth tokens for **one** external third-party service (Google, GitHub,
-…), keyed by `user_id`. It is addressed by a state id naming the service
+…), keyed by `user_id`. It is addressed by an object ID naming the service
 (use the `GOOGLE` / `GITHUB` constants, or any string for a service
 without a predefined one). Each manager encrypts under its own dedicated
 `KeyManager`, and each user's tokens are scoped to their `user_id`, so a

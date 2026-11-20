@@ -141,7 +141,7 @@ async def increment(
   `request=None` / `response=None` variants. Read it instead of
   the generated `*_rbt.py`.
 - `rpc-refs.md` — `self.ref().state_id` (not `self.state_id`) for this
-  actor's ID; `self.ref().schedule(...)` for self-scheduling.
+  instance's object ID; `self.ref().schedule(...)` for self-scheduling.
 - `rpc-calls.md` — kwargs convention for calling other actors.
 - `scheduling-basic.md` / `scheduling-recurring.md` — the canonical
   pattern for deferred work driven from a writer.

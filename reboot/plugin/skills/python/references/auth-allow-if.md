@@ -49,7 +49,7 @@ Three predicates are shipped:
 - `is_app_internal` — call is from the app itself (another Reboot
   servicer, not an external client).
 - `state_id_is_user_id` — the caller's `user_id` equals the actor's
-  state ID. Useful for per-user resources.
+  object ID. Useful for per-user resources.
 
 See `auth-built-in-predicates.md` for details.
 

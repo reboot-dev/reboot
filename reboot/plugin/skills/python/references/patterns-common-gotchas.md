@@ -174,7 +174,7 @@ async def open(
 
 ### 15. `self.state_id` Doesn't Exist; Use `self.ref().state_id`
 
-Inside a Servicer (writer/reader/transaction), get the actor's ID via
+Inside a Servicer (writer/reader/transaction), get the instance's object ID via
 `self.ref().state_id`. Inside a workflow `@classmethod`, use
 `context.state_id`. Plain `self.state_id` raises `AttributeError: 'XServicer' object has no attribute 'state_id'`.
 
@@ -279,7 +279,7 @@ The error names the fix directly: "Instead create a new
 
 A state type literally named `User` is special: when
 `Application(oauth=...)` is configured, Reboot auto-constructs one
-`User` actor per signed-in identity, whose state id **is** the
+`User` actor per signed-in identity, whose object ID **is** the
 `context.auth.user_id`, on first access. Do not write a sign-up
 method that creates it, do not pass an id to `useUser()` in the
 browser, and do not construct it in tests — impersonating a user

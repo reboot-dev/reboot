@@ -224,7 +224,7 @@ To kick off a workflow on actor creation, make the factory a
 its body call `self.ref().schedule().<workflow_name>(context, ...)`.
 See `servicer-workflow.md` for the full pattern.
 
-Calling `<Type>.<MethodPascalCase>(ctx, <state-id>, **kwargs)`
+Calling `<Type>.<MethodPascalCase>(ctx, <object-id>, **kwargs)`
 both creates the actor AND runs the factory method. Don't try
 to call factory methods through `<Type>.ref(<id>).<method>(...)`
 — the actor doesn't exist yet.

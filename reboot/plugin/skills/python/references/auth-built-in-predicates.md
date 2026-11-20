@@ -10,7 +10,7 @@ tags: auth, predicate, has_verified_token, is_app_internal, state_id_is_user_id
 > **Critical:** three shipped predicates cover most needs:
 > `has_verified_token` (any verified caller), `is_app_internal`
 > (only same-app internal calls — the right gate for stdlib-style
-> helpers), `state_id_is_user_id` (per-user resources where actor IDs
+> helpers), `state_id_is_user_id` (per-user resources where object IDs
 > are user IDs). Compose via `allow_if(all=[...])` / `allow_if(any=[...])`.
 
 `reboot.aio.auth.authorizers` ships three predicate callables. Each takes
@@ -71,7 +71,7 @@ def state_id_is_user_id(*, context: ReaderContext, **kwargs):
 
 Returns `Ok` only when the actor's `state_id` equals the caller's
 authenticated `user_id`. Use this when an actor _is_ a user — e.g.
-`UserProfileServicer` whose state IDs are user IDs.
+`UserProfileServicer` whose object IDs are user IDs.
 
 ```python
 return allow_if(all=[state_id_is_user_id])

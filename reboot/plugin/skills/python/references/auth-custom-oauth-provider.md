@@ -149,7 +149,7 @@ To let your provider participate in the token-capture machinery of
 `auth-store-tokens.md` (so the app can call the IdP's API as the
 user):
 
-1. Override **`token_service_id`** with the state id naming the service
+1. Override **`token_service_id`** with the object ID naming the service
    (e.g. `"sso.example.com"`) — apps read tokens back with
    `OAuthTokenManager.ref(<that id>).fetch(...)`.
 2. When `self._store_tokens` is set, have `exchange_code` return an

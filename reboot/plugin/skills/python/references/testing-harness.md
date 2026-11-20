@@ -265,9 +265,9 @@ a method that calls an external service) is fine — see
 is `authorizer()`: overriding it discards the very code the tests
 exist to protect.
 
-## Use a Unique Actor ID per Test
+## Use a Unique Object ID per Test
 
-Each test should pick its own actor IDs (e.g.
+Each test should pick its own object IDs (e.g.
 `f"test-room-{self.id()}"`, or just embed `self.id()` in the
 external-context `name`). The harness is fresh per test, but using
 `self.id()` keeps trace output identifiable.

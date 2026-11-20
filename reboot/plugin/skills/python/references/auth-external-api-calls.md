@@ -107,7 +107,7 @@ from reboot.aio.http import external_context
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
 from starlette.responses import RedirectResponse
 
-SLACK = "slack.com"  # any string; a state id naming the service.
+SLACK = "slack.com"  # any string; an object ID naming the service.
 
 
 async def slack_callback(request):

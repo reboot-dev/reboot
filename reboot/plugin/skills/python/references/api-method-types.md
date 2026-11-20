@@ -70,13 +70,13 @@ The rule:
 
 - **Per-entity UI** ("show this Person", "edit this Task",
   "view this Document") → `UI()` on the entity's `Type`. The
-  actor ID is the tool call's target, implicit — no `request=`
+  object ID is the tool call's target, implicit — no `request=`
   needed.
 - **User-scoped UI** ("show my dashboard", "browse all my
   Persons") → `UI()` on `User`. The actor is the user itself.
 
 **Why the entity-Type placement works.** When a `UI()` lives
-on a `Type`, the generated MCP tool takes that Type's state ID
+on a `Type`, the generated MCP tool takes that Type's object ID
 as its argument and the generated `use<Type>()`
 React hook used in the UI's component auto-resolves its target with
 no arguments needed. The actor reference is end-to-end implicit:
@@ -180,7 +180,7 @@ api = API(
             # `show_clicker` lives on `Counter` (not `User`)
             # because it shows ONE specific Counter. The AI calls
             # the generated `counter_show_clicker` tool with the
-            # target Counter's state ID; the React hook resolves
+            # target Counter's object ID; the React hook resolves
             # that ID automatically. See the "UI Placement"
             # section above for the full rule.
             show_clicker=UI(

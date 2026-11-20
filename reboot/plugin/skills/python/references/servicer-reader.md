@@ -86,7 +86,7 @@ recorded by a writer. See `auth-context-propagation.md`.
 
 ## See Also
 
-- `rpc-refs.md` — getting an actor ref and the actor's ID. The
+- `rpc-refs.md` — getting an actor ref and the instance's object ID. The
   recurring trip: `self.state_id` doesn't exist; use
   `self.ref().state_id`.
 - `rpc-calls.md` — kwargs convention for calling other actors.

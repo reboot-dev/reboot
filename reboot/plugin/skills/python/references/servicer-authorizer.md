@@ -105,7 +105,7 @@ from reboot.aio.contexts import ReaderContext
 class CounterServicer(Counter.Servicer):
 
     def authorizer(self):
-        # Only the user whose ID matches this Counter's state ID may
+        # Only the user whose ID matches this Counter's object ID may
         # call its methods. An `oauth=` provider (e.g. via
         # `OAuthProviderByEnvironment`) ensures every caller has a
         # `user_id`.

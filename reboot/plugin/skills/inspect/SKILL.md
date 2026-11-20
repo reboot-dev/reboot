@@ -1,6 +1,6 @@
 ---
 name: inspect
-description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's state types, lists the state IDs (actor IDs) for a type, and prints a single actor's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what state types does this app have?", "which actors of this type exist?", or "what is stored in this actor right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
+description: Inspect the live state of a running Reboot application from the command line with `rbt inspect`. Lists the application's state types, lists the object IDs for a type, and prints a single actor's state as JSON. Works against both a local `rbt dev run` backend and a deployed Reboot Cloud app via `--application-url` and `--admin-credential`. Use this to answer "what state types does this app have?", "which actors of this type exist?", or "what is stored in this actor right now?" — i.e. to debug persisted state from the terminal instead of the `/__/inspect` web dashboard.
 argument-hint: "[type list | state list --type=<full.Name> | state get --type=<full.Name> --id=<id>]"
 allowed-tools: Bash, Read
 ---
@@ -33,11 +33,11 @@ It does not modify anything; it only reads.
 # 1. List the application's registered state types (full names).
 rbt inspect type list --application-url=<url>
 
-# 2. List the known state IDs (actor IDs) for one type.
+# 2. List the known object IDs for one type.
 rbt inspect state list --type=<full.Type.Name> --application-url=<url>
 
 # 3. Print a single actor's state as JSON.
-rbt inspect state get --type=<full.Type.Name> --id=<state-id> \
+rbt inspect state get --type=<full.Type.Name> --id=<object-id> \
   --application-url=<url>
 ```
 
@@ -48,7 +48,7 @@ type name to pass to `--type`, then `state list` to find the
 - `--type` takes the **full, package-qualified** type name exactly as
   `type list` prints it (e.g. `bank.v1.Account`, `tests.reboot.Echo`)
   — not the bare Python class name.
-- `--id` is the actor's state ID: the same string you pass to
+- `--id` is the instance's object ID: the same string you pass to
   `<Type>.ref(id)` / `<Type>.create(context, id, ...)`.
 - `state get` prints the state as a JSON object. Pipe it to `jq` or a
   file like any other JSON.

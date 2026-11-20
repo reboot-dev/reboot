@@ -349,7 +349,7 @@ They mean nothing outside this skill:
 
 - `Shape A` / `Shape B` / `Shape C` — name the actual data
   structure: `list[Sub]` of inline sub-records, `list[str]` of
-  foreign state IDs, `OrderedMap` of foreign state IDs.
+  foreign object IDs, `OrderedMap` of foreign object IDs.
 - "non-state `Model`" — say "a flat sub-record that lives and
   dies with the parent" or "no identity of its own", in domain
   terms.
@@ -431,10 +431,10 @@ Before writing code, analyze the user's request:
    - **Shape A**, `list[Sub]` of non-state `Model`s — for bounded sub-records
      that genuinely belong with the parent (line items on an Order,
      tags on a Post). NOT for entity collections.
-   - **Shape B**, `list[str]` of foreign state IDs — when the collection of
+   - **Shape B**, `list[str]` of foreign object IDs — when the collection of
      entity IDs is bounded (low hundreds, occasionally low
      thousands) and you always read it whole.
-   - **Shape C**, `OrderedMap` of foreign state IDs — when the collection
+   - **Shape C**, `OrderedMap` of foreign object IDs — when the collection
      grows without bound, needs pagination, range queries, or
      ordered iteration. The default choice for any "list of
      things the user keeps adding to" (people in a PRM, posts

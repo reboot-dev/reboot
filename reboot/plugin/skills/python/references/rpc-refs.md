@@ -35,7 +35,8 @@ await chat_room.send(context, message="Hello!")
 
 ## IDs Are Caller-Supplied Strings
 
-The actor ID is whatever string the caller chooses. Common patterns:
+The object ID is whatever string the caller chooses; in code it is
+`state_id`. Common patterns:
 
 - A semantic key (account ID, room name).
 - A UUID generated at creation time.
@@ -62,14 +63,14 @@ async def open(
 
 ## Use `self.ref().state_id` (Not `self.state_id`) Inside Servicers
 
-A Servicer instance does **not** carry the actor's ID as `self.state_id`
+A Servicer instance does **not** carry the instance's object ID as `self.state_id`
 — that attribute doesn't exist and accessing it raises `AttributeError`.
 The right form depends on the context type:
 
-| Context                                                  | Get the actor's state ID via |
-| -------------------------------------------------------- | ---------------------------- |
-| `ReaderContext` / `WriterContext` / `TransactionContext` | `self.ref().state_id`        |
-| `WorkflowContext`                                        | `context.state_id`           |
+| Context                                                  | Get the instance's object ID via |
+| -------------------------------------------------------- | -------------------------------- |
+| `ReaderContext` / `WriterContext` / `TransactionContext` | `self.ref().state_id`            |
+| `WorkflowContext`                                        | `context.state_id`               |
 
 **Incorrect (raises `AttributeError: 'XServicer' object has no attribute 'state_id'`):**
 

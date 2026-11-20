@@ -246,7 +246,7 @@ adds, for an MCP App:
   about the user as a whole?** Per-entity UIs (`show_person`,
   `edit_task`, `view_document`) go on the entity's own `Type`
   with `request=None` — the AI's tool-call target becomes the
-  actor ID automatically, and the generated `use<Type>()` hook
+  object ID automatically, and the generated `use<Type>()` hook
   resolves it with no arguments. User-scoped UIs (a dashboard,
   a global browser) go on `User`. Putting a per-entity UI on
   `User` with the entity ID inside a `request=<Model>` field is
