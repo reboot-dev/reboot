@@ -23,6 +23,7 @@ from reboot.api import (
     Transaction,
 )
 from reboot.pydantic_schema import Schemas, reference_name, schema_of
+from reboot.pydantic_statechart import model_of_event, rename_events
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from types import MappingProxyType
 
@@ -81,6 +82,32 @@ def api_of(api: API, *, filename: str) -> api_pb2.API:
             auto_construct=type_name == AUTO_CONSTRUCT_STATE_TYPE,
             uis=uis,
         )
+
+        if type_obj.statechart is not None:
+            # The name of each event of the statechart that is a model,
+            # as the model is imported, by the name that the statechart
+            # has for it. The schema of the model goes in `schemas`, the
+            # statechart referring to it by name: an event that is a
+            # model is named as a `Reference` to the model is.
+            model_events: dict[str, str] = {}
+
+            for event in type_obj.statechart.events:
+                model = model_of_event(event)
+                if model is not None:
+                    _, schemas = schema_of(
+                        model,
+                        path=f"api.{type_name}.statechart.events.{event}",
+                        schemas=schemas,
+                    )
+                    model_events[event] = reference_name(model)
+
+            state_type.statechart.CopyFrom(
+                rename_events(
+                    type_obj.statechart,
+                    lambda event: model_events.get(event, event),
+                ),
+            )
+
         state_types.append(state_type)
 
         # Generate request messages for UI methods that

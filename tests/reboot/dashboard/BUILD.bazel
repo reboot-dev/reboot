@@ -207,6 +207,7 @@ ts_project(
         "//rbt/dashboard/v1:dashboard_js_proto",
         "//rbt/v1alpha1/api:api_js_proto",
         "//rbt/v1alpha1/api:schema_js_proto",
+        "//rbt/v1alpha1/statecharts:statechart_js_proto",
         "//reboot/dashboard/web:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
     ],
@@ -240,6 +241,7 @@ ts_project(
         "//rbt/dashboard/v1:dashboard_js_proto",
         "//rbt/v1alpha1/api:api_js_proto",
         "//rbt/v1alpha1/api:schema_js_proto",
+        "//rbt/v1alpha1/statecharts:statechart_js_proto",
         "//reboot/dashboard/web:dashboard_ts",
         "//reboot/std/vitest:vitest_ts",
         # For `state_types`, which only one target may compile.

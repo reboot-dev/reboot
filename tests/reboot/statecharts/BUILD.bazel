@@ -1,7 +1,8 @@
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rbt_pypi//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:pydantic_to_proto.bzl", "py_reboot_library_from_pydantic")
 load("//reboot:rules.bzl", "py_reboot_library")
 
 py_test(
@@ -127,6 +128,38 @@ py_test(
         "//reboot/aio:tests_py",
         "//reboot/aio/auth:authorizers_py",
         "//reboot/statecharts:events_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "door_api_py",
+    srcs = ["door_api.py"],
+    deps = [
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot:api_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "door_py_reboot",
+    py_deps = [
+        ":door_api_py",
+    ],
+    pydantic = ":door_api.py",
+)
+
+py_test(
+    name = "door_test",
+    srcs = ["door_test.py"],
+    deps = [
+        ":door_api_py",
+        ":door_py_reboot",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot:api_py",
+        "//reboot:pydantic_api_py",
+        "//reboot:pydantic_statechart_py",
         requirement("protobuf"),
     ],
 )

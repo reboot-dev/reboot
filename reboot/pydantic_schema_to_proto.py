@@ -4,11 +4,14 @@ import aiofiles
 import importlib
 import os
 import typing
+from google.protobuf import text_format
 from rbt.v1alpha1.api import api_pb2, schema_pb2
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
 from reboot.fail import fail
 from reboot.pydantic_api import api_digest, api_of
 from reboot.pydantic_schema import Schemas
+from reboot.pydantic_statechart import rename_events
 from types import MappingProxyType
 from typing import List, Optional
 
@@ -129,6 +132,8 @@ async def generate_from_schema(
     auto_construct: Optional[str] = None,
     # What the state type does, in the author's own words.
     description: Optional[str] = None,
+    # The statechart of this state type, if it has one.
+    statechart: Optional[statechart_pb2.Statechart] = None,
     # Every schema `schema` may refer to, by reference name.
     schemas: Schemas = MappingProxyType({}),
 ):
@@ -184,6 +189,16 @@ async def generate_from_schema(
                 await proto.write("  };\n")
             else:
                 await proto.write("  option (rbt.v1alpha1.state) = {};\n")
+
+            if statechart is not None:
+                # The value of the option is the statechart in the
+                # text format, which is what the value of a message
+                # option is written in.
+                await proto.write("  option (rbt.v1alpha1.statechart) = {\n")
+                await proto.write(
+                    text_format.MessageToString(statechart, indent=4),
+                )
+                await proto.write("  };\n")
 
         for property_ in schema.properties:
             field_name = property_.name
@@ -579,8 +594,60 @@ async def generate_from_api(
 
     await proto.write('\n')
 
+    # The model of each event of a statechart that a message has been
+    # generated for, as a `Reference` names it, by the name of the
+    # message: state types that share an event share its message.
+    statechart_event_messages: dict[str, str] = {}
+
     for state_type in api.state_types:
         type_name = state_type.name
+
+        # The statechart that is generated for the state type, if it
+        # has one: that of the API, with each event that is a model
+        # named by the message that is generated for the model, which
+        # is of the package of the API and has the name of the model.
+        statechart: Optional[statechart_pb2.Statechart] = None
+
+        if state_type.HasField('statechart'):
+            for event in state_type.statechart.events:
+                if event not in schemas:
+                    continue
+
+                message_name = schemas[event].name
+
+                if message_name in statechart_event_messages:
+                    other_event = statechart_event_messages[message_name]
+
+                    if other_event != event:
+                        fail(
+                            f"The statechart of `{type_name}` has the event "
+                            f"`{event}`, and another has the event "
+                            f"`{other_event}`; the message that is "
+                            "generated for an event that is a model has the "
+                            "name of the model, so each such event of an "
+                            "API file needs a name of its own"
+                        )
+
+                    # The message has been generated.
+                    continue
+
+                statechart_event_messages[message_name] = event
+
+                await generate_from_schema(
+                    proto,
+                    schemas[event],
+                    name=message_name,
+                    schemas=schemas,
+                )
+                await proto.write('\n')
+
+            statechart = rename_events(
+                state_type.statechart,
+                lambda event: (
+                    f"{api.package}.{schemas[event].name}"
+                    if event in schemas else event
+                ),
+            )
 
         # Build UIs list from UI methods.
         uis = []
@@ -623,6 +690,7 @@ async def generate_from_api(
                 state_type.description
                 if state_type.HasField('description') else None
             ),
+            statechart=statechart,
         )
         await proto.write('\n')
 

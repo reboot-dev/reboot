@@ -21,6 +21,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
         requirement("protobuf"),
         requirement("pydantic"),
     ],
@@ -366,12 +367,23 @@ py_library(
 )
 
 py_library(
+    name = "pydantic_statechart_py",
+    srcs = ["pydantic_statechart.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
+    ],
+)
+
+py_library(
     name = "pydantic_api_py",
     srcs = ["pydantic_api.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":api_py",
         ":pydantic_schema_py",
+        ":pydantic_statechart_py",
         ":settings_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
         requirement("pydantic"),
@@ -387,7 +399,10 @@ py_library(
         ":fail_py",
         ":pydantic_api_py",
         ":pydantic_schema_py",
+        ":pydantic_statechart_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/api:api_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/statecharts:statechart_py_proto",
+        requirement("protobuf"),
         requirement("pydantic"),
         requirement("aiofiles"),
     ],

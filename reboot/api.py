@@ -8,6 +8,7 @@ from google.protobuf import json_format
 from google.protobuf.message import Message
 from google.protobuf.struct_pb2 import Value
 from pydantic.fields import FieldInfo
+from rbt.v1alpha1.statecharts import statechart_pb2
 from reboot.settings import (
     AUTO_CONSTRUCT_METHOD,
     AUTO_CONSTRUCT_STATE_TYPE,
@@ -1092,6 +1093,10 @@ class Type(pydantic.BaseModel):
     state: typing.Type[Model]
     methods: Methods
     description: Optional[str] = None
+    # The statechart of the state type, if it has one. An event of it
+    # that is a model is named as the model is imported:
+    # "shop.events.Paid" for the `Paid` of `shop/events.py`.
+    statechart: Optional[statechart_pb2.Statechart] = None
 
     def __init__(
         self,
@@ -1099,6 +1104,7 @@ class Type(pydantic.BaseModel):
         state: typing.Type[Model],
         methods: Methods,
         description: Optional[str] = None,
+        statechart: Optional[statechart_pb2.Statechart] = None,
     ):
 
         def validate_all_fields_are_reboot_base_classes(
@@ -1271,6 +1277,7 @@ class Type(pydantic.BaseModel):
             state=state,
             methods=methods,
             description=description,
+            statechart=statechart,
         )
 
 

@@ -3,6 +3,7 @@ syntax = "proto3";
 package rbt.v1alpha1.api;
 
 import "rbt/v1alpha1/api/schema.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
 
 // What one API file declares, as a grammar: the closed set of forms a
 // pydantic `API(...)` can take, which `rbt generate` prints proto from
@@ -60,6 +61,13 @@ message StateType {
 
   // In declaration order.
   repeated UI uis = 6;
+
+  // The statechart of the state type, if it has one, as the API
+  // declares it: an event of it that is a model is named as a
+  // `Reference` to the model is, and any other event by the full
+  // name of its message. What is generated has a message for each
+  // model, and names the event by that.
+  optional rbt.v1alpha1.statecharts.Statechart statechart = 7;
 }
 
 // Represents one `Reader(...)`, `Writer(...)`, `Transaction(...)` or

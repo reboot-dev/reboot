@@ -46,6 +46,7 @@ ts_project(
         "//rbt/v1alpha1/api:schema_js_proto",
         "//rbt/v1alpha1/bdd:feature_js_proto",
         "//rbt/v1alpha1/bdd:grammar_js_proto",
+        "//rbt/v1alpha1/statecharts:statechart_js_proto",
     ],
 )
 
