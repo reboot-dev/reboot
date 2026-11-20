@@ -12,7 +12,7 @@ allowed-tools: Bash, Read
 > says how and when to react.
 
 `rbt inspect` reads the persisted state of a **running** Reboot
-application — the same data the `/__/inspect` web dashboard shows,
+application — the same data the inspect page (`/__/inspect`) shows,
 but from the terminal so it is scriptable and pipeable. Reach for it
 to debug what an app has actually stored: which object types exist,
 which actors of a type exist, and what a single actor currently holds.
@@ -109,5 +109,5 @@ rbt inspect state get \
   per line; `state get` prints a single JSON object. None of it is
   colorized when the output is not a TTY, so it composes with `grep`,
   `jq`, etc.
-- **Web equivalent.** The `/__/inspect` page (linked from `rbt dev run` and `rbt cloud up` output) shows the same state plus recent
+- **Web equivalent.** The inspect page at `/__/inspect` (linked from `rbt dev run` and `rbt cloud up` output) shows the same state plus recent
   calls in a browser; `rbt inspect` is the CLI counterpart.

@@ -417,7 +417,7 @@ etc.).
 
 ### `Type(description=...)` Says What the Object Type Is For
 
-`Type` takes an optional `description=`, shown by the dev dashboard
+`Type` takes an optional `description=`, shown by the Reboot Dashboard
 beside the object type's name and file:
 
 ```python

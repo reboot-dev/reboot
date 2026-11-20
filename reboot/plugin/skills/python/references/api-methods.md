@@ -227,7 +227,7 @@ withdraw=Writer(
 ),
 ```
 
-The dev dashboard shows it, and `mcp=Tool()` methods use it as the
+The Reboot Dashboard shows it, and `mcp=Tool()` methods use it as the
 tool's description. Write what a caller cannot derive from the
 signature: the precondition, the side effect, the unit, which error it
 raises and when.

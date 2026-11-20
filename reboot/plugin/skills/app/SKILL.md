@@ -565,7 +565,7 @@ also do what your frontend adds to it: the table in
    [`agents-md` skill](../agents-md/SKILL.md), naming the API and
    servicer files the design settled on.
 2. `uv sync`.
-3. Start the developer dashboard — load the
+3. Start the Reboot Dashboard — load the
    [`dashboard` skill](../dashboard/SKILL.md) and follow it — so
    the user can watch the API take shape while you write it. If it
    fails to come up, say so in one sentence and keep building; do
@@ -622,7 +622,7 @@ also do what your frontend adds to it: the table in
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, starts the backend and frontend,
     waits for them to come up, and hands the user the URLs.
-    Required final hand-over: if you started the developer
+    Required final hand-over: if you started the
     dashboard, include the `cloudflared` command and the Claude and
     ChatGPT connector instructions in your final response. This
     applies even when the user asked only for a standalone web app and

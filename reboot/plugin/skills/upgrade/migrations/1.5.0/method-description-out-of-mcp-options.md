@@ -7,7 +7,7 @@ can have one too. `McpMethodOptions.description` is marked
 `deprecated`; it is still read when it is the only description
 present, so nothing breaks today, but it will stop being read, and a
 description left there is invisible to everything that is not an MCP
-tool or resource, the dev dashboard included.
+tool or resource, the Reboot Dashboard included.
 
 **This applies only to hand-written `.proto` API files.** An
 application whose API is defined in Pydantic (`reboot.api`) or in Zod

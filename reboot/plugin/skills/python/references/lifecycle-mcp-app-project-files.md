@@ -86,7 +86,7 @@ dev run:dist --mcp-app-dist-path=frontend/dist/mcp
 # A dual-frontend app also serves its built web app at `/`:
 # dev run:dist --web-app-dist-path=frontend/dist/web
 
-# The developer dashboard (`rbt dashboard`) too: it is
+# The Reboot Dashboard (`rbt dashboard`) too: it is
 # https://dashboard-<project-name>.localhost by default, or on the plain
 # port http://127.0.0.1:9871 with `rbt dashboard --config=ports`.
 dashboard --default-config=portless
