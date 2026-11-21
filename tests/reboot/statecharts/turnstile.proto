@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package tests.reboot.statecharts;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/statecharts/statechart.proto";
+
+message Coin {
+  int32 cents = 1;
+}
+
+message Pushed {}
+
+// A turnstile, whose statechart has an event method for each of its
+// events: `Insert` for a `Coin` and `Push` for a `Pushed`.
+//
+// It is `LOCKED` until a `Coin` of at least 25 cents, which it counts,
+// and then `UNLOCKED`, where it is rotating, until a `Pushed`.
+message Turnstile {
+  option (rbt.v1alpha1.state) = {
+  };
+  option (rbt.v1alpha1.statechart) = {
+    events: "tests.reboot.statecharts.Coin"
+    events: "tests.reboot.statecharts.Pushed"
+    event_methods { method: "insert" event: "tests.reboot.statecharts.Coin" }
+    event_methods { method: "push" event: "tests.reboot.statecharts.Pushed" }
+    initial: "LOCKED"
+    states {
+      name: "LOCKED"
+      transitions {
+        on {
+          event: "tests.reboot.statecharts.Coin"
+          guard { inline { method: "is_enough" } }
+          to: "UNLOCKED"
+          actions {
+            call {
+              description: "Count"
+              inline { method: "count" }
+            }
+          }
+        }
+      }
+    }
+    states {
+      name: "UNLOCKED"
+      entry {
+        schedule {
+          inline { method: "rotate" }
+          cancellable: false
+        }
+      }
+      transitions {
+        on { event: "tests.reboot.statecharts.Pushed" to: "LOCKED" }
+      }
+    }
+  };
+
+  // How many coins have unlocked the turnstile.
+  int32 coins = 1;
+}
+
+service TurnstileMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  // The event method for a `Coin`.
+  rpc Insert(Coin) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // The event method for a `Pushed`.
+  rpc Push(Pushed) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Get(google.protobuf.Empty) returns (Turnstile) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Status(google.protobuf.Empty) returns (rbt.v1alpha1.statecharts.Status) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

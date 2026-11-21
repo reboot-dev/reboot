@@ -185,6 +185,21 @@ message Statechart {
     }
   }
 
+  // A method of the state type for an event that comes from outside
+  // the state type, which is generated: it is given the event,
+  // enqueues it, and the statechart then handles it. It fails, having
+  // changed nothing, if no transition fires for the event where the
+  // statechart is, unless the statechart is waiting for a schedule to
+  // finish, in which case the event waits its turn.
+  message EventMethod {
+    // The method, named in snake case, which is what an rpc of the
+    // state type is as a method: a writer that takes the event and
+    // returns `google.protobuf.Empty`.
+    string method = 1;
+    // The event.
+    string event = 2;
+  }
+
   message State {
     // Unique among its siblings.
     string name = 1;
@@ -216,6 +231,8 @@ message Statechart {
   // Every event the statechart mentions, which is also every event
   // that one of the state type's own methods may enqueue.
   repeated string events = 6;
+  // The method for each event that comes from outside the state type.
+  repeated EventMethod event_methods = 7;
 }
 
 // Where a statechart is: what is kept of it between events.

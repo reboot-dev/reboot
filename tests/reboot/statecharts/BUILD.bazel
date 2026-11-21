@@ -132,6 +132,38 @@ py_test(
     ],
 )
 
+proto_library(
+    name = "turnstile_proto",
+    srcs = ["turnstile.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1/statecharts:statechart_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "turnstile_py_reboot",
+    proto = "turnstile.proto",
+    proto_library = ":turnstile_proto",
+)
+
+py_test(
+    name = "event_method_test",
+    srcs = ["event_method_test.py"],
+    deps = [
+        ":turnstile_py_reboot",
+        "//rbt/v1alpha1:errors_py_proto",
+        "//rbt/v1alpha1/statecharts:statechart_py_proto",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/statecharts:events_py",
+        requirement("protobuf"),
+    ],
+)
+
 py_library(
     name = "door_api_py",
     srcs = ["door_api.py"],

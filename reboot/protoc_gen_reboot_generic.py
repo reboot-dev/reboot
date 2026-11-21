@@ -42,6 +42,7 @@ from reboot.settings import (
 from reboot.statecharts.validation import (
     calls,
     check_statechart,
+    event_methods,
     on_transitions,
     schedules,
     when_transitions,
@@ -554,7 +555,10 @@ class RebootProtocPlugin(ProtocPlugin):
         statechart: statechart_pb2.Statechart,
     ) -> None:
         """Checks that no method that `statechart`, which is that of
-        `state`, names is also what an rpc of `state` is as a method."""
+        `state`, names is also what an rpc of `state` is as a method,
+        but for an event method, which is what an rpc is as a method:
+        the rpc of a writer, and no constructor, that takes the event
+        and returns `google.protobuf.Empty`."""
         method_names = {
             on.guard.inline.method
             for on in on_transitions(statechart)
@@ -569,6 +573,10 @@ class RebootProtocPlugin(ProtocPlugin):
             schedule.inline.method for schedule in schedules(statechart)
         }
 
+        # The event of each event method that no rpc has been found
+        # for yet, by the method.
+        event_methods_without_rpc = event_methods(statechart)
+
         for service_full_name in self._proto_state(state).implements:
             try:
                 service = self.pool.FindServiceByName(service_full_name)
@@ -581,6 +589,26 @@ class RebootProtocPlugin(ProtocPlugin):
                 # An rpc is a method by its name in snake case, which
                 # is how a statechart names a method.
                 rpc_method_name = to_snake(rpc.name)
+
+                if rpc_method_name in event_methods_without_rpc:
+                    event = event_methods_without_rpc.pop(rpc_method_name)
+                    method_options = get_method_options(rpc)
+                    if (
+                        method_options.WhichOneof('kind') != 'writer' or
+                        method_options.writer.HasField('constructor') or
+                        rpc.client_streaming or rpc.server_streaming or
+                        rpc.input_type.full_name != event or
+                        rpc.output_type.full_name != 'google.protobuf.Empty'
+                    ):
+                        raise UserProtoError(
+                            f"The statechart of '{state.full_name}' has the "
+                            f"event method '{rpc_method_name}' for the "
+                            f"event '{event}', so the rpc '{rpc.name}' of "
+                            f"'{service_full_name}' must be a writer that is "
+                            f"no constructor, takes '{event}' and returns "
+                            "'google.protobuf.Empty'.",
+                        )
+
                 if rpc_method_name in method_names:
                     raise UserProtoError(
                         f"The statechart of '{state.full_name}' names the "
@@ -589,6 +617,16 @@ class RebootProtocPlugin(ProtocPlugin):
                         "as a method; a method of a statechart and an rpc "
                         "cannot have the same name.",
                     )
+
+        for method, event in event_methods_without_rpc.items():
+            raise UserProtoError(
+                f"The statechart of '{state.full_name}' has the event "
+                f"method '{method}' for the event '{event}', but "
+                f"'{state.full_name}' has no rpc that is '{method}' as a "
+                "method; an event method is generated for an rpc, which is "
+                f"a writer that takes '{event}' and returns "
+                "'google.protobuf.Empty'.",
+            )
 
     def _check_states(
         self, proto_file: ProtoFile, proto_states: list[ProtoState]

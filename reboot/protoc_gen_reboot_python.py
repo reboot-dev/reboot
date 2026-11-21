@@ -13,6 +13,7 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
+from jinja2_strcase.jinja2_strcase import to_snake
 from reboot.options import (
     get_field_options,
     get_method_options,
@@ -36,6 +37,7 @@ from reboot.protoc_gen_reboot_generic import (
 from reboot.settings import RUN_STATECHART_ACTIVITY_METHOD
 from reboot.statecharts.validation import (
     calls,
+    event_methods,
     on_transitions,
     schedules,
     when_transitions,
@@ -141,6 +143,10 @@ class PythonState(BaseState):
     # the statechart names, with the type of every event that the
     # schedule may enqueue.
     statechart_schedules: dict[str, list[PythonType]]
+    # For a state with a statechart, the name of each rpc that is an
+    # event method of the statechart, which is implemented for the
+    # servicer.
+    statechart_event_methods: list[str]
 
 
 @dataclass
@@ -226,6 +232,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         statechart_conditions: list[str] = []
         statechart_calls: dict[str, PythonStatechartCall] = {}
         statechart_schedules: dict[str, list[PythonType]] = {}
+        statechart_event_methods: list[str] = []
 
         statechart = get_statechart_options(
             file.proto._descriptor.message_types_by_name[state.proto.name],
@@ -334,6 +341,15 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                     if enqueue_type not in enqueue_types:
                         enqueue_types.append(enqueue_type)
 
+            # An rpc is a method by its name in snake case, which is
+            # how a statechart names a method.
+            statechart_event_methods = [
+                method.proto.name
+                for service in state.services
+                for method in service.methods
+                if to_snake(method.proto.name) in event_methods(statechart)
+            ]
+
         return PythonState(
             proto=state.proto,
             services=[
@@ -355,6 +371,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             statechart_conditions=statechart_conditions,
             statechart_calls=statechart_calls,
             statechart_schedules=statechart_schedules,
+            statechart_event_methods=statechart_event_methods,
         )
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:

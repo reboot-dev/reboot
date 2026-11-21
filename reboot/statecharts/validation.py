@@ -1011,6 +1011,88 @@ def _check_methods(statechart: statechart_pb2.Statechart) -> list[str]:
     return problems
 
 
+def _check_event_methods(statechart: statechart_pb2.Statechart) -> list[str]:
+    """Returns every problem with the event methods of `statechart`:
+    each names a method, by a name that a method can have, which no
+    other one names and which is no `condition`, `guard`, `call` or
+    `schedule`; and each has an event, which is one of the `events`,
+    which no other one has, and which is the event of an `on`
+    transition."""
+    problems: list[str] = []
+
+    other_methods = {
+        when.condition.inline.method for when in when_transitions(statechart)
+    } | {on.guard.inline.method for on in on_transitions(statechart)} | {
+        call.inline.method for call in calls(statechart)
+    } | {schedule.inline.method for schedule in schedules(statechart)}
+
+    events_of_on_transitions = {on.event for on in on_transitions(statechart)}
+
+    methods: set[str] = set()
+    events: set[str] = set()
+
+    for event_method in statechart.event_methods:
+        if not event_method.method:
+            problems.append("an event method has no `method`")
+        else:
+            problem = _method_name_problem(event_method.method)
+            if problem is not None:
+                problems.append(
+                    f"an event method has the method `{event_method.method}`, "
+                    f"which {problem}",
+                )
+            if event_method.method in methods:
+                problems.append(
+                    f"more than one event method has the method "
+                    f"`{event_method.method}`",
+                )
+            if event_method.method in other_methods:
+                problems.append(
+                    f"the method `{event_method.method}` is an event method "
+                    "and also a `condition`, a `guard`, a `call` or a "
+                    "`schedule`",
+                )
+            methods.add(event_method.method)
+
+        if not event_method.event:
+            problems.append(
+                f"the event method `{event_method.method}` has no `event`",
+            )
+            continue
+
+        if event_method.event not in statechart.events:
+            problems.append(
+                f"the event method `{event_method.method}` has the event "
+                f"`{event_method.event}`, which is not one of the `events` "
+                "of the statechart",
+            )
+        elif event_method.event not in events_of_on_transitions:
+            problems.append(
+                f"the event method `{event_method.method}` has the event "
+                f"`{event_method.event}`, but the statechart has no `on` "
+                "transition for it",
+            )
+        if event_method.event in events:
+            problems.append(
+                f"more than one event method has the event "
+                f"`{event_method.event}`",
+            )
+        events.add(event_method.event)
+
+    return problems
+
+
+def event_methods(
+    statechart: statechart_pb2.Statechart,
+) -> dict[str, str]:
+    """Returns the event of each event method of `statechart`, by the
+    method."""
+    return {
+        event_method.method: event_method.event
+        for event_method in statechart.event_methods
+    }
+
+
 def _check_states_are_reachable(
     statechart: statechart_pb2.Statechart,
 ) -> list[str]:
@@ -1143,6 +1225,7 @@ def check_statechart(statechart: statechart_pb2.Statechart) -> list[str]:
         )
     problems.extend(_check_events(statechart))
     problems.extend(_check_methods(statechart))
+    problems.extend(_check_event_methods(statechart))
     # Which states are reachable follows from every `initial` and
     # every `to`, so it is only worked out for a statechart that has
     # no other problem.

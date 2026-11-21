@@ -1867,6 +1867,150 @@ class ValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_an_event_method_with_an_event_that_has_an_on_has_no_problem(
+        self,
+    ) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { method: "pay" event: "shop.v1.Paid" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+            }
+            """,
+        )
+        self.assertEqual(check_statechart(statechart), [])
+
+    def test_an_event_method_has_a_method_and_an_event(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { event: "shop.v1.Paid" }
+            event_methods { method: "refund" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an event method has no `method`",
+                "the event method `refund` has no `event`",
+            ],
+        )
+
+    def test_the_method_of_an_event_method_is_in_snake_case(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { method: "Pay" event: "shop.v1.Paid" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "an event method has the method `Pay`, which is not in "
+                "snake case, as `is_paid_in_full` is"
+            ],
+        )
+
+    def test_the_event_of_an_event_method_is_one_of_the_events(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { method: "pay" event: "shop.v1.Paid" }
+            event_methods { method: "refund" event: "shop.v1.Refunded" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the event method `refund` has the event `shop.v1.Refunded`, "
+                "which is not one of the `events` of the statechart"
+            ],
+        )
+
+    def test_the_event_of_an_event_method_has_an_on(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { method: "pay" event: "shop.v1.Paid" }
+            initial: "PENDING"
+            states { name: "PENDING" }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the event method `pay` has the event `shop.v1.Paid`, but "
+                "the statechart has no `on` transition for it"
+            ],
+        )
+
+    def test_no_two_event_methods_have_one_method_or_one_event(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            events: "shop.v1.Refunded"
+            event_methods { method: "pay" event: "shop.v1.Paid" }
+            event_methods { method: "pay" event: "shop.v1.Refunded" }
+            event_methods { method: "settle" event: "shop.v1.Paid" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions { on { event: "shop.v1.Paid" } }
+              transitions { on { event: "shop.v1.Refunded" } }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "more than one event method has the method `pay`",
+                "more than one event method has the event `shop.v1.Paid`",
+            ],
+        )
+
+    def test_an_event_method_is_not_also_a_guard(self) -> None:
+        statechart = make_statechart(
+            """
+            events: "shop.v1.Paid"
+            event_methods { method: "pay" event: "shop.v1.Paid" }
+            initial: "PENDING"
+            states {
+              name: "PENDING"
+              transitions {
+                on {
+                  event: "shop.v1.Paid"
+                  guard { inline { method: "pay" } }
+                }
+              }
+            }
+            """,
+        )
+        self.assertEqual(
+            check_statechart(statechart),
+            [
+                "the method `pay` is an event method and also a "
+                "`condition`, a `guard`, a `call` or a `schedule`"
+            ],
+        )
+
     def test_a_method_is_not_both_a_condition_and_a_schedule(self) -> None:
         # The `condition` is of the statechart and the `schedule` is of
         # a state within a state.

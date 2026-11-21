@@ -1136,6 +1136,32 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             assert self._servicer.__servicer__.get() is None
             self._servicer.__servicer__.set(self._servicer)
             {% endif %}
+            {% if state.has_statechart and method.proto.name in state.statechart_event_methods %}
+            # An event method of the statechart, which is what is
+            # generated for it: the event that it is given is enqueued,
+            # and the statechart, which is run below as it is for every
+            # method that can change the state, then handles it. An
+            # event that no transition fires for where the statechart
+            # is would be dropped, so the method fails instead.
+            if not statechart._fires_or_waits(
+                request,
+                servicer=self._servicer,
+                state=typed_state,
+            ):
+                raise {{ state.proto.name }}.{{ method.proto.name }}Aborted(
+                    IMPORT_rbt_v1alpha1.errors_pb2.FailedPrecondition(),
+                    message=(
+                        "No transition of the statechart of "
+                        "'{{ state.proto.full_name }}' fires for the event "
+                        f"'{request.DESCRIPTOR.full_name}' in the state "
+                        f"'{statechart._status.active}'"
+                    ),
+                )
+
+            await statechart.enqueue(request)
+
+            response = IMPORT_google_protobuf_empty_pb2_Empty()
+            {% else %}
             response = (
                 await self._servicer._{{ method.proto.name }}(
                     context=context,
@@ -1145,6 +1171,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
                 )
             )
+            {% endif %}
 
             {% if state.has_statechart and method.options.proto.kind in ['writer', 'transaction'] %}
             statechart._run(
@@ -3549,6 +3576,35 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             )
 
             self._status_modified = True
+
+        def _fires_or_waits(
+            self,
+            event: {{ state.statechart_event_types | join(' | ') }},
+            *,
+            servicer: {{ state.proto.name }}BaseServicer,
+            state: {{ state.proto.name }}.State,
+        ) -> bool:
+            """Returns whether `event`, were it enqueued now, would be
+            handled by a transition that fires for it, with the
+            methods of `servicer` and on `state`, or would wait its
+            turn, rather than be dropped."""
+            # A statechart that has events waiting is waiting for a
+            # schedule to finish, and one that has not started has yet
+            # to come to where it handles an event. Either way the
+            # event waits, and what becomes of it is not known yet.
+            if (
+                not self._status.HasField("active") or
+                len(self._status.queue) > 0
+            ):
+                return True
+
+            return IMPORT_reboot_statecharts_interpreter.maybe_on_transition(
+                {{ state.proto.name }}BaseServicer.__statechart__,
+                hierarchical_state_name=self._status.active,
+                event=event,
+                servicer=servicer,
+                state=state,
+            ) is not None
 
         def _run(
             self,

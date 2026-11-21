@@ -135,6 +135,31 @@ failure_test(
 )
 
 failure_test(
+    name = "statechart_with_event_method_that_returns",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/statechart_with_event_method_that_returns.proto':
+        The statechart of 'tests.reboot.protoc.Echo' has the event
+        method 'reply' for the event 'tests.reboot.protoc.Text', so the
+        rpc 'Reply' of 'tests.reboot.protoc.EchoMethods' must be a
+        writer that is no constructor, takes 'tests.reboot.protoc.Text'
+        and returns 'google.protobuf.Empty'.
+    """,
+)
+
+failure_test(
+    name = "statechart_with_event_method_without_rpc",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/statechart_with_event_method_without_rpc.proto':
+        The statechart of 'tests.reboot.protoc.Echo' has the event
+        method 'shout' for the event 'tests.reboot.protoc.Text', but
+        'tests.reboot.protoc.Echo' has no rpc that is 'shout' as a
+        method; an event method is generated for an rpc, which is a
+        writer that takes 'tests.reboot.protoc.Text' and returns
+        'google.protobuf.Empty'.
+    """,
+)
+
+failure_test(
     name = "statechart_with_event_that_is_not_a_message",
     expected_error = """
         Error processing 'tests/reboot/protoc/statechart_with_event_that_is_not_a_message.proto':
