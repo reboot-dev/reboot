@@ -1,0 +1,71 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load(
+    "//reboot:pydantic_to_proto.bzl",
+    "py_reboot_library_from_pydantic",
+    "pydantic_to_zod",
+)
+
+py_library(
+    name = "servicer_api_py",
+    srcs = ["servicer_api.py"],
+    deps = [
+        ":receipt_py_proto",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "servicer_py_reboot",
+    proto_deps = [
+        ":receipt_proto",
+    ],
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+py_library(
+    name = "servicer_py",
+    srcs = ["servicer.py"],
+    deps = [
+        ":servicer_api_py",
+        ":servicer_py_reboot",
+        "//reboot/aio:types_py",
+    ],
+)
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        ":servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+    ],
+)
+
+# The Zod declarations of the API, for a TypeScript client.
+pydantic_to_zod(
+    name = "servicer_api_zod_file",
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+# A protobuf message that the application declares itself.
+proto_library(
+    name = "receipt_proto",
+    srcs = ["receipt.proto"],
+)
+
+py_proto_library(
+    name = "receipt_py_proto",
+    deps = [":receipt_proto"],
+)

@@ -4,6 +4,8 @@ import aiofiles
 import importlib
 import os
 import typing
+from google.protobuf.descriptor import Descriptor
+from google.protobuf.message import Message
 from rbt.v1alpha1.api import api_pb2, schema_pb2
 from reboot.api import API, UserPydanticError, to_pascal_case, to_snake_case
 from reboot.fail import fail
@@ -21,6 +23,78 @@ _PER_USER_ID = "PER_USER_ID"
 def _escape_string_for_proto(string: str) -> str:
     """Escape a string for embedding as a proto string literal."""
     return string.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _find_protobuf_message_descriptor(
+    schema: schema_pb2.Schema,
+) -> Optional[Descriptor]:
+    """Returns the descriptor of the protobuf message `schema` is of,
+    and `None` when `schema` is of a model. A schema carries the
+    module and name of its class, and that class is either a generated
+    protobuf class or a `Model`."""
+    # The module is one that is loaded already: `api_of` read the
+    # schema from a class it declares. A module that cannot be
+    # imported is therefore a bug, and the error is left to surface.
+    class_: typing.Any = importlib.import_module(schema.module)
+    # A nested class is named within its parents, e.g. "Outer.Inner".
+    for name in schema.name.split('.'):
+        class_ = getattr(class_, name, None)
+    if isinstance(class_, type) and issubclass(class_, Message):
+        return class_.DESCRIPTOR
+    return None
+
+
+def _is_schema_of_protobuf_message(schema: schema_pb2.Schema) -> bool:
+    """Returns whether `schema` is of a protobuf message, as opposed
+    to a model."""
+    return _find_protobuf_message_descriptor(schema) is not None
+
+
+def _protobuf_message_proto_type_name(
+    schema: schema_pb2.Schema,
+) -> Optional[str]:
+    """Returns the name to write as a proto field type when `schema`
+    is of a protobuf message, and `None` when it is of a model. The
+    name is fully qualified, e.g. ".rbt.v1alpha1.TaskId", so that it
+    resolves the same from any package."""
+    descriptor = _find_protobuf_message_descriptor(schema)
+    if descriptor is None:
+        return None
+    return f".{descriptor.full_name}"
+
+
+def _protobuf_message_files(
+    schemas: Schemas,
+) -> set[str]:
+    """Returns the `.proto` files that declare the protobuf messages
+    the models use as a type."""
+    files: set[str] = set()
+
+    def visit(type_: schema_pb2.Type) -> None:
+        kind = type_.WhichOneof('type')
+        if kind == 'reference':
+            descriptor = _find_protobuf_message_descriptor(
+                schemas[type_.reference.name]
+            )
+            if descriptor is not None:
+                files.add(descriptor.file.name)
+        elif kind == 'optional':
+            visit(type_.optional.inner)
+        elif kind == 'array':
+            visit(type_.array.item)
+        elif kind == 'map':
+            visit(type_.map.value)
+
+    for schema in schemas.values():
+        # A protobuf message is imported as it is, and its own `.proto`
+        # file imports what its fields use, so its properties are left
+        # alone: the walk stops at a protobuf message.
+        if _is_schema_of_protobuf_message(schema):
+            continue
+        for property_ in schema.properties:
+            visit(property_.type)
+
+    return files
 
 
 def _pydantic_field_type_string_from_type(field_type: schema_pb2.Type) -> str:
@@ -134,6 +208,11 @@ async def generate_from_schema(
 ):
     if isinstance(schema, schema_pb2.Schema):
         assert name is not None
+
+        if _is_schema_of_protobuf_message(schema):
+            # A protobuf message is declared by its own `.proto` file,
+            # which the generated proto imports.
+            return
 
         await proto.write(f"message {name} {{\n")
 
@@ -346,7 +425,9 @@ async def generate_from_schema(
                     field_type_string,
                 )
             elif inner_type.WhichOneof('type') == 'reference':
-                type_name = to_pascal_case(field_name)
+                type_name = _protobuf_message_proto_type_name(
+                    schemas[inner_type.reference.name]
+                ) or to_pascal_case(field_name)
                 await generate_from_schema(
                     proto,
                     schemas[inner_type.reference.name],
@@ -396,7 +477,9 @@ async def generate_from_schema(
             await generate_from_schema(proto, value_type, schemas=schemas)
             await proto.write("  }\n")
         elif value_type.WhichOneof('type') == 'reference':
-            type_name = schemas[value_type.reference.name].name
+            type_name = _protobuf_message_proto_type_name(
+                schemas[value_type.reference.name]
+            ) or schemas[value_type.reference.name].name
             await generate_from_schema(
                 proto,
                 schemas[value_type.reference.name],
@@ -449,7 +532,9 @@ async def generate_from_schema(
             await generate_from_schema(proto, item_type, schemas=schemas)
             await proto.write("  }\n")
         elif item_type.WhichOneof('type') == 'reference':
-            type_name = schemas[item_type.reference.name].name
+            type_name = _protobuf_message_proto_type_name(
+                schemas[item_type.reference.name]
+            ) or schemas[item_type.reference.name].name
             await generate_from_schema(
                 proto,
                 schemas[item_type.reference.name],
@@ -569,10 +654,16 @@ async def generate_from_api(
 
     await proto.write('syntax = "proto3";\n')
     await proto.write(f'package {api.package};\n')
-    await proto.write('import "google/protobuf/empty.proto";\n')
-    await proto.write('import "google/protobuf/struct.proto";\n')
-    await proto.write('import "rbt/v1alpha1/options.proto";\n')
-    await proto.write('import "rbt/v1alpha1/tasks.proto";\n')
+    imports = [
+        'google/protobuf/empty.proto',
+        'google/protobuf/struct.proto',
+        'rbt/v1alpha1/options.proto',
+        'rbt/v1alpha1/tasks.proto',
+    ]
+    # The files declaring the protobuf messages the models use as types.
+    imports += sorted(_protobuf_message_files(schemas) - set(imports))
+    for file in imports:
+        await proto.write(f'import "{file}";\n')
     await proto.write(
         f"option (rbt.v1alpha1.file).pydantic = \"{api.module}\";\n"
     )

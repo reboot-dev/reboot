@@ -47,8 +47,9 @@ message Literals {
   repeated string values = 1;
 }
 
-// Represents another model, by the name its schema is filed under:
-// the model's module and class name, e.g. "shop.v1.shop.Item". What
+// Represents another model, or a protobuf message used as a type, by
+// the name its schema is filed under: the module and class name, e.g.
+// "shop.v1.shop.Item" or "rbt.v1alpha1.tasks_pb2.TaskId". What
 // `schema_of` returns beside a schema is every schema it refers to,
 // by that name, so that a reference is a lookup and a model used in
 // several places, or in itself, is described once.
@@ -114,7 +115,9 @@ message Property {
   bool deprecated = 8;
 }
 
-// Represents one model: its properties, in declaration order.
+// Represents one model: its properties, in declaration order. A
+// protobuf message that a model uses as a type is represented the
+// same way, its fields as the properties.
 message Schema {
   // The model's class name.
   string name = 1;

@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package tests.reboot.pydantic.protobuf_fields;
+
+// What a `Report` was last handed: a protobuf message that the
+// application declares itself.
+message Receipt {
+  string note = 1;
+}

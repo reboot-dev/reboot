@@ -1197,6 +1197,39 @@ export function validate<T>(
   return data;
 }
 
+// A Zod schema of a protobuf message: a value is an instance of the
+// message or anything that parses as its JSON form, and the schema's
+// `protobuf` meta is the message's full name.
+export function protobufToZodSchema<T extends protobuf_es.Message<T>>(
+  type: protobuf_es.MessageType<T>
+) {
+  return z
+    .custom<protobuf_es.PartialMessage<T>>((t: any) => {
+      // TODO: replace this with `protobuf_es.isMessage` after upgrading
+      // '@bufbuild/protobuf'.
+      if (t instanceof type) {
+        return true;
+      }
+
+      if (typeof t === "object" && "getType" in t) {
+        if (typeof t.getType === "function") {
+          const actualType = t.getType();
+          if (typeof actualType === "function" && "typeName" in actualType) {
+            return actualType.typeName === type.typeName;
+          }
+        }
+      }
+
+      try {
+        type.fromJson(t);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })
+    .meta({ protobuf: type.typeName });
+}
+
 export function zodToProtoJson<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
@@ -1346,6 +1379,12 @@ export function zodToProtoJson<T>(
       meta !== undefined && meta !== null && "protobuf" in meta,
       "zodToProtoJson: ZodCustom `schema` must have `meta` with 'protobuf' property"
     );
+    // An instance of a protobuf message becomes its JSON form, e.g. a
+    // `bytes` field a base64 string and a `Timestamp` a string.
+    // Anything else is expected to be in that form already.
+    if (input instanceof protobuf_es.Message) {
+      return input.toJson();
+    }
     return input;
   } else if (
     schema instanceof z.ZodLazy &&
