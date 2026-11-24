@@ -4,8 +4,8 @@ These are eval cases for the Reboot plugin, run with
 [`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals).
 Each case is a folder here with a `case.yaml`: one request a person
 might make of Claude Code, and graders that check what the agent
-wrote. `run.sh` runs the cases against a plugin checkout, with the
-plugin loaded and without it.
+wrote. `make plugin-evals-run` runs the cases against a plugin
+checkout, with the plugin loaded and without it.
 
 ## What these evals test
 
@@ -37,12 +37,14 @@ signed in, and every command starts unattended agent sessions on your
 account.
 
 ```sh
-tests/reboot/plugin/evals/run.sh -j 4                                  # every case, with and without the plugin
-tests/reboot/plugin/evals/run.sh --case <name> --runs 1 --ablation none # one case, plugin only
-tests/reboot/plugin/evals/run.sh --plugin <checkout>/reboot/plugin -j 4 # these cases against another plugin
+make plugin-evals-run ARGS="-j 4"                                    # every case, with and without the plugin
+make plugin-evals-run ARGS="--case <name> --runs 1 --ablation none"  # one case, plugin only
+make plugin-evals-run ARGS="--plugin <checkout>/reboot/plugin -j 4"  # these cases against another plugin
 ```
 
-`run.sh` takes `--plugin` and passes every other flag on to `claude plugin eval`. Results are in `results/<time>/` (ignored by git):
+The target runs `run.sh`, which takes `--plugin` and passes every other
+flag on to `claude plugin eval`. Results are in `results/<time>/`
+(ignored by git):
 `report.html`, `aggregate-result.json`, and `plugin.txt` with the
 plugin's commit.
 
@@ -56,12 +58,13 @@ commit the result in `RESULT.md`. When the branch is done, commit your
 changes and run:
 
 ```sh
-tests/reboot/plugin/evals/compare.sh
+make plugin-evals
 ```
 
-It runs every case against `main`'s plugin and against the branch's,
-and writes the comparison to `RESULT.md`. Commit that file with the
-branch, for the reviewer to read.
+The target runs `compare.sh`, which runs every case against `main`'s
+plugin and against the branch's, and writes the comparison to
+`RESULT.md`. Commit that file with the branch, for the reviewer to
+read.
 
 It always runs every case, so it refuses flags such as `--case`. The
 raw results, with each judge's reasoning, stay in
@@ -79,7 +82,7 @@ run counts against your plan's usage and spends no API credits. Unset
 The `Check Plugin Evals Result` job fails a PR that changes the plugin
 or the cases when `RESULT.md` is not for that change. A rebase does not
 make the result stale. Changing the plugin or the cases again does, so
-run `compare.sh` again.
+run `make plugin-evals` again.
 
 Every such PR rewrites `RESULT.md`, so a rebase over another one
 conflicts on it. Keep your branch's version.
@@ -92,8 +95,8 @@ The job fails when your branch changes the plugin or the cases and
 1. Commit your changes to the plugin and the cases. `compare.sh`
    refuses to run while any of them are uncommitted, because it
    records the result for the committed change.
-2. From the repository root, run
-   `tests/reboot/plugin/evals/compare.sh`. It takes 10 to 15 minutes.
+2. From the repository root, run `make plugin-evals`. It takes 10 to
+   15 minutes.
 3. Read the top of `RESULT.md`. It lists every regression: a grader
    that passes fewer runs on your change than on `main`. Fix each one
    or explain it in the PR.
