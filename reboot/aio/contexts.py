@@ -38,7 +38,7 @@ from reboot.aio.internals.channel_manager import (
     _ChannelManager,
 )
 from reboot.aio.internals.contextvars import Servicing, _servicing
-from reboot.aio.tasks import TaskEffect
+from reboot.aio.tasks import TaskCancellation, TaskEffect
 from reboot.aio.types import (
     ApplicationId,
     GrpcMetadata,
@@ -1358,6 +1358,17 @@ class WorkflowContext(Context):
     # future that indicates if the original call was cancelled.
     _cancelled: Optional[asyncio.Future[None]]
 
+    # Whether a requested cancellation of this workflow (see
+    # `TaskCancellation`) has been delivered during this run of the
+    # workflow method, i.e., `asyncio.CancelledError` was raised at a
+    # suspension point or after a step. It is delivered at most once
+    # per run: code that runs afterwards (cleanup in an `except
+    # asyncio.CancelledError` block) uses the primitives as normal.
+    # Reset by `StateManager.task_workflow()` for every run, as a
+    # retried run replays its way back to where the cancellation was
+    # recorded.
+    _cancellation_delivered: bool
+
     # Extra machinery for handling control loops, similar to how we
     # `context.react`. Set when `StateManager.task_workflow()` is
     # called.
@@ -1398,6 +1409,8 @@ class WorkflowContext(Context):
         )
 
         self._cancelled = None
+
+        self._cancellation_delivered = False
 
         self._reactively_state_manager = reactively_state_manager
         self._reactively_state_type = reactively_state_type
@@ -1517,6 +1530,150 @@ class WorkflowContext(Context):
         """
         return self.task.iteration if self.within_loop() else None
 
+    @property
+    def cancellation(self) -> TaskCancellation:
+        """The cancellation state of the task this workflow is running."""
+        return self.task.cancellation
+
+    @property
+    def _cancellation_pending(self) -> bool:
+        """Whether a cancellation has been requested that this run has not
+        delivered yet (and that is ours to deliver)."""
+        cancellation = self.cancellation
+        return (
+            cancellation.requested and cancellation.deliverable and
+            not cancellation.shutting_down and
+            not self._cancellation_delivered
+        )
+
+    @property
+    def _completed_by_cancellation(self) -> bool:
+        """Whether an `asyncio.CancelledError` that escaped the workflow
+        method means that the task is done because it was cancelled, as
+        opposed to the process shutting down (after which the task is
+        re-dispatched and must not be marked as finished).
+
+        A cancellation that was requested and delivered here finishes
+        the task. So does one delivered with a plain
+        `asyncio.Task.cancel()` (a Node.js workflow), unless we are
+        shutting down.
+        """
+        cancellation = self.cancellation
+        if not cancellation.requested or cancellation.shutting_down:
+            return False
+        return self._cancellation_delivered or not cancellation.deliverable
+
+    def _raise_if_shutting_down(self) -> None:
+        """Raises `asyncio.CancelledError` if the process is shutting down.
+
+        Called by every primitive before it does anything, so that
+        cleanup code reached because a shutdown cancelled the
+        `asyncio.Task` running this workflow does not get to have
+        effects: the shutdown is not a cancellation of the workflow,
+        which is re-dispatched (and replayed) elsewhere.
+        """
+        if self.cancellation.shutting_down:
+            raise asyncio.CancelledError()
+
+    def _deliver_cancellation_if_pending(self) -> None:
+        """Delivers a pending cancellation by raising
+        `asyncio.CancelledError`, once per run.
+
+        The primitive calling this records where the cancellation was
+        delivered (a memoized block marks itself cancelled, a control
+        loop records its iteration) so that a replay delivers it in
+        the same place; see `memoize()` and `StateManager.task_workflow()`.
+        """
+        if self._cancellation_pending:
+            self._cancellation_delivered = True
+            raise asyncio.CancelledError()
+
+    def _deliver_recorded_cancellation(self) -> None:
+        """Delivers a cancellation at the place where a previous run
+        recorded that it delivered it (a replay)."""
+        self._cancellation_delivered = True
+        raise asyncio.CancelledError()
+
+    async def _wait_cancellable(
+        self,
+        awaitable: Awaitable[WaitT],
+        *,
+        deliver: bool,
+    ) -> Optional[WaitT]:
+        """Awaits `awaitable` while idling at a suspension point, which
+        is cut short when a cancellation of this workflow is requested
+        (and not yet delivered), or when the Node.js side cancelled.
+
+        With `deliver=True` a requested cancellation is delivered right
+        here (`asyncio.CancelledError` is raised); with `deliver=False`
+        the wait just ends early and `None` is returned, leaving the
+        delivery to the caller (a control loop delivers it at the
+        start of the next iteration, where a replay can find it).
+        """
+        if deliver:
+            self._deliver_cancellation_if_pending()
+        elif self._cancellation_pending:
+            return None
+
+        awaitable_future = asyncio.ensure_future(awaitable)
+
+        try:
+            while True:
+                waiters: list[asyncio.Future] = [awaitable_future]
+
+                if self._cancelled is not None:
+                    waiters.append(self._cancelled)
+
+                # Only wait for a cancellation request if one would be
+                # ours to deliver; once requested it either is
+                # (handled below) or never will be (Node.js).
+                cancellation = self.cancellation
+                cancellation_requested_task: Optional[asyncio.Task] = None
+                if (
+                    not self._cancellation_delivered and
+                    cancellation.deliverable and not cancellation.requested
+                ):
+                    cancellation_requested_task = asyncio.create_task(
+                        cancellation.wait(),
+                        name=f'cancellation.wait() in {__name__}',
+                    )
+                    waiters.append(cancellation_requested_task)
+
+                try:
+                    done, _ = await asyncio.wait(
+                        waiters,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    if cancellation_requested_task is not None:
+                        cancellation_requested_task.cancel()
+
+                if awaitable_future in done:
+                    return await awaitable_future
+
+                if self._cancelled is not None and self._cancelled in done:
+                    # The Node.js side cancelled; awaiting the
+                    # cancelled future raises.
+                    awaitable_future.cancel()
+                    return await awaitable_future
+
+                if self._cancellation_pending:
+                    awaitable_future.cancel()
+                    # Let the cancellation of the awaitable run its
+                    # course (without raising its `CancelledError`
+                    # here; `asyncio.wait()` still raises if _we_
+                    # get cancelled while waiting).
+                    await asyncio.wait([awaitable_future])
+                    if deliver:
+                        self._deliver_cancellation_if_pending()
+                    return None
+
+                # A cancellation was requested that is not ours to
+                # deliver; keep waiting for the awaitable.
+        except asyncio.CancelledError:
+            awaitable_future.cancel()
+            raise
+
     async def wait(self, awaitable: Awaitable[WaitT]) -> WaitT:
         """
         Helper that awaits an awaitable taking into account the possibility that this
@@ -1560,6 +1717,11 @@ class WorkflowContext(Context):
             iteration = self.react.iteration
 
             while True:
+                # This is a suspension point: a requested cancellation
+                # is delivered here (`until()` records that on its
+                # memoized block so a replay raises here again).
+                self._deliver_cancellation_if_pending()
+
                 try:
                     try:
                         _within_until.set(True)
@@ -1578,9 +1740,15 @@ class WorkflowContext(Context):
                 except:
                     raise
 
-                # NOTE: using `self.wait()` so calls through Node.js will
-                # be cancelled.
-                iteration = await self.wait(self.react.iterate(iteration))
+                # NOTE: using `self._wait_cancellable()` so that a
+                # requested cancellation is delivered while we idle,
+                # and so that calls through Node.js will be cancelled.
+                next_iteration = await self._wait_cancellable(
+                    self.react.iterate(iteration),
+                    deliver=True,
+                )
+                assert next_iteration is not None
+                iteration = next_iteration
 
 
 ContextVia: TypeAlias = Literal['schedule', 'spawn', 'reactively', 'until']

@@ -1537,6 +1537,17 @@ class StateManager(ABC):
         raise NotImplementedError()
 
     @abstractmethod
+    async def cancel_task(
+        self,
+        task_effect: TaskEffect,
+    ) -> None:
+        """Records durably that cancellation of the task has been
+        requested and then signals the workflow running it (see
+        `TaskCancellation`). Does nothing for a task that has already
+        completed."""
+        raise NotImplementedError()
+
+    @abstractmethod
     @asynccontextmanager
     async def task_workflow(
         self,
@@ -4798,6 +4809,8 @@ class SidecarStateManager(
                 ),
             )
 
+            task_effect.completed = True
+
             if state_ref in self._idempotent_mutations[state_type]:
                 # Clean up per-workflow tracking so the sets in
                 # `IdempotentMutations` don't grow unboundedly.
@@ -4820,6 +4833,35 @@ class SidecarStateManager(
                 self._idempotent_mutations[state_type][
                     state_ref].complete_workflow(workflow_id)
 
+    async def cancel_task(
+        self,
+        task_effect: TaskEffect,
+    ) -> None:
+        """Override of StateManager.cancel_task(...) for SidecarStateManager."""
+        state_type = StateTypeName(task_effect.task_id.state_type)
+        state_ref = StateRef(task_effect.task_id.state_ref)
+
+        # The task's record is updated under the state's lock, as it is
+        # when an iteration completes or the task completes, so that
+        # we never store a stale `iteration` or store the task as
+        # pending again after its completion was stored.
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
+            if task_effect.completed:
+                return
+
+            task_effect.cancel_requested = True
+
+            await self._store(
+                state_type=state_type,
+                state_ref=state_ref,
+                task=task_effect.to_sidecar_task(),
+            )
+
+        # Only once the request is durable do we deliver it: the
+        # workflow may now run its cleanup, and were we to crash the
+        # recovered task would be told again.
+        task_effect.cancellation.request()
+
     @asynccontextmanager
     async def task_workflow(
         self,
@@ -4831,6 +4873,12 @@ class SidecarStateManager(
     ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]]:
         """Override of StateManager.task_workflow(...) for SidecarStateManager."""
+
+        # Each run of the workflow method delivers a requested
+        # cancellation (at most once) anew: a retried run replays its
+        # way back to where the cancellation was recorded as
+        # delivered.
+        context._cancellation_delivered = False
 
         # Construct the machinery necessary for enabling control
         # loops.
@@ -4880,6 +4928,34 @@ class SidecarStateManager(
                 within_loop.set(True)
 
                 while True:
+                    # The start of an iteration is a suspension point
+                    # (where a loop with an `interval` idles): a
+                    # requested cancellation is delivered here, and
+                    # which iteration it was delivered at is recorded
+                    # so that a replay delivers it in the same place.
+                    # (A cancellation delivered at a memoized step or
+                    # suspension point inside an iteration is recorded
+                    # by that block instead.)
+                    if (
+                        task_effect.cancelled_at_iteration ==
+                        task_effect.iteration
+                    ):
+                        context._deliver_recorded_cancellation()
+                    elif context._cancellation_pending:
+                        async with self._locks[state_type][state_ref
+                                                          ].exclusive(
+                                                              deadline=None
+                                                          ):
+                            task_effect.cancelled_at_iteration = (
+                                task_effect.iteration
+                            )
+                            await self._store(
+                                state_type=state_type,
+                                state_ref=state_ref,
+                                task=task_effect.to_sidecar_task(),
+                            )
+                        context._deliver_cancellation_if_pending()
+
                     yield task_effect.iteration
 
                     # During effect validation we restart the loop at
@@ -4970,10 +5046,14 @@ class SidecarStateManager(
                             f"{task_effect.method_name}() loop iteration {task_effect.iteration}: waiting until the scheduled start time",
                             level=tracing.TraceLevel.CUSTOMER,
                         ):
-                            # NOTE: using `context.wait()` so calls
-                            # through Node.js will be cancelled.
-                            await context.wait(
-                                asyncio.sleep(interval.total_seconds())
+                            # NOTE: using `context._wait_cancellable()`
+                            # so that a requested cancellation cuts the
+                            # wait short (it is delivered at the start
+                            # of the next iteration, above) and so that
+                            # calls through Node.js will be cancelled.
+                            await context._wait_cancellable(
+                                asyncio.sleep(interval.total_seconds()),
+                                deliver=False,
                             )
 
                     # We need to restore the idempotency checkpoint so

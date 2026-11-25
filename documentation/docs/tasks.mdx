@@ -205,3 +205,9 @@ To cancel a specific task, use `rbt task cancel`. To cancel a task, in
 addition to the `--application-url`, you must pass flags to identify
 the task by its `--state-type`, `--state-id`, and `--task-uuid`. These values
 can be found by first running `rbt task list`.
+
+Cancellation is a request: the task finishes once the workflow running
+it reaches its next suspension point (or completes the step it is in)
+and has run any cleanup it does in response to the cancellation. See
+[cancellation](/implement/workflows#cancellation) for the guarantees
+a workflow gets.

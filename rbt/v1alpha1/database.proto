@@ -101,6 +101,20 @@ message Task {
 
   // For control loops, the number of iterations the task has completed.
   uint64 iteration = 7;
+
+  // Whether a caller has asked for this task to be cancelled. Recorded
+  // before the running workflow is told, so that a cancellation
+  // requested before a crash is still delivered once the task is
+  // recovered. The workflow delivers it as an `asyncio.CancelledError`
+  // at its next suspension point (`until`, `sleep`, the start of a
+  // control loop iteration) or after the step that is in flight.
+  bool cancel_requested = 10;
+
+  // For control loops, set once the cancellation has been delivered
+  // at the start of this iteration (rather than at a memoized step or
+  // suspension point inside an iteration, which records that itself)
+  // so that a replay delivers it at the same place.
+  optional uint64 cancelled_at_iteration = 11;
 }
 
 ////////////////////////////////////////////////////////////////////////

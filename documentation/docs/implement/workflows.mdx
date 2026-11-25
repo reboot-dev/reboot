@@ -332,6 +332,107 @@ such as `z.json()` — as the last argument.
 
 :::
 
+## Sleeping
+
+A `workflow` that needs to wait for a period of time can `sleep`.
+This is a _durable_ timer: the moment to wake up at is memoized when
+the sleep starts, so a workflow that is retried while sleeping wakes
+up at that same moment rather than sleeping for the whole duration
+again, and once it has woken up a retry does not sleep again at all.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.aio.workflows import sleep
+
+await sleep("Wait for the dust to settle", context, timedelta(minutes=5))
+```
+  </TabItem>
+</Tabs>
+
+The first argument is an idempotency alias, just like for `until`.
+
+## Cancellation
+
+A task can be cancelled, by whoever holds the task object that
+`spawn()` returned (or that was retrieved via its task ID), or via
+the [`rbt task cancel`](/tasks#cancel) command:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+task = await Order.ref(order_id).spawn().wait_for_technician(context)
+
+# Later, e.g., because the order was withdrawn: ask for the task to be
+# cancelled and wait for it to finish, however it finishes.
+await task.cancel()
+```
+  </TabItem>
+</Tabs>
+
+A `workflow` that is cancelled sees an ordinary `asyncio.CancelledError`,
+so cleaning up on cancellation is written the way every Python developer
+already knows, with `try` / `except asyncio.CancelledError` / `raise`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+async def wait_for_technician(self, context: WorkflowContext, request):
+    ticket = await at_least_once("Open ticket", context, dispatch.open_ticket)
+    try:
+        await until("Technician assigned", context, self.technician_assigned)
+    except asyncio.CancelledError:
+        # Cleanup uses the same primitives as the rest of the workflow.
+        await at_least_once(
+            "Cancel ticket", context, lambda: dispatch.cancel_ticket(ticket.id)
+        )
+        raise
+    ...
+```
+  </TabItem>
+</Tabs>
+
+Cancellation is _durable_ and _replay-safe_, following three rules:
+
+1. **Cancellation is delivered only at suspension points.** A workflow
+   idles in `until`, `sleep`, or between the iterations of a control
+   loop; those are the only places where it is interrupted. Code
+   between steps that does not use any of the primitives runs
+   uninterrupted until it reaches the next one.
+
+2. **Steps are shielded.** A step (`at_least_once`, `at_most_once`, an
+   inline write) that has started always completes before the
+   `CancelledError` is raised; it is raised right after the step
+   returns, and the step's result is memoized as usual. A step that is
+   in flight is never torn.
+
+3. **Where the cancellation landed is recorded.** If the process dies
+   while the workflow is cleaning up, the workflow is retried: its
+   steps return their memoized results instantly, and the
+   `CancelledError` is raised at exactly the same point it was raised
+   the first time, so the same `except` block runs again, with the
+   cleanup steps it already performed memoized. Cleanup is therefore
+   itself at-least-once and crash-safe.
+
+A workflow that catches the `CancelledError` and returns a value
+instead of re-raising is allowed; its outcome is then that value,
+which is what `await task` yields. Otherwise `await task` raises with
+a `Cancelled` error. `await task.cancel()` returns once the task has
+finished either way (and raises if the task finished with a declared
+error of its own). A task that is cancelled before its scheduled start
+time never starts.
+
+:::note
+
+There is no timeout on cleanup: a workflow that does not re-raise, or
+that keeps running, keeps running. Making that visible is the caller's
+job.
+
+Cancelling a TypeScript workflow still interrupts it immediately,
+without the guarantees above.
+
+:::
+
 ## At _least_ or at _most_ once
 
 When making calls to other states within a `workflow`, e.g., to a

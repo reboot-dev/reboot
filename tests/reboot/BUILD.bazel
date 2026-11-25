@@ -385,6 +385,23 @@ py_test(
 )
 
 py_test(
+    name = "workflow_cancellation_tests_py",
+    timeout = "long",
+    srcs = [
+        ":workflow_cancellation_tests.py",
+    ],
+    main = "workflow_cancellation_tests.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        "//rbt/v1alpha1:errors_py_proto",
+        "//reboot/aio:memoize_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:workflows_py",
+        "//reboot/aio/auth:authorizers_py",
+    ],
+)
+
+py_test(
     name = "context_tests_py",
     srcs = [
         ":context_tests.py",

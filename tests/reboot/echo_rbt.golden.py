@@ -889,6 +889,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             tasks_cache=tasks_cache,
             ready=ready,
             complete_task=self._state_manager.complete_task,
+            cancel_task=self._state_manager.cancel_task,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -2105,8 +2106,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2179,8 +2183,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2253,8 +2260,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2330,8 +2340,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2407,8 +2420,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2479,8 +2495,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2604,8 +2623,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2676,8 +2698,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2796,8 +2821,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -2916,8 +2944,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3036,8 +3067,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3156,8 +3190,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3281,8 +3318,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3358,8 +3398,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -3430,8 +3473,11 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Do not retry a task if it was cancelled by a caller.
-                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                        # Do not retry a task if it was cancelled by a
+                        # caller (and the cancellation was delivered),
+                        # as opposed to us shutting down, after which
+                        # the task is re-dispatched elsewhere.
+                        if context._completed_by_cancellation:
                             result = (
                                 None,
                                 IMPORT_reboot.aio.aborted.SystemAborted(
@@ -16757,11 +16803,15 @@ class Echo:
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("tests.reboot.Echo")
 
-    class ReplyTask:
+    class ReplyTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -16779,22 +16829,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReplyResponse]:
             """Awaits for task to finish and returns its response."""
@@ -16989,11 +17024,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class ReplayTask:
+    class ReplayTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17011,22 +17050,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReplayResponse]:
             """Awaits for task to finish and returns its response."""
@@ -17220,11 +17244,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class WaitForTask:
+    class WaitForTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17242,22 +17270,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.WaitForResponse]:
             """Awaits for task to finish and returns its response."""
@@ -17451,11 +17464,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class StreamTask:
+    class StreamTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17473,22 +17490,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.StreamResponse]:
             """Awaits for task to finish and returns its response."""
@@ -17682,11 +17684,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class RegexStreamTask:
+    class RegexStreamTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17704,22 +17710,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RegexStreamResponse]:
             """Awaits for task to finish and returns its response."""
@@ -17913,11 +17904,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class SearchAndReplaceTask:
+    class SearchAndReplaceTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -17935,22 +17930,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.SearchAndReplaceResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18145,11 +18125,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class FailOnceShouldBeRetriedTask:
+    class FailOnceShouldBeRetriedTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18167,22 +18151,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailOnceShouldBeRetriedResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18377,11 +18346,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class FailOnceShouldBeRetriedWorkflowTask:
+    class FailOnceShouldBeRetriedWorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18399,22 +18372,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailOnceShouldBeRetriedWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18608,11 +18566,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class TooManyTasksTask:
+    class TooManyTasksTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18630,22 +18592,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.TooManyTasksResponse]:
             """Awaits for task to finish and returns its response."""
@@ -18840,11 +18787,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class HangingTask:
+    class HangingTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -18862,22 +18813,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.HangingResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19071,11 +19007,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class ReactiveWorkflowTask:
+    class ReactiveWorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19093,22 +19033,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ReactiveWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19302,11 +19227,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class ControlLoopTask:
+    class ControlLoopTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19324,22 +19253,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.ControlLoopResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19533,11 +19447,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class AtMostOnceWorkflowTask:
+    class AtMostOnceWorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19555,22 +19473,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.AtMostOnceWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19764,11 +19667,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class WorkflowCallingWorkflowTask:
+    class WorkflowCallingWorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -19786,22 +19693,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.WorkflowCallingWorkflowResponse]:
             """Awaits for task to finish and returns its response."""
@@ -19995,11 +19887,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class RaiseValueErrorTask:
+    class RaiseValueErrorTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20017,22 +19913,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RaiseValueErrorResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20227,11 +20108,15 @@ class Echo:
         ) -> bool:
             return False
 
-    class RaiseSpecifiedErrorTask:
+    class RaiseSpecifiedErrorTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20249,22 +20134,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.RaiseSpecifiedErrorResponse]:
             """Awaits for task to finish and returns its response."""
@@ -20468,11 +20338,15 @@ class Echo:
                 return True
             return False
 
-    class FailingWorkflowTask:
+    class FailingWorkflowTask(IMPORT_reboot_aio_tasks.TaskHandle):
         """Represents a scheduled task running for the
         state. Note that this is not a coroutine because we are trying
         to convey the semantics that the task is already running (or
         will soon be).
+
+        `await` it to wait for the task's response, or `await
+        task.cancel()` to request cancellation of the task and wait
+        for it to finish (see `reboot.aio.tasks.TaskHandle.cancel`).
         """
 
         @classmethod
@@ -20490,22 +20364,7 @@ class Echo:
             *,
             task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
         ) -> None:
-            # Depending on the context type (inside or outside a Reboot application)
-            # we may or may not know the application ID. If we don't know it, then
-            # the `ExternalContext.gateway` will determine it.
-            #
-            # TODO: in the future we expect to support cross-application calls, in
-            #       which case the developer may explicitly pass in an application ID
-            #       here.
-            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
-            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
-                self._application_id = context.application_id
-            self._channel_manager = context.channel_manager
-            self._task_id = task_id
-
-        @property
-        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-            return self._task_id
+            super().__init__(context, task_id=task_id)
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, Echo.FailingWorkflowResponse]:
             """Awaits for task to finish and returns its response."""

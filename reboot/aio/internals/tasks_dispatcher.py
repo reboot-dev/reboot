@@ -6,7 +6,7 @@ from functools import partial
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
-from google.rpc import status_pb2
+from google.rpc import code_pb2, status_pb2
 from rbt.v1alpha1 import errors_pb2, tasks_pb2
 from reboot.aio import tracing
 from reboot.aio.aborted import SystemAborted
@@ -15,9 +15,9 @@ from reboot.aio.internals.contextvars import use_application_id
 from reboot.aio.internals.tasks_cache import TasksCache
 from reboot.aio.tasks import TaskEffect
 from reboot.aio.types import ApplicationId
-from reboot.run_environments import is_in_test
+from reboot.run_environments import in_nodejs, is_in_test
 from reboot.time import DateTimeWithTimeZone
-from typing import Awaitable, Callable, Optional, Protocol, Tuple
+from typing import Awaitable, Callable, Optional, Protocol, Tuple, TypeVar
 from uuid import UUID
 
 logger = log.log.get_logger(__name__)
@@ -63,7 +63,59 @@ class DispatchCallable(Protocol):
 CompleteTaskCallable = Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]
 
-IsCancelled = bool
+# Records that a task's cancellation has been requested (durably,
+# before the task is told, see `TaskCancellation`).
+CancelTaskCallable = Callable[[TaskEffect], Awaitable[None]]
+
+T = TypeVar('T')
+
+
+def _cancelled_status(task: TaskEffect) -> status_pb2.Status:
+    return SystemAborted(
+        errors_pb2.Cancelled(),
+        message=f"the task running '{task.method_name}' was cancelled",
+    ).to_status()
+
+
+async def _wait_unless_cancellation_requested(
+    awaitable: Awaitable[T],
+    task: TaskEffect,
+) -> bool:
+    """Awaits `awaitable` unless (or until) cancellation of `task` is
+    requested, in which case the `awaitable` is cancelled. Returns
+    whether cancellation was requested (and the wait cut short)."""
+    cancellation = task.cancellation
+
+    if cancellation.requested:
+        return True
+
+    awaitable_future = asyncio.ensure_future(awaitable)
+    requested_task = asyncio.create_task(
+        cancellation.wait(),
+        name=f'cancellation.wait() in {__name__}',
+    )
+
+    try:
+        done, _ = await asyncio.wait(
+            [awaitable_future, requested_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    except asyncio.CancelledError:
+        awaitable_future.cancel()
+        raise
+    finally:
+        requested_task.cancel()
+
+    if awaitable_future in done:
+        # Propagate any exception.
+        await awaitable_future
+        return False
+
+    awaitable_future.cancel()
+    # Let the cancellation of the awaitable run its course (without
+    # raising its `CancelledError` here).
+    await asyncio.wait([awaitable_future])
+    return True
 
 
 class TasksDispatcher:
@@ -83,12 +135,14 @@ class TasksDispatcher:
         tasks_cache: TasksCache,
         ready: asyncio.Event,
         complete_task: CompleteTaskCallable,
+        cancel_task: CancelTaskCallable,
     ):
         self._application_id = application_id
         self._dispatch = dispatch
         self._tasks_cache = tasks_cache
         self._ready = ready
         self._complete_task = complete_task
+        self._cancel_task = cancel_task
 
         # Signal that stop has been requested.
         self._stop_requested = asyncio.Event()
@@ -96,8 +150,10 @@ class TasksDispatcher:
         # We need to hold a reference to each asyncio.Task we create
         # for running our tasks otherwise the Python interpreter might
         # try and garbage collect them even if they haven't finished.
+        # We also keep the `TaskEffect`, which carries the task's
+        # cancellation state (see `TaskCancellation`).
         self._dispatched_tasks: dict[bytes, Tuple[asyncio.Task,
-                                                  IsCancelled]] = {}
+                                                  TaskEffect]] = {}
 
         self._keep_waiting_for_cancelled_tasks_task = None
 
@@ -171,6 +227,9 @@ class TasksDispatcher:
                         # calling user code.
                         await self._ready.wait()
 
+                        response: Optional[Message] = None
+                        error: Optional[status_pb2.Status] = None
+
                         # Sleep until this task is scheduled!
                         #
                         # TODO(benh): improve the scheduling so that all tasks are
@@ -191,52 +250,66 @@ class TasksDispatcher:
                                     f"{task.method_name}(): waiting until the scheduled start time",
                                     level=tracing.TraceLevel.CUSTOMER,
                                 ):
-                                    await asyncio.sleep(seconds)
+                                    # A task that is cancelled before
+                                    # its scheduled start never starts:
+                                    # there is nothing to clean up.
+                                    if await _wait_unless_cancellation_requested(
+                                        asyncio.sleep(seconds),
+                                        task,
+                                    ):
+                                        error = _cancelled_status(task)
+                                        await self._complete_task(
+                                            task,
+                                            (None, error),
+                                        )
 
-                        occurred_at.FromDatetime(DateTimeWithTimeZone.now())
-                        self._tasks_cache.update_task_info(
-                            task.task_id,
-                            status=tasks_pb2.TaskInfo.Status.STARTED,
-                            occurred_at=occurred_at,
-                        )
-
-                        def on_loop_iteration(
-                            iteration: int,
-                            next_iteration_schedule: Optional[
-                                DateTimeWithTimeZone],
-                        ):
-                            """
-                            Called in anticipation of a next loop
-                            iteration (before the iteration starts, and
-                            before waiting for the appropriate start
-                            time).
-                            """
+                        if error is None:
                             occurred_at.FromDatetime(
                                 DateTimeWithTimeZone.now()
                             )
-                            scheduled_at: Optional[Timestamp] = None
-                            if next_iteration_schedule is not None:
-                                scheduled_at = Timestamp()
-                                scheduled_at.FromDatetime(
-                                    next_iteration_schedule
-                                )
                             self._tasks_cache.update_task_info(
                                 task.task_id,
-                                status=tasks_pb2.TaskInfo.Status.
-                                SCHEDULED_ITERATION,
+                                status=tasks_pb2.TaskInfo.Status.STARTED,
                                 occurred_at=occurred_at,
-                                scheduled_at=scheduled_at,
-                                # The `iteration` is the number of the
-                                # anticipated next iteration; it implies
-                                # we've completed `iteration` previous
-                                # iterations.
-                                iterations=iteration,
                             )
 
-                        response, error = await self._dispatch(
-                            task,
-                            on_loop_iteration=on_loop_iteration,
-                        )
+                            def on_loop_iteration(
+                                iteration: int,
+                                next_iteration_schedule: Optional[
+                                    DateTimeWithTimeZone],
+                            ):
+                                """
+                                Called in anticipation of a next loop
+                                iteration (before the iteration starts, and
+                                before waiting for the appropriate start
+                                time).
+                                """
+                                occurred_at.FromDatetime(
+                                    DateTimeWithTimeZone.now()
+                                )
+                                scheduled_at: Optional[Timestamp] = None
+                                if next_iteration_schedule is not None:
+                                    scheduled_at = Timestamp()
+                                    scheduled_at.FromDatetime(
+                                        next_iteration_schedule
+                                    )
+                                self._tasks_cache.update_task_info(
+                                    task.task_id,
+                                    status=tasks_pb2.TaskInfo.Status.
+                                    SCHEDULED_ITERATION,
+                                    occurred_at=occurred_at,
+                                    scheduled_at=scheduled_at,
+                                    # The `iteration` is the number of the
+                                    # anticipated next iteration; it implies
+                                    # we've completed `iteration` previous
+                                    # iterations.
+                                    iterations=iteration,
+                                )
+
+                            response, error = await self._dispatch(
+                                task,
+                                on_loop_iteration=on_loop_iteration,
+                            )
 
                         if response is not None:
                             any_response = any_pb2.Any()
@@ -280,7 +353,11 @@ class TasksDispatcher:
                             )
                             self._tasks_cache.update_task_info(
                                 task.task_id,
-                                status=tasks_pb2.TaskInfo.Status.ABORTED,
+                                status=(
+                                    tasks_pb2.TaskInfo.Status.CANCELLED
+                                    if error.code == code_pb2.CANCELLED else
+                                    tasks_pb2.TaskInfo.Status.ABORTED
+                                ),
                                 occurred_at=occurred_at,
                             )
                             break
@@ -313,7 +390,15 @@ class TasksDispatcher:
                             scheduled_at=scheduled_at,
                             failed=True,
                         )
-                        await backoff()
+                        # Retry right away if the task gets cancelled
+                        # while backing off, so that the workflow
+                        # gets to run its cleanup without delay (the
+                        # retry replays up to where the cancellation
+                        # is delivered).
+                        await _wait_unless_cancellation_requested(
+                            backoff(),
+                            task,
+                        )
 
         for task in tasks:
             # To provide idempotence, in the event that this task has
@@ -338,21 +423,36 @@ class TasksDispatcher:
             )
 
             self._dispatched_tasks[task.task_id.task_uuid
-                                  ] = (asyncio_task, False)
+                                  ] = (asyncio_task, task)
 
-            async def cleanup_async(task: TaskEffect):
+            def finished_by_asyncio_cancellation(
+                task: TaskEffect,
+                asyncio_task: asyncio.Task,
+            ) -> bool:
+                """Whether the `asyncio.Task` running `task` ended with a
+                `CancelledError` because the task was cancelled (as
+                opposed to us shutting down, after which the task is
+                re-dispatched elsewhere). A requested cancellation
+                normally finishes the task from within the dispatch
+                retry loop; this is for a Node.js workflow, which is
+                still cancelled with `asyncio.Task.cancel()`, and for
+                a workflow that raised `CancelledError` on its own.
+                """
+                return (
+                    asyncio_task.cancelled() and
+                    task.cancellation.requested and
+                    not task.cancellation.shutting_down
+                )
+
+            async def cleanup_async(
+                task: TaskEffect,
+                asyncio_task: asyncio.Task,
+            ):
                 assert self._complete_task is not None
-                if self.is_task_cancelled(task.task_id.task_uuid):
+                if finished_by_asyncio_cancellation(task, asyncio_task):
                     await self._complete_task(
                         task,
-                        (
-                            None,
-                            SystemAborted(
-                                errors_pb2.Cancelled(),
-                                message=
-                                f"the task running '{task.method_name}' was cancelled",
-                            ).to_status(),
-                        ),
+                        (None, _cancelled_status(task)),
                     )
 
             # It's possible that the task will never even start
@@ -360,63 +460,71 @@ class TasksDispatcher:
             # case, it won't be able to remove itself from
             # `self._dispatched_tasks` so we need to do it via
             # `add_done_callback()`.
-            def cleanup_done(task: TaskEffect, _):
-                if self.is_task_cancelled(task.task_id.task_uuid):
+            def cleanup_done(task: TaskEffect, asyncio_task: asyncio.Task, _):
+                if finished_by_asyncio_cancellation(task, asyncio_task):
                     self._tasks_cache.resolve_future(
                         task.task_id,
-                        status=(
-                            SystemAborted(
-                                errors_pb2.Cancelled(),
-                                message=
-                                f"the task running '{task.method_name}' was cancelled",
-                            ).to_status()
-                        ),
+                        status=_cancelled_status(task),
                     )
                 del self._dispatched_tasks[task.task_id.task_uuid]
 
-            def cleanup(task: TaskEffect, _):
+            def cleanup(task: TaskEffect, asyncio_task: asyncio.Task):
                 loop = asyncio.get_running_loop()
-                cleanup_task = loop.create_task(cleanup_async(task))
-                cleanup_task.add_done_callback(partial(cleanup_done, task))
+                cleanup_task = loop.create_task(
+                    cleanup_async(task, asyncio_task)
+                )
+                cleanup_task.add_done_callback(
+                    partial(cleanup_done, task, asyncio_task)
+                )
 
             # NOTE: we need to use `partial()` to bind `task` because
             # just capturing the variable means it might change (see
-            # #2832).
+            # #2832); the done callback is passed the `asyncio.Task`.
             asyncio_task.add_done_callback(partial(cleanup, task))
 
     async def cancel_task(
         self,
         task_uuid: bytes,
     ) -> tasks_pb2.CancelTaskResponse:
-        """Cancel the task with the specified UUID."""
-        task, is_cancelled = self._dispatched_tasks.get(
-            task_uuid, (None, False)
-        )
+        """Requests cancellation of the task with the specified UUID.
 
-        if is_cancelled:
-            return tasks_pb2.CancelTaskResponse(
-                status=tasks_pb2.CancelTaskResponse.Status.CANCELLING
-            )
+        The request is recorded durably first (so that it survives a
+        crash) and then delivered to the workflow running the task,
+        which sees `asyncio.CancelledError` at its next suspension
+        point or after the step that is in flight, and may clean up
+        before finishing (see `TaskCancellation`). A task that has not
+        started yet (waiting for its scheduled time) never starts.
 
-        if task is None:
+        A Node.js workflow is still cancelled by cancelling the
+        `asyncio.Task` running it, as before.
+        """
+        entry = self._dispatched_tasks.get(task_uuid)
+
+        if entry is None:
             return tasks_pb2.CancelTaskResponse(
                 status=tasks_pb2.CancelTaskResponse.Status.NOT_FOUND
             )
 
-        self._dispatched_tasks[task_uuid] = (task, True)
-        task.cancel()
+        asyncio_task, task = entry
+
+        if task.cancellation.requested:
+            return tasks_pb2.CancelTaskResponse(
+                status=tasks_pb2.CancelTaskResponse.Status.CANCELLING
+            )
+
+        if in_nodejs():
+            # TODO: deliver cancellation durably to Node.js workflows
+            # too, using `AbortSignal` in place of `CancelledError`.
+            task.cancellation.request(deliver=False)
+            asyncio_task.cancel()
+        else:
+            # Records the request and then signals the running
+            # workflow (via `task.cancellation`).
+            await self._cancel_task(task)
 
         return tasks_pb2.CancelTaskResponse(
             status=tasks_pb2.CancelTaskResponse.Status.OK
         )
-
-    def is_task_cancelled(
-        self,
-        task_uuid: bytes,
-    ) -> bool:
-        """Check if the task with the specified UUID has been cancelled."""
-        _, is_cancelled = self._dispatched_tasks.get(task_uuid, (None, False))
-        return is_cancelled
 
     async def stop(self) -> None:
         """Stop dispatching Reboot tasks, and cancel any outstanding
@@ -431,11 +539,13 @@ class TasksDispatcher:
         # NOTE: we make a copy of the values to dodge errors arising from the
         # dictionary changing size during iteration. Python does not like when
         # that happens.
-        for task, _ in list(self._dispatched_tasks.values()):
-            # We don't set is_cancelled to True here, because
-            # TasksServicer.CancelTask is not called at this point and after the
-            # task is cancelled, it will be removed from _dispatched_tasks.
-            task.cancel()
+        for asyncio_task, task in list(self._dispatched_tasks.values()):
+            # This is not a cancellation of the task (it will be
+            # re-dispatched, and must not be marked as finished or
+            # run any cleanup); let the workflow know that we are
+            # shutting down before we cancel its `asyncio.Task`.
+            task.cancellation.shutting_down = True
+            asyncio_task.cancel()
 
         # Wait for the cancelled tasks to finish, warning along the way
         # about those that are taking too long.
@@ -471,7 +581,9 @@ class TasksDispatcher:
         # NOTE: In contrast to `asyncio.wait_for`, `asyncio.wait` does not
         # raise `TimeoutError` if the timeout is reached and does not
         # `cancel` the `asyncio.Tasks` (again) on timeout.
-        tasks = [task for task, _ in self._dispatched_tasks.values()]
+        tasks = [
+            asyncio_task for asyncio_task, _ in self._dispatched_tasks.values()
+        ]
         await asyncio.wait(
             tasks,
             timeout=STOP_WAIT_SECONDS,
