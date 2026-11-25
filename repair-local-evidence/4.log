@@ -1,0 +1,1 @@
+{"self_test": true, "owner_pid": 3217829, "original_children": 3, "all_joined": true, "atomic_reads": 300, "timeout_rejected": true, "injected_failure_finally": true}

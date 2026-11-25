@@ -1,0 +1,34 @@
+{
+  "complete": true,
+  "records_each": 22,
+  "deterministic_records_exact": 21,
+  "concurrent_membership_multiplicity_records": 1,
+  "concurrent_membership_multiplicity_equal": true,
+  "raw_concurrent_messages": [
+    [
+      "",
+      "concurrent-0",
+      "concurrent-1",
+      "concurrent-2",
+      "concurrent-3",
+      "concurrent-4",
+      "concurrent-5",
+      "concurrent-6",
+      "concurrent-7"
+    ],
+    [
+      "",
+      "concurrent-0",
+      "concurrent-1",
+      "concurrent-2",
+      "concurrent-3",
+      "concurrent-4",
+      "concurrent-5",
+      "concurrent-6",
+      "concurrent-7"
+    ]
+  ],
+  "raw_concurrent_order_equal": true,
+  "entire_cases_exact_equal_observed": true,
+  "ordering_required_for_concurrent_record": false
+}

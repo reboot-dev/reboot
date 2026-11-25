@@ -1,0 +1,822 @@
+{
+  "owner_pid": 491955,
+  "containers": {
+    "config": "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641",
+    "database": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227",
+    "rust": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d",
+    "python": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+  },
+  "waits": [
+    {
+      "name": "config",
+      "container": "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641",
+      "pid": 492912,
+      "wait_exit": 0,
+      "container_exit": "0",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:04:46.633968377Z",
+        "FinishedAt": "2026-10-19T18:04:46.758870348Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": []
+        }
+      }
+    },
+    {
+      "name": "database",
+      "container": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227",
+      "pid": 492913,
+      "wait_exit": 0,
+      "container_exit": "0",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:04:47.264424052Z",
+        "FinishedAt": "2026-10-19T18:05:01.038718366Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T18:04:52.2654169Z",
+              "End": "2026-10-19T18:04:52.299938186Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:04:54.300408299Z",
+              "End": "2026-10-19T18:04:54.336494878Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:04:56.337463109Z",
+              "End": "2026-10-19T18:04:56.372040963Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:04:58.372493221Z",
+              "End": "2026-10-19T18:04:58.407860005Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:00.408631972Z",
+              "End": "2026-10-19T18:05:00.442920237Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rust",
+      "container": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d",
+      "pid": 492914,
+      "wait_exit": 0,
+      "container_exit": "0",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:04:52.380237697Z",
+        "FinishedAt": "2026-10-19T18:04:59.1339009Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T18:04:57.381050904Z",
+              "End": "2026-10-19T18:04:57.419786401Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "python",
+      "container": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+      "pid": 492915,
+      "wait_exit": 0,
+      "container_exit": "143",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 143,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:04:46.513820873Z",
+        "FinishedAt": "2026-10-19T18:05:00.679002117Z"
+      }
+    },
+    {
+      "name": "database",
+      "container": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227",
+      "pid": 493456,
+      "wait_exit": 0,
+      "container_exit": "0",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:05:01.376770715Z",
+        "FinishedAt": "2026-10-19T18:05:11.169989323Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T18:04:58.372493221Z",
+              "End": "2026-10-19T18:04:58.407860005Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:00.408631972Z",
+              "End": "2026-10-19T18:05:00.442920237Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:06.377313872Z",
+              "End": "2026-10-19T18:05:06.412882235Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:08.413594809Z",
+              "End": "2026-10-19T18:05:08.452725782Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:10.453450563Z",
+              "End": "2026-10-19T18:05:10.488340488Z",
+              "ExitCode": 0,
+              "Output": "DATABASE_READABLE\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rust",
+      "container": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d",
+      "pid": 493612,
+      "wait_exit": 0,
+      "container_exit": "0",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:05:01.725908745Z",
+        "FinishedAt": "2026-10-19T18:05:09.703685223Z",
+        "Health": {
+          "Status": "unhealthy",
+          "FailingStreak": 0,
+          "Log": [
+            {
+              "Start": "2026-10-19T18:04:57.381050904Z",
+              "End": "2026-10-19T18:04:57.419786401Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:06.726785702Z",
+              "End": "2026-10-19T18:05:06.760733938Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            },
+            {
+              "Start": "2026-10-19T18:05:08.761649292Z",
+              "End": "2026-10-19T18:05:08.79484701Z",
+              "ExitCode": 0,
+              "Output": "SERVING_ENGINE_BACKED\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "python",
+      "container": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+      "pid": 493700,
+      "wait_exit": 0,
+      "container_exit": "143",
+      "joined": true,
+      "terminal_state_readback": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 143,
+        "Error": "",
+        "StartedAt": "2026-10-19T18:05:02.068708811Z",
+        "FinishedAt": "2026-10-19T18:05:10.985947696Z"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "create"
+      ],
+      "pid": 491956,
+      "exit": 0,
+      "output": " Network hello-image-review-correction_private Creating \n Volume hello-image-review-correction_rust-state Creating \n Network hello-image-review-correction_private Creating \n Volume hello-image-review-correction_python-state Creating \n Volume hello-image-review-correction_python-state Creating \n Volume hello-image-review-correction_rust-state Creating \n Volume hello-image-review-correction_rust-state Created \n Volume hello-image-review-correction_rust-state Created \n Volume hello-image-review-correction_python-state Created \n Volume hello-image-review-correction_python-state Created \n Network hello-image-review-correction_private Created \n Network hello-image-review-correction_private Created \n Container hello-image-review-correction-python-1 Creating \n Container hello-image-review-correction-config-1 Creating \n Container hello-image-review-correction-python-1 Created \n Container hello-image-review-correction-config-1 Created \n Container hello-image-review-correction-database-1 Creating \n Container hello-image-review-correction-database-1 Created \n Container hello-image-review-correction-rust-1 Creating \n Container hello-image-review-correction-rust-1 Created \n"
+    },
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "ps",
+        "--all",
+        "-q",
+        "config"
+      ],
+      "pid": 492011,
+      "exit": 0,
+      "output": "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "ps",
+        "--all",
+        "-q",
+        "database"
+      ],
+      "pid": 492050,
+      "exit": 0,
+      "output": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "ps",
+        "--all",
+        "-q",
+        "rust"
+      ],
+      "pid": 492090,
+      "exit": 0,
+      "output": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "ps",
+        "--all",
+        "-q",
+        "python"
+      ],
+      "pid": 492129,
+      "exit": 0,
+      "output": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "compose",
+        "-f",
+        "/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml",
+        "up",
+        "--detach",
+        "--no-recreate",
+        "--wait",
+        "--wait-timeout",
+        "60"
+      ],
+      "pid": 492169,
+      "exit": 0,
+      "output": " Container hello-image-review-correction-python-1 Starting \n Container hello-image-review-correction-config-1 Starting \n Container hello-image-review-correction-python-1 Started \n Container hello-image-review-correction-config-1 Started \n Container hello-image-review-correction-config-1 Waiting \n Container hello-image-review-correction-config-1 Exited \n Container hello-image-review-correction-database-1 Starting \n Container hello-image-review-correction-database-1 Started \n Container hello-image-review-correction-database-1 Waiting \n Container hello-image-review-correction-database-1 Healthy \n Container hello-image-review-correction-rust-1 Starting \n Container hello-image-review-correction-rust-1 Started \n Container hello-image-review-correction-database-1 Waiting \n Container hello-image-review-correction-rust-1 Waiting \n Container hello-image-review-correction-python-1 Waiting \n Container hello-image-review-correction-config-1 Waiting \n Container hello-image-review-correction-database-1 Healthy \n Container hello-image-review-correction-python-1 Healthy \n Container hello-image-review-correction-config-1 Exited \n Container hello-image-review-correction-rust-1 Healthy \n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641"
+      ],
+      "pid": 492959,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:04:46.633968377Z\",\"FinishedAt\":\"2026-10-19T18:04:46.758870348Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "cp",
+        "/home/benchbuild/.cache/hello-image-evidence/review-correction-source-v1/shared_probe.py",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3:/opt/shared_probe.py"
+      ],
+      "pid": 492972,
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "cp",
+        "/home/benchbuild/.cache/hello-image-evidence/review-correction-source-v1/transcript_comparison.py",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3:/opt/transcript_comparison.py"
+      ],
+      "pid": 492985,
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "shared-review-correction",
+        "01a1558d-7b98-7000-8000-000000000000"
+      ],
+      "pid": 492998,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\n{\"missing-reader\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"missing-send\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"0801\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"create\": {\"ok\": true, \"response\": {}}}\n{\"create-replay\": {\"ok\": true, \"response\": {}}}\n{\"duplicate-constructor\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"send\": {\"ok\": true, \"response\": {}}}\n{\"send-replay\": {\"ok\": true, \"response\": {}}}\n{\"changed-payload\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}}\n{\"wrong-method\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}}\n{\"fidelity-0\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-1\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-2\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-3\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-4\": {\"ok\": true, \"response\": {}}}\n{\"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"reader-repeat\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"supplied-token\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"other-create\": {\"ok\": true, \"response\": {}}}\n{\"concurrent-responses\": [{\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}]}\n{\"isolation\": {\"ok\": true, \"response\": {\"messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}}}\n{\"final-original\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\nTRANSCRIPT={\"endpoint\": \"localhost:9991\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}, \"missing-reader\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"missing-send\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"0801\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"create\": {\"ok\": true, \"response\": {}}, \"create-replay\": {\"ok\": true, \"response\": {}}, \"duplicate-constructor\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"send\": {\"ok\": true, \"response\": {}}, \"send-replay\": {\"ok\": true, \"response\": {}}, \"changed-payload\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}, \"wrong-method\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}, \"fidelity-0\": {\"ok\": true, \"response\": {}}, \"fidelity-1\": {\"ok\": true, \"response\": {}}, \"fidelity-2\": {\"ok\": true, \"response\": {}}, \"fidelity-3\": {\"ok\": true, \"response\": {}}, \"fidelity-4\": {\"ok\": true, \"response\": {}}, \"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"reader-repeat\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"supplied-token\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"other-create\": {\"ok\": true, \"response\": {}}, \"concurrent-responses\": [{\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}], \"isolation\": {\"ok\": true, \"response\": {\"messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}}, \"final-original\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}}, \"complete\": true, \"concurrency_raw_messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "rust:9990",
+        "shared-review-correction",
+        "01a1558d-7b98-7000-8000-000000000000"
+      ],
+      "pid": 493087,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\n{\"missing-reader\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"missing-send\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"0801\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"create\": {\"ok\": true, \"response\": {}}}\n{\"create-replay\": {\"ok\": true, \"response\": {}}}\n{\"duplicate-constructor\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}}\n{\"send\": {\"ok\": true, \"response\": {}}}\n{\"send-replay\": {\"ok\": true, \"response\": {}}}\n{\"changed-payload\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}}\n{\"wrong-method\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}}\n{\"fidelity-0\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-1\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-2\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-3\": {\"ok\": true, \"response\": {}}}\n{\"fidelity-4\": {\"ok\": true, \"response\": {}}}\n{\"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"reader-repeat\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"supplied-token\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"other-create\": {\"ok\": true, \"response\": {}}}\n{\"concurrent-responses\": [{\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}]}\n{\"isolation\": {\"ok\": true, \"response\": {\"messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}}}\n{\"final-original\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\nTRANSCRIPT={\"endpoint\": \"rust:9990\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}, \"missing-reader\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"missing-send\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateNotConstructed\", \"value_hex\": \"0801\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"create\": {\"ok\": true, \"response\": {}}, \"create-replay\": {\"ok\": true, \"response\": {}}, \"duplicate-constructor\": {\"ok\": false, \"code\": \"ABORTED\", \"message\": \"\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.StateAlreadyConstructed\", \"value_hex\": \"\"}], \"rich_code\": 10, \"rich_message\": \"\"}, \"send\": {\"ok\": true, \"response\": {}}, \"send-replay\": {\"ok\": true, \"response\": {}}, \"changed-payload\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}, \"wrong-method\": {\"ok\": false, \"code\": \"FAILED_PRECONDITION\", \"message\": \"Idempotency key was reused with a different request\", \"details\": [{\"type_url\": \"type.googleapis.com/rbt.v1alpha1.FailedPrecondition\", \"value_hex\": \"\"}], \"rich_code\": 9, \"rich_message\": \"Idempotency key was reused with a different request\"}, \"fidelity-0\": {\"ok\": true, \"response\": {}}, \"fidelity-1\": {\"ok\": true, \"response\": {}}, \"fidelity-2\": {\"ok\": true, \"response\": {}}, \"fidelity-3\": {\"ok\": true, \"response\": {}}, \"fidelity-4\": {\"ok\": true, \"response\": {}}, \"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"reader-repeat\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"supplied-token\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"other-create\": {\"ok\": true, \"response\": {}}, \"concurrent-responses\": [{\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}, {\"ok\": true, \"response\": {}}], \"isolation\": {\"ok\": true, \"response\": {\"messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}}, \"final-original\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}}, \"complete\": true, \"concurrency_raw_messages\": [\"\", \"concurrent-0\", \"concurrent-1\", \"concurrent-2\", \"concurrent-3\", \"concurrent-4\", \"concurrent-5\", \"concurrent-6\", \"concurrent-7\"]}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 493142,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 493189,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:04:52.380237697Z\",\"FinishedAt\":\"2026-10-19T18:04:59.1339009Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2026-10-19T18:04:57.381050904Z\",\"End\":\"2026-10-19T18:04:57.419786401Z\",\"ExitCode\":0,\"Output\":\"SERVING_ENGINE_BACKED\\n\"}]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 493202,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 493282,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":143,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:04:46.513820873Z\",\"FinishedAt\":\"2026-10-19T18:05:00.679002117Z\"}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 493294,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 493343,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:04:47.264424052Z\",\"FinishedAt\":\"2026-10-19T18:05:01.038718366Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2026-10-19T18:04:52.2654169Z\",\"End\":\"2026-10-19T18:04:52.299938186Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:04:54.300408299Z\",\"End\":\"2026-10-19T18:04:54.336494878Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:04:56.337463109Z\",\"End\":\"2026-10-19T18:04:56.372040963Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:04:58.372493221Z\",\"End\":\"2026-10-19T18:04:58.407860005Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:05:00.408631972Z\",\"End\":\"2026-10-19T18:05:00.442920237Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"}]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "start",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 493356,
+      "exit": 0,
+      "output": "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "start",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 493524,
+      "exit": 0,
+      "output": "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "start",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 493628,
+      "exit": 0,
+      "output": "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 493713,
+      "exit": 1,
+      "output": "{\"startup\": {\"ok\": false, \"code\": \"UNAVAILABLE\", \"message\": \"failed to connect to all addresses; last error: UNKNOWN: ipv4:127.0.0.1:9991: Failed to connect to remote host: Connection refused\", \"details\": [], \"rich_code\": null, \"rich_message\": null}}\nTraceback (most recent call last):\n  File \"/opt/shared_probe.py\", line 40, in <module>\n    assert report['cases']['startup']=={'ok':True,'response':{'messages':['Welcome! This message was sent by a constructor.','This message was sent after construction!']}}\nAssertionError\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 493766,
+      "exit": 1,
+      "output": "{\"startup\": {\"ok\": false, \"code\": \"UNAVAILABLE\", \"message\": \"failed to connect to all addresses; last error: UNKNOWN: ipv4:127.0.0.1:9991: Failed to connect to remote host: Connection refused\", \"details\": [], \"rich_code\": null, \"rich_message\": null}}\nTraceback (most recent call last):\n  File \"/opt/shared_probe.py\", line 40, in <module>\n    assert report['cases']['startup']=={'ok':True,'response':{'messages':['Welcome! This message was sent by a constructor.','This message was sent after construction!']}}\nAssertionError\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 493819,
+      "exit": 1,
+      "output": "{\"startup\": {\"ok\": false, \"code\": \"UNAVAILABLE\", \"message\": \"failed to connect to all addresses; last error: UNKNOWN: ipv4:127.0.0.1:9991: Failed to connect to remote host: Connection refused\", \"details\": [], \"rich_code\": null, \"rich_message\": null}}\nTraceback (most recent call last):\n  File \"/opt/shared_probe.py\", line 40, in <module>\n    assert report['cases']['startup']=={'ok':True,'response':{'messages':['Welcome! This message was sent by a constructor.','This message was sent after construction!']}}\nAssertionError\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 494041,
+      "exit": 1,
+      "output": "Traceback (most recent call last):\n  File \"/opt/shared_probe.py\", line 40, in <module>\n{\"startup\": {\"ok\": false, \"code\": \"UNAVAILABLE\", \"message\": \"Route not configured yet (no servers available)\", \"details\": [], \"rich_code\": null, \"rich_message\": null}}\n    assert report['cases']['startup']=={'ok':True,'response':{'messages':['Welcome! This message was sent by a constructor.','This message was sent after construction!']}}\nAssertionError\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 494148,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\nTRANSCRIPT={\"endpoint\": \"localhost:9991\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}, \"complete\": true}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "rust:9990",
+        "unused",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--boot"
+      ],
+      "pid": 494198,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\nTRANSCRIPT={\"endpoint\": \"rust:9990\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}, \"complete\": true}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "localhost:9991",
+        "shared-review-correction",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--restart"
+      ],
+      "pid": 494283,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\n{\"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"create-replay\": {\"ok\": true, \"response\": {}}}\n{\"send-replay\": {\"ok\": true, \"response\": {}}}\n{\"after-replays\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\nTRANSCRIPT={\"endpoint\": \"localhost:9991\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}, \"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"create-replay\": {\"ok\": true, \"response\": {}}, \"send-replay\": {\"ok\": true, \"response\": {}}, \"after-replays\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}}, \"complete\": true}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3",
+        "/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3",
+        "/opt/shared_probe.py",
+        "rust:9990",
+        "shared-review-correction",
+        "01a1558d-7b98-7000-8000-000000000000",
+        "--restart"
+      ],
+      "pid": 494369,
+      "exit": 0,
+      "output": "{\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}}\n{\"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\n{\"create-replay\": {\"ok\": true, \"response\": {}}}\n{\"send-replay\": {\"ok\": true, \"response\": {}}}\n{\"after-replays\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\\u96ea \\ud83e\\udd80\", \"  whitespace\\n\"]}}}\nTRANSCRIPT={\"endpoint\": \"rust:9990\", \"cases\": {\"startup\": {\"ok\": true, \"response\": {\"messages\": [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]}}, \"messages\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}, \"create-replay\": {\"ok\": true, \"response\": {}}, \"send-replay\": {\"ok\": true, \"response\": {}}, \"after-replays\": {\"ok\": true, \"response\": {\"messages\": [\"first message\", \"second message\", \"\", \"duplicate\", \"duplicate\", \"\u96ea \ud83e\udd80\", \"  whitespace\\n\"]}}}, \"complete\": true}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641"
+      ],
+      "pid": 494419,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:04:46.633968377Z\",\"FinishedAt\":\"2026-10-19T18:04:46.758870348Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 494432,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 494481,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:05:01.725908745Z\",\"FinishedAt\":\"2026-10-19T18:05:09.703685223Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2026-10-19T18:04:57.381050904Z\",\"End\":\"2026-10-19T18:04:57.419786401Z\",\"ExitCode\":0,\"Output\":\"SERVING_ENGINE_BACKED\\n\"},{\"Start\":\"2026-10-19T18:05:06.726785702Z\",\"End\":\"2026-10-19T18:05:06.760733938Z\",\"ExitCode\":0,\"Output\":\"SERVING_ENGINE_BACKED\\n\"},{\"Start\":\"2026-10-19T18:05:08.761649292Z\",\"End\":\"2026-10-19T18:05:08.79484701Z\",\"ExitCode\":0,\"Output\":\"SERVING_ENGINE_BACKED\\n\"}]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 494495,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 494576,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":143,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:05:02.068708811Z\",\"FinishedAt\":\"2026-10-19T18:05:10.985947696Z\"}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "stop",
+        "--time",
+        "25",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 494589,
+      "exit": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 494633,
+      "exit": 0,
+      "output": "{\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-19T18:05:01.376770715Z\",\"FinishedAt\":\"2026-10-19T18:05:11.169989323Z\",\"Health\":{\"Status\":\"unhealthy\",\"FailingStreak\":0,\"Log\":[{\"Start\":\"2026-10-19T18:04:58.372493221Z\",\"End\":\"2026-10-19T18:04:58.407860005Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:05:00.408631972Z\",\"End\":\"2026-10-19T18:05:00.442920237Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:05:06.377313872Z\",\"End\":\"2026-10-19T18:05:06.412882235Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:05:08.413594809Z\",\"End\":\"2026-10-19T18:05:08.452725782Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"},{\"Start\":\"2026-10-19T18:05:10.453450563Z\",\"End\":\"2026-10-19T18:05:10.488340488Z\",\"ExitCode\":0,\"Output\":\"DATABASE_READABLE\\n\"}]}}\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641"
+      ],
+      "pid": 494646,
+      "exit": 0,
+      "output": "[\n    {\n        \"Id\": \"4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641\",\n        \"Created\": \"2026-10-19T18:04:46.115546771Z\",\n        \"Path\": \"/usr/local/bin/hello\",\n        \"Args\": [\n            \"--server-info\",\n            \"/state/server-info.pb\"\n        ],\n        \"State\": {\n            \"Status\": \"exited\",\n            \"Running\": false,\n            \"Paused\": false,\n            \"Restarting\": false,\n            \"OOMKilled\": false,\n            \"Dead\": false,\n            \"Pid\": 0,\n            \"ExitCode\": 0,\n            \"Error\": \"\",\n            \"StartedAt\": \"2026-10-19T18:04:46.633968377Z\",\n            \"FinishedAt\": \"2026-10-19T18:04:46.758870348Z\",\n            \"Health\": {\n                \"Status\": \"unhealthy\",\n                \"FailingStreak\": 0,\n                \"Log\": []\n            }\n        },\n        \"Image\": \"sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06\",\n        \"ResolvConfPath\": \"/var/lib/docker/containers/4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641/resolv.conf\",\n        \"HostnamePath\": \"/var/lib/docker/containers/4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641/hostname\",\n        \"HostsPath\": \"/var/lib/docker/containers/4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641/hosts\",\n        \"LogPath\": \"/var/lib/docker/containers/4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641/4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641-json.log\",\n        \"Name\": \"/hello-image-review-correction-config-1\",\n        \"RestartCount\": 0,\n        \"Driver\": \"overlayfs\",\n        \"Platform\": \"linux\",\n        \"MountLabel\": \"\",\n        \"ProcessLabel\": \"\",\n        \"AppArmorProfile\": \"docker-default\",\n        \"ExecIDs\": null,\n        \"HostConfig\": {\n            \"Binds\": [\n                \"hello-image-review-correction_rust-state:/state:rw\"\n            ],\n            \"ContainerIDFile\": \"\",\n            \"LogConfig\": {\n                \"Type\": \"json-file\",\n                \"Config\": {}\n            },\n            \"NetworkMode\": \"hello-image-review-correction_private\",\n            \"PortBindings\": {},\n            \"RestartPolicy\": {\n                \"Name\": \"no\",\n                \"MaximumRetryCount\": 0\n            },\n            \"AutoRemove\": false,\n            \"VolumeDriver\": \"\",\n            \"VolumesFrom\": null,\n            \"ConsoleSize\": [\n                0,\n                0\n            ],\n            \"CapAdd\": null,\n            \"CapDrop\": null,\n            \"CgroupnsMode\": \"private\",\n            \"Dns\": null,\n            \"DnsOptions\": null,\n            \"DnsSearch\": null,\n            \"ExtraHosts\": [],\n            \"GroupAdd\": null,\n            \"IpcMode\": \"private\",\n            \"Cgroup\": \"\",\n            \"Links\": null,\n            \"OomScoreAdj\": 0,\n            \"PidMode\": \"\",\n            \"Privileged\": false,\n            \"PublishAllPorts\": false,\n            \"ReadonlyRootfs\": false,\n            \"SecurityOpt\": null,\n            \"UTSMode\": \"\",\n            \"UsernsMode\": \"\",\n            \"ShmSize\": 67108864,\n            \"Runtime\": \"runc\",\n            \"Isolation\": \"\",\n            \"CpuShares\": 0,\n            \"Memory\": 0,\n            \"NanoCpus\": 0,\n            \"CgroupParent\": \"\",\n            \"BlkioWeight\": 0,\n            \"BlkioWeightDevice\": null,\n            \"BlkioDeviceReadBps\": null,\n            \"BlkioDeviceWriteBps\": null,\n            \"BlkioDeviceReadIOps\": null,\n            \"BlkioDeviceWriteIOps\": null,\n            \"CpuPeriod\": 0,\n            \"CpuQuota\": 0,\n            \"CpuRealtimePeriod\": 0,\n            \"CpuRealtimeRuntime\": 0,\n            \"CpusetCpus\": \"\",\n            \"CpusetMems\": \"\",\n            \"Devices\": null,\n            \"DeviceCgroupRules\": null,\n            \"DeviceRequests\": null,\n            \"MemoryReservation\": 0,\n            \"MemorySwap\": 0,\n            \"MemorySwappiness\": null,\n            \"OomKillDisable\": null,\n            \"PidsLimit\": null,\n            \"Ulimits\": null,\n            \"CpuCount\": 0,\n            \"CpuPercent\": 0,\n            \"IOMaximumIOps\": 0,\n            \"IOMaximumBandwidth\": 0,\n            \"MaskedPaths\": [\n                \"/proc/acpi\",\n                \"/proc/asound\",\n                \"/proc/interrupts\",\n                \"/proc/kcore\",\n                \"/proc/keys\",\n                \"/proc/latency_stats\",\n                \"/proc/sched_debug\",\n                \"/proc/scsi\",\n                \"/proc/timer_list\",\n                \"/proc/timer_stats\",\n                \"/sys/devices/virtual/powercap\",\n                \"/sys/firmware\"\n            ],\n            \"ReadonlyPaths\": [\n                \"/proc/bus\",\n                \"/proc/fs\",\n                \"/proc/irq\",\n                \"/proc/sys\",\n                \"/proc/sysrq-trigger\"\n            ],\n            \"Init\": true\n        },\n        \"Storage\": {\n            \"RootFS\": {\n                \"Snapshot\": {\n                    \"Name\": \"overlayfs\"\n                }\n            }\n        },\n        \"Mounts\": [\n            {\n                \"Type\": \"volume\",\n                \"Name\": \"hello-image-review-correction_rust-state\",\n                \"Source\": \"/var/lib/docker/volumes/hello-image-review-correction_rust-state/_data\",\n                \"Destination\": \"/state\",\n                \"Driver\": \"local\",\n                \"Mode\": \"rw\",\n                \"RW\": true,\n                \"Propagation\": \"\"\n            }\n        ],\n        \"Config\": {\n            \"Hostname\": \"4ef14ca373a7\",\n            \"Domainname\": \"\",\n            \"User\": \"\",\n            \"AttachStdin\": false,\n            \"AttachStdout\": true,\n            \"AttachStderr\": true,\n            \"Tty\": false,\n            \"OpenStdin\": false,\n            \"StdinOnce\": false,\n            \"Env\": [\n                \"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\",\n                \"RBT_RUST_URL=http://127.0.0.1:9990\"\n            ],\n            \"Cmd\": [\n                \"--server-info\",\n                \"/state/server-info.pb\"\n            ],\n            \"Healthcheck\": {\n                \"Test\": [\n                    \"CMD\",\n                    \"/usr/local/bin/hello-health\",\n                    \"health\"\n                ],\n                \"Interval\": 2000000000,\n                \"Timeout\": 4000000000,\n                \"StartPeriod\": 5000000000,\n                \"Retries\": 2\n            },\n            \"Image\": \"sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06\",\n            \"Volumes\": null,\n            \"WorkingDir\": \"\",\n            \"Entrypoint\": [\n                \"/usr/local/bin/hello\"\n            ],\n            \"Labels\": {\n                \"com.docker.compose.config-hash\": \"6905c09c8f10cdf09354ead331a23e2b1a5b5ae572ae63ce739508cf4cf1d898\",\n                \"com.docker.compose.container-number\": \"1\",\n                \"com.docker.compose.depends_on\": \"\",\n                \"com.docker.compose.image\": \"sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d\",\n                \"com.docker.compose.oneoff\": \"False\",\n                \"com.docker.compose.project\": \"hello-image-review-correction\",\n                \"com.docker.compose.project.config_files\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml\",\n                \"com.docker.compose.project.working_dir\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image\",\n                \"com.docker.compose.service\": \"config\",\n                \"com.docker.compose.version\": \"5.6.0\",\n                \"org.opencontainers.image.version\": \"24.04\"\n            }\n        },\n        \"NetworkSettings\": {\n            \"SandboxID\": \"\",\n            \"SandboxKey\": \"\",\n            \"Ports\": {},\n            \"Networks\": {\n                \"hello-image-review-correction_private\": {\n                    \"IPAMConfig\": null,\n                    \"Links\": null,\n                    \"Aliases\": [\n                        \"hello-image-review-correction-config-1\",\n                        \"config\"\n                    ],\n                    \"DriverOpts\": null,\n                    \"GwPriority\": 0,\n                    \"NetworkID\": \"6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2\",\n                    \"EndpointID\": \"\",\n                    \"Gateway\": \"\",\n                    \"IPAddress\": \"\",\n                    \"MacAddress\": \"\",\n                    \"IPPrefixLen\": 0,\n                    \"IPv6Gateway\": \"\",\n                    \"GlobalIPv6Address\": \"\",\n                    \"GlobalIPv6PrefixLen\": 0,\n                    \"DNSNames\": [\n                        \"hello-image-review-correction-config-1\",\n                        \"config\",\n                        \"4ef14ca373a7\"\n                    ]\n                }\n            }\n        },\n        \"ImageManifestDescriptor\": {\n            \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n            \"digest\": \"sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d\",\n            \"size\": 1053,\n            \"platform\": {\n                \"architecture\": \"amd64\",\n                \"os\": \"linux\"\n            }\n        }\n    }\n]\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "logs",
+        "4ef14ca373a7471874d52825d539850b2d0b4058d13f935b797f816df0b55641"
+      ],
+      "pid": 494659,
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 494672,
+      "exit": 0,
+      "output": "[\n    {\n        \"Id\": \"86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227\",\n        \"Created\": \"2026-10-19T18:04:46.141074557Z\",\n        \"Path\": \"/usr/local/bin/database\",\n        \"Args\": [\n            \"/state/rocksdb\",\n            \"/state/server-info.pb\",\n            \"20000\"\n        ],\n        \"State\": {\n            \"Status\": \"exited\",\n            \"Running\": false,\n            \"Paused\": false,\n            \"Restarting\": false,\n            \"OOMKilled\": false,\n            \"Dead\": false,\n            \"Pid\": 0,\n            \"ExitCode\": 0,\n            \"Error\": \"\",\n            \"StartedAt\": \"2026-10-19T18:05:01.376770715Z\",\n            \"FinishedAt\": \"2026-10-19T18:05:11.169989323Z\",\n            \"Health\": {\n                \"Status\": \"unhealthy\",\n                \"FailingStreak\": 0,\n                \"Log\": [\n                    {\n                        \"Start\": \"2026-10-19T18:04:58.372493221Z\",\n                        \"End\": \"2026-10-19T18:04:58.407860005Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"DATABASE_READABLE\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:00.408631972Z\",\n                        \"End\": \"2026-10-19T18:05:00.442920237Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"DATABASE_READABLE\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:06.377313872Z\",\n                        \"End\": \"2026-10-19T18:05:06.412882235Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"DATABASE_READABLE\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:08.413594809Z\",\n                        \"End\": \"2026-10-19T18:05:08.452725782Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"DATABASE_READABLE\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:10.453450563Z\",\n                        \"End\": \"2026-10-19T18:05:10.488340488Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"DATABASE_READABLE\\n\"\n                    }\n                ]\n            }\n        },\n        \"Image\": \"sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd\",\n        \"ResolvConfPath\": \"/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/resolv.conf\",\n        \"HostnamePath\": \"/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/hostname\",\n        \"HostsPath\": \"/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/hosts\",\n        \"LogPath\": \"/var/lib/docker/containers/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227/86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227-json.log\",\n        \"Name\": \"/hello-image-review-correction-database-1\",\n        \"RestartCount\": 0,\n        \"Driver\": \"overlayfs\",\n        \"Platform\": \"linux\",\n        \"MountLabel\": \"\",\n        \"ProcessLabel\": \"\",\n        \"AppArmorProfile\": \"docker-default\",\n        \"ExecIDs\": null,\n        \"HostConfig\": {\n            \"Binds\": [\n                \"hello-image-review-correction_rust-state:/state:rw\"\n            ],\n            \"ContainerIDFile\": \"\",\n            \"LogConfig\": {\n                \"Type\": \"json-file\",\n                \"Config\": {}\n            },\n            \"NetworkMode\": \"hello-image-review-correction_private\",\n            \"PortBindings\": {},\n            \"RestartPolicy\": {\n                \"Name\": \"no\",\n                \"MaximumRetryCount\": 0\n            },\n            \"AutoRemove\": false,\n            \"VolumeDriver\": \"\",\n            \"VolumesFrom\": null,\n            \"ConsoleSize\": [\n                0,\n                0\n            ],\n            \"CapAdd\": null,\n            \"CapDrop\": null,\n            \"CgroupnsMode\": \"private\",\n            \"Dns\": null,\n            \"DnsOptions\": null,\n            \"DnsSearch\": null,\n            \"ExtraHosts\": [],\n            \"GroupAdd\": null,\n            \"IpcMode\": \"private\",\n            \"Cgroup\": \"\",\n            \"Links\": null,\n            \"OomScoreAdj\": 0,\n            \"PidMode\": \"\",\n            \"Privileged\": false,\n            \"PublishAllPorts\": false,\n            \"ReadonlyRootfs\": false,\n            \"SecurityOpt\": null,\n            \"UTSMode\": \"\",\n            \"UsernsMode\": \"\",\n            \"ShmSize\": 67108864,\n            \"Runtime\": \"runc\",\n            \"Isolation\": \"\",\n            \"CpuShares\": 0,\n            \"Memory\": 0,\n            \"NanoCpus\": 0,\n            \"CgroupParent\": \"\",\n            \"BlkioWeight\": 0,\n            \"BlkioWeightDevice\": null,\n            \"BlkioDeviceReadBps\": null,\n            \"BlkioDeviceWriteBps\": null,\n            \"BlkioDeviceReadIOps\": null,\n            \"BlkioDeviceWriteIOps\": null,\n            \"CpuPeriod\": 0,\n            \"CpuQuota\": 0,\n            \"CpuRealtimePeriod\": 0,\n            \"CpuRealtimeRuntime\": 0,\n            \"CpusetCpus\": \"\",\n            \"CpusetMems\": \"\",\n            \"Devices\": null,\n            \"DeviceCgroupRules\": null,\n            \"DeviceRequests\": null,\n            \"MemoryReservation\": 0,\n            \"MemorySwap\": 0,\n            \"MemorySwappiness\": null,\n            \"OomKillDisable\": null,\n            \"PidsLimit\": null,\n            \"Ulimits\": null,\n            \"CpuCount\": 0,\n            \"CpuPercent\": 0,\n            \"IOMaximumIOps\": 0,\n            \"IOMaximumBandwidth\": 0,\n            \"MaskedPaths\": [\n                \"/proc/acpi\",\n                \"/proc/asound\",\n                \"/proc/interrupts\",\n                \"/proc/kcore\",\n                \"/proc/keys\",\n                \"/proc/latency_stats\",\n                \"/proc/sched_debug\",\n                \"/proc/scsi\",\n                \"/proc/timer_list\",\n                \"/proc/timer_stats\",\n                \"/sys/devices/virtual/powercap\",\n                \"/sys/firmware\"\n            ],\n            \"ReadonlyPaths\": [\n                \"/proc/bus\",\n                \"/proc/fs\",\n                \"/proc/irq\",\n                \"/proc/sys\",\n                \"/proc/sysrq-trigger\"\n            ],\n            \"Init\": true\n        },\n        \"Storage\": {\n            \"RootFS\": {\n                \"Snapshot\": {\n                    \"Name\": \"overlayfs\"\n                }\n            }\n        },\n        \"Mounts\": [\n            {\n                \"Type\": \"volume\",\n                \"Name\": \"hello-image-review-correction_rust-state\",\n                \"Source\": \"/var/lib/docker/volumes/hello-image-review-correction_rust-state/_data\",\n                \"Destination\": \"/state\",\n                \"Driver\": \"local\",\n                \"Mode\": \"rw\",\n                \"RW\": true,\n                \"Propagation\": \"\"\n            }\n        ],\n        \"Config\": {\n            \"Hostname\": \"86424943a7cc\",\n            \"Domainname\": \"\",\n            \"User\": \"\",\n            \"AttachStdin\": false,\n            \"AttachStdout\": true,\n            \"AttachStderr\": true,\n            \"Tty\": false,\n            \"OpenStdin\": false,\n            \"StdinOnce\": false,\n            \"Env\": [\n                \"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\",\n                \"RBT_RUST_URL=http://127.0.0.1:20000\"\n            ],\n            \"Cmd\": [\n                \"/state/rocksdb\",\n                \"/state/server-info.pb\",\n                \"20000\"\n            ],\n            \"Healthcheck\": {\n                \"Test\": [\n                    \"CMD\",\n                    \"/usr/local/bin/hello-health\",\n                    \"database-health\"\n                ],\n                \"Interval\": 2000000000,\n                \"Timeout\": 4000000000,\n                \"StartPeriod\": 5000000000,\n                \"Retries\": 2\n            },\n            \"Image\": \"sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd\",\n            \"Volumes\": null,\n            \"WorkingDir\": \"\",\n            \"Entrypoint\": [\n                \"/usr/local/bin/database\"\n            ],\n            \"Labels\": {\n                \"com.docker.compose.config-hash\": \"d2917f3ec3b9b8fa9008a5d64e7e747f4b10996ee5527e7f4325126423cb92ce\",\n                \"com.docker.compose.container-number\": \"1\",\n                \"com.docker.compose.depends_on\": \"config:service_completed_successfully:false\",\n                \"com.docker.compose.image\": \"sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06\",\n                \"com.docker.compose.oneoff\": \"False\",\n                \"com.docker.compose.project\": \"hello-image-review-correction\",\n                \"com.docker.compose.project.config_files\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml\",\n                \"com.docker.compose.project.working_dir\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image\",\n                \"com.docker.compose.service\": \"database\",\n                \"com.docker.compose.version\": \"5.6.0\",\n                \"org.opencontainers.image.version\": \"24.04\"\n            },\n            \"StopTimeout\": 20\n        },\n        \"NetworkSettings\": {\n            \"SandboxID\": \"\",\n            \"SandboxKey\": \"\",\n            \"Ports\": {},\n            \"Networks\": {\n                \"hello-image-review-correction_private\": {\n                    \"IPAMConfig\": null,\n                    \"Links\": null,\n                    \"Aliases\": [\n                        \"hello-image-review-correction-database-1\",\n                        \"database\"\n                    ],\n                    \"DriverOpts\": null,\n                    \"GwPriority\": 0,\n                    \"NetworkID\": \"6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2\",\n                    \"EndpointID\": \"\",\n                    \"Gateway\": \"\",\n                    \"IPAddress\": \"\",\n                    \"MacAddress\": \"\",\n                    \"IPPrefixLen\": 0,\n                    \"IPv6Gateway\": \"\",\n                    \"GlobalIPv6Address\": \"\",\n                    \"GlobalIPv6PrefixLen\": 0,\n                    \"DNSNames\": [\n                        \"hello-image-review-correction-database-1\",\n                        \"database\",\n                        \"86424943a7cc\"\n                    ]\n                }\n            }\n        },\n        \"ImageManifestDescriptor\": {\n            \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n            \"digest\": \"sha256:73473cc469f19b849de0401d4576a9ff07023e92953827efa8e89406b56d7c06\",\n            \"size\": 1058,\n            \"platform\": {\n                \"architecture\": \"amd64\",\n                \"os\": \"linux\"\n            }\n        }\n    }\n]\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "logs",
+        "86424943a7cc228af5fb28199f9c5437f4d6637fbf75d58582c42fe62bf4b227"
+      ],
+      "pid": 494685,
+      "exit": 0,
+      "output": "Database server started at: 0.0.0.0:20000\nReceived SIGTERM/SIGINT, shutting down gracefully...\nDatabase server started at: 0.0.0.0:20000\nReceived SIGTERM/SIGINT, shutting down gracefully...\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 494698,
+      "exit": 0,
+      "output": "[\n    {\n        \"Id\": \"642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d\",\n        \"Created\": \"2026-10-19T18:04:46.158676898Z\",\n        \"Path\": \"/usr/local/bin/hello\",\n        \"Args\": [],\n        \"State\": {\n            \"Status\": \"exited\",\n            \"Running\": false,\n            \"Paused\": false,\n            \"Restarting\": false,\n            \"OOMKilled\": false,\n            \"Dead\": false,\n            \"Pid\": 0,\n            \"ExitCode\": 0,\n            \"Error\": \"\",\n            \"StartedAt\": \"2026-10-19T18:05:01.725908745Z\",\n            \"FinishedAt\": \"2026-10-19T18:05:09.703685223Z\",\n            \"Health\": {\n                \"Status\": \"unhealthy\",\n                \"FailingStreak\": 0,\n                \"Log\": [\n                    {\n                        \"Start\": \"2026-10-19T18:04:57.381050904Z\",\n                        \"End\": \"2026-10-19T18:04:57.419786401Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"SERVING_ENGINE_BACKED\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:06.726785702Z\",\n                        \"End\": \"2026-10-19T18:05:06.760733938Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"SERVING_ENGINE_BACKED\\n\"\n                    },\n                    {\n                        \"Start\": \"2026-10-19T18:05:08.761649292Z\",\n                        \"End\": \"2026-10-19T18:05:08.79484701Z\",\n                        \"ExitCode\": 0,\n                        \"Output\": \"SERVING_ENGINE_BACKED\\n\"\n                    }\n                ]\n            }\n        },\n        \"Image\": \"sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06\",\n        \"ResolvConfPath\": \"/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/resolv.conf\",\n        \"HostnamePath\": \"/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/hostname\",\n        \"HostsPath\": \"/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/hosts\",\n        \"LogPath\": \"/var/lib/docker/containers/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d/642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d-json.log\",\n        \"Name\": \"/hello-image-review-correction-rust-1\",\n        \"RestartCount\": 0,\n        \"Driver\": \"overlayfs\",\n        \"Platform\": \"linux\",\n        \"MountLabel\": \"\",\n        \"ProcessLabel\": \"\",\n        \"AppArmorProfile\": \"docker-default\",\n        \"ExecIDs\": null,\n        \"HostConfig\": {\n            \"Binds\": null,\n            \"ContainerIDFile\": \"\",\n            \"LogConfig\": {\n                \"Type\": \"json-file\",\n                \"Config\": {}\n            },\n            \"NetworkMode\": \"hello-image-review-correction_private\",\n            \"PortBindings\": {},\n            \"RestartPolicy\": {\n                \"Name\": \"no\",\n                \"MaximumRetryCount\": 0\n            },\n            \"AutoRemove\": false,\n            \"VolumeDriver\": \"\",\n            \"VolumesFrom\": null,\n            \"ConsoleSize\": [\n                0,\n                0\n            ],\n            \"CapAdd\": null,\n            \"CapDrop\": null,\n            \"CgroupnsMode\": \"private\",\n            \"Dns\": null,\n            \"DnsOptions\": null,\n            \"DnsSearch\": null,\n            \"ExtraHosts\": [],\n            \"GroupAdd\": null,\n            \"IpcMode\": \"private\",\n            \"Cgroup\": \"\",\n            \"Links\": null,\n            \"OomScoreAdj\": 0,\n            \"PidMode\": \"\",\n            \"Privileged\": false,\n            \"PublishAllPorts\": false,\n            \"ReadonlyRootfs\": false,\n            \"SecurityOpt\": null,\n            \"UTSMode\": \"\",\n            \"UsernsMode\": \"\",\n            \"ShmSize\": 67108864,\n            \"Runtime\": \"runc\",\n            \"Isolation\": \"\",\n            \"CpuShares\": 0,\n            \"Memory\": 0,\n            \"NanoCpus\": 0,\n            \"CgroupParent\": \"\",\n            \"BlkioWeight\": 0,\n            \"BlkioWeightDevice\": null,\n            \"BlkioDeviceReadBps\": null,\n            \"BlkioDeviceWriteBps\": null,\n            \"BlkioDeviceReadIOps\": null,\n            \"BlkioDeviceWriteIOps\": null,\n            \"CpuPeriod\": 0,\n            \"CpuQuota\": 0,\n            \"CpuRealtimePeriod\": 0,\n            \"CpuRealtimeRuntime\": 0,\n            \"CpusetCpus\": \"\",\n            \"CpusetMems\": \"\",\n            \"Devices\": null,\n            \"DeviceCgroupRules\": null,\n            \"DeviceRequests\": null,\n            \"MemoryReservation\": 0,\n            \"MemorySwap\": 0,\n            \"MemorySwappiness\": null,\n            \"OomKillDisable\": null,\n            \"PidsLimit\": null,\n            \"Ulimits\": null,\n            \"CpuCount\": 0,\n            \"CpuPercent\": 0,\n            \"IOMaximumIOps\": 0,\n            \"IOMaximumBandwidth\": 0,\n            \"MaskedPaths\": [\n                \"/proc/acpi\",\n                \"/proc/asound\",\n                \"/proc/interrupts\",\n                \"/proc/kcore\",\n                \"/proc/keys\",\n                \"/proc/latency_stats\",\n                \"/proc/sched_debug\",\n                \"/proc/scsi\",\n                \"/proc/timer_list\",\n                \"/proc/timer_stats\",\n                \"/sys/devices/virtual/powercap\",\n                \"/sys/firmware\"\n            ],\n            \"ReadonlyPaths\": [\n                \"/proc/bus\",\n                \"/proc/fs\",\n                \"/proc/irq\",\n                \"/proc/sys\",\n                \"/proc/sysrq-trigger\"\n            ],\n            \"Init\": true\n        },\n        \"Storage\": {\n            \"RootFS\": {\n                \"Snapshot\": {\n                    \"Name\": \"overlayfs\"\n                }\n            }\n        },\n        \"Mounts\": [],\n        \"Config\": {\n            \"Hostname\": \"642f26c5c87c\",\n            \"Domainname\": \"\",\n            \"User\": \"\",\n            \"AttachStdin\": false,\n            \"AttachStdout\": true,\n            \"AttachStderr\": true,\n            \"Tty\": false,\n            \"OpenStdin\": false,\n            \"StdinOnce\": false,\n            \"Env\": [\n                \"RBT_NAME=hello-image-qualified\",\n                \"RBT_RUST_DATABASE_URL=http://database:20000\",\n                \"RBT_RUST_LISTEN_ADDR=0.0.0.0:9990\",\n                \"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\",\n                \"RBT_RUST_URL=http://127.0.0.1:9990\"\n            ],\n            \"Cmd\": null,\n            \"Healthcheck\": {\n                \"Test\": [\n                    \"CMD\",\n                    \"/usr/local/bin/hello-health\",\n                    \"health\"\n                ],\n                \"Interval\": 2000000000,\n                \"Timeout\": 4000000000,\n                \"StartPeriod\": 5000000000,\n                \"Retries\": 2\n            },\n            \"Image\": \"sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06\",\n            \"Volumes\": null,\n            \"WorkingDir\": \"\",\n            \"Entrypoint\": [\n                \"/usr/local/bin/hello\"\n            ],\n            \"Labels\": {\n                \"com.docker.compose.config-hash\": \"11f407bba9b4b392e079e27606f8ebda0de28eee4f922cfc1a2be05c9ec59325\",\n                \"com.docker.compose.container-number\": \"1\",\n                \"com.docker.compose.depends_on\": \"database:service_healthy:false\",\n                \"com.docker.compose.image\": \"sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d\",\n                \"com.docker.compose.oneoff\": \"False\",\n                \"com.docker.compose.project\": \"hello-image-review-correction\",\n                \"com.docker.compose.project.config_files\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml\",\n                \"com.docker.compose.project.working_dir\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image\",\n                \"com.docker.compose.service\": \"rust\",\n                \"com.docker.compose.version\": \"5.6.0\",\n                \"org.opencontainers.image.version\": \"24.04\"\n            },\n            \"StopTimeout\": 20\n        },\n        \"NetworkSettings\": {\n            \"SandboxID\": \"\",\n            \"SandboxKey\": \"\",\n            \"Ports\": {},\n            \"Networks\": {\n                \"hello-image-review-correction_private\": {\n                    \"IPAMConfig\": null,\n                    \"Links\": null,\n                    \"Aliases\": [\n                        \"hello-image-review-correction-rust-1\",\n                        \"rust\"\n                    ],\n                    \"DriverOpts\": null,\n                    \"GwPriority\": 0,\n                    \"NetworkID\": \"6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2\",\n                    \"EndpointID\": \"\",\n                    \"Gateway\": \"\",\n                    \"IPAddress\": \"\",\n                    \"MacAddress\": \"\",\n                    \"IPPrefixLen\": 0,\n                    \"IPv6Gateway\": \"\",\n                    \"GlobalIPv6Address\": \"\",\n                    \"GlobalIPv6PrefixLen\": 0,\n                    \"DNSNames\": [\n                        \"hello-image-review-correction-rust-1\",\n                        \"rust\",\n                        \"642f26c5c87c\"\n                    ]\n                }\n            }\n        },\n        \"ImageManifestDescriptor\": {\n            \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n            \"digest\": \"sha256:926d8bacb2b9c92d04ab5e16cd2bf4eaa70be789f75a08d808590a719bcf1f8d\",\n            \"size\": 1053,\n            \"platform\": {\n                \"architecture\": \"amd64\",\n                \"os\": \"linux\"\n            }\n        }\n    }\n]\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "logs",
+        "642f26c5c87cb0c2d1ca46ee52a293d81b47e57f486d3aadb96208f01c892b0d"
+      ],
+      "pid": 494711,
+      "exit": 0,
+      "output": "After initialization, the Hello messages are: [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]\nAfter initialization, the Hello messages are: [\"Welcome! This message was sent by a constructor.\", \"This message was sent after construction!\"]\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 494724,
+      "exit": 0,
+      "output": "[\n    {\n        \"Id\": \"04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3\",\n        \"Created\": \"2026-10-19T18:04:46.116489102Z\",\n        \"Path\": \"/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3\",\n        \"Args\": [\n            \"/usr/local/bin/python-entrypoint.py\"\n        ],\n        \"State\": {\n            \"Status\": \"exited\",\n            \"Running\": false,\n            \"Paused\": false,\n            \"Restarting\": false,\n            \"OOMKilled\": false,\n            \"Dead\": false,\n            \"Pid\": 0,\n            \"ExitCode\": 143,\n            \"Error\": \"\",\n            \"StartedAt\": \"2026-10-19T18:05:02.068708811Z\",\n            \"FinishedAt\": \"2026-10-19T18:05:10.985947696Z\"\n        },\n        \"Image\": \"sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194\",\n        \"ResolvConfPath\": \"/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/resolv.conf\",\n        \"HostnamePath\": \"/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/hostname\",\n        \"HostsPath\": \"/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/hosts\",\n        \"LogPath\": \"/var/lib/docker/containers/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3/04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3-json.log\",\n        \"Name\": \"/hello-image-review-correction-python-1\",\n        \"RestartCount\": 0,\n        \"Driver\": \"overlayfs\",\n        \"Platform\": \"linux\",\n        \"MountLabel\": \"\",\n        \"ProcessLabel\": \"\",\n        \"AppArmorProfile\": \"docker-default\",\n        \"ExecIDs\": null,\n        \"HostConfig\": {\n            \"Binds\": [\n                \"hello-image-review-correction_python-state:/state:rw\"\n            ],\n            \"ContainerIDFile\": \"\",\n            \"LogConfig\": {\n                \"Type\": \"json-file\",\n                \"Config\": {}\n            },\n            \"NetworkMode\": \"hello-image-review-correction_private\",\n            \"PortBindings\": {},\n            \"RestartPolicy\": {\n                \"Name\": \"no\",\n                \"MaximumRetryCount\": 0\n            },\n            \"AutoRemove\": false,\n            \"VolumeDriver\": \"\",\n            \"VolumesFrom\": null,\n            \"ConsoleSize\": [\n                0,\n                0\n            ],\n            \"CapAdd\": null,\n            \"CapDrop\": null,\n            \"CgroupnsMode\": \"private\",\n            \"Dns\": null,\n            \"DnsOptions\": null,\n            \"DnsSearch\": null,\n            \"ExtraHosts\": [],\n            \"GroupAdd\": null,\n            \"IpcMode\": \"private\",\n            \"Cgroup\": \"\",\n            \"Links\": null,\n            \"OomScoreAdj\": 0,\n            \"PidMode\": \"\",\n            \"Privileged\": false,\n            \"PublishAllPorts\": false,\n            \"ReadonlyRootfs\": false,\n            \"SecurityOpt\": null,\n            \"UTSMode\": \"\",\n            \"UsernsMode\": \"\",\n            \"ShmSize\": 67108864,\n            \"Runtime\": \"runc\",\n            \"Isolation\": \"\",\n            \"CpuShares\": 0,\n            \"Memory\": 0,\n            \"NanoCpus\": 0,\n            \"CgroupParent\": \"\",\n            \"BlkioWeight\": 0,\n            \"BlkioWeightDevice\": null,\n            \"BlkioDeviceReadBps\": null,\n            \"BlkioDeviceWriteBps\": null,\n            \"BlkioDeviceReadIOps\": null,\n            \"BlkioDeviceWriteIOps\": null,\n            \"CpuPeriod\": 0,\n            \"CpuQuota\": 0,\n            \"CpuRealtimePeriod\": 0,\n            \"CpuRealtimeRuntime\": 0,\n            \"CpusetCpus\": \"\",\n            \"CpusetMems\": \"\",\n            \"Devices\": null,\n            \"DeviceCgroupRules\": null,\n            \"DeviceRequests\": null,\n            \"MemoryReservation\": 0,\n            \"MemorySwap\": 0,\n            \"MemorySwappiness\": null,\n            \"OomKillDisable\": null,\n            \"PidsLimit\": null,\n            \"Ulimits\": null,\n            \"CpuCount\": 0,\n            \"CpuPercent\": 0,\n            \"IOMaximumIOps\": 0,\n            \"IOMaximumBandwidth\": 0,\n            \"MaskedPaths\": [\n                \"/proc/acpi\",\n                \"/proc/asound\",\n                \"/proc/interrupts\",\n                \"/proc/kcore\",\n                \"/proc/keys\",\n                \"/proc/latency_stats\",\n                \"/proc/sched_debug\",\n                \"/proc/scsi\",\n                \"/proc/timer_list\",\n                \"/proc/timer_stats\",\n                \"/sys/devices/virtual/powercap\",\n                \"/sys/firmware\"\n            ],\n            \"ReadonlyPaths\": [\n                \"/proc/bus\",\n                \"/proc/fs\",\n                \"/proc/irq\",\n                \"/proc/sys\",\n                \"/proc/sysrq-trigger\"\n            ],\n            \"Init\": true\n        },\n        \"Storage\": {\n            \"RootFS\": {\n                \"Snapshot\": {\n                    \"Name\": \"overlayfs\"\n                }\n            }\n        },\n        \"Mounts\": [\n            {\n                \"Type\": \"volume\",\n                \"Name\": \"hello-image-review-correction_python-state\",\n                \"Source\": \"/var/lib/docker/volumes/hello-image-review-correction_python-state/_data\",\n                \"Destination\": \"/state\",\n                \"Driver\": \"local\",\n                \"Mode\": \"rw\",\n                \"RW\": true,\n                \"Propagation\": \"\"\n            }\n        ],\n        \"Config\": {\n            \"Hostname\": \"04c4e5cae1d3\",\n            \"Domainname\": \"\",\n            \"User\": \"\",\n            \"AttachStdin\": false,\n            \"AttachStdout\": true,\n            \"AttachStderr\": true,\n            \"Tty\": false,\n            \"OpenStdin\": false,\n            \"StdinOnce\": false,\n            \"Env\": [\n                \"PATH=/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin\",\n                \"PYTHONPATH=/example/hello-constructors/backend/api\",\n                \"REBOOT_LOCAL_ENVOY_MODE=executable\"\n            ],\n            \"Cmd\": null,\n            \"Image\": \"sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194\",\n            \"Volumes\": null,\n            \"WorkingDir\": \"/example/hello-constructors\",\n            \"Entrypoint\": [\n                \"/opt/rbt.runfiles/python3_10_12_x86_64-unknown-linux-gnu/bin/python3\",\n                \"/usr/local/bin/python-entrypoint.py\"\n            ],\n            \"Labels\": {\n                \"com.docker.compose.config-hash\": \"75b6aa16663b792ad618a17fb4e89bec9cd53c0110cab961577e0d3d697c88ca\",\n                \"com.docker.compose.container-number\": \"1\",\n                \"com.docker.compose.depends_on\": \"\",\n                \"com.docker.compose.image\": \"sha256:47994f8d8011ff1b1038a6e423e37b2a5aa67d9085fd5abb78329f4b88e84a9f\",\n                \"com.docker.compose.oneoff\": \"False\",\n                \"com.docker.compose.project\": \"hello-image-review-correction\",\n                \"com.docker.compose.project.config_files\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image/compose.review-correction.yaml\",\n                \"com.docker.compose.project.working_dir\": \"/home/benchbuild/.cache/hello-image-review-src/reboot/rust/tests/fixtures/reboot_examples/hello-constructors/image\",\n                \"com.docker.compose.service\": \"python\",\n                \"com.docker.compose.version\": \"5.6.0\",\n                \"org.opencontainers.image.version\": \"24.04\"\n            },\n            \"StopTimeout\": 30\n        },\n        \"NetworkSettings\": {\n            \"SandboxID\": \"\",\n            \"SandboxKey\": \"\",\n            \"Ports\": {},\n            \"Networks\": {\n                \"hello-image-review-correction_private\": {\n                    \"IPAMConfig\": null,\n                    \"Links\": null,\n                    \"Aliases\": [\n                        \"hello-image-review-correction-python-1\",\n                        \"python\"\n                    ],\n                    \"DriverOpts\": null,\n                    \"GwPriority\": 0,\n                    \"NetworkID\": \"6489626d4cf66048432708150e0d0bb012cba1d8706d5548a4b43b905257c3d2\",\n                    \"EndpointID\": \"\",\n                    \"Gateway\": \"\",\n                    \"IPAddress\": \"\",\n                    \"MacAddress\": \"\",\n                    \"IPPrefixLen\": 0,\n                    \"IPv6Gateway\": \"\",\n                    \"GlobalIPv6Address\": \"\",\n                    \"GlobalIPv6PrefixLen\": 0,\n                    \"DNSNames\": [\n                        \"hello-image-review-correction-python-1\",\n                        \"python\",\n                        \"04c4e5cae1d3\"\n                    ]\n                }\n            }\n        },\n        \"ImageManifestDescriptor\": {\n            \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n            \"digest\": \"sha256:47994f8d8011ff1b1038a6e423e37b2a5aa67d9085fd5abb78329f4b88e84a9f\",\n            \"size\": 1623,\n            \"platform\": {\n                \"architecture\": \"amd64\",\n                \"os\": \"linux\"\n            }\n        }\n    }\n]\n"
+    },
+    {
+      "argv": [
+        "docker",
+        "logs",
+        "04c4e5cae1d3f91d2fe36a4c7b8a056e9276df16568f936c13ae0c3ad40e76b3"
+      ],
+      "pid": 494737,
+      "exit": 0,
+      "output": "Using .rbtrc (from .rbtrc) and working directory .\nINFO:root:\ud83d\udc4b Hello, World? Hello, Reboot! \ud83d\udc4b\nINFO:root:\ud83d\udc4b Hello, World? Hello, Reboot! \ud83d\udc4b\nAfter initialization, the Hello messages are: ['Welcome! This message was sent by a constructor.', 'This message was sent after construction!']\n2026-10-19 18:04:58,371 WARNING log:75: State 'shared-review-correction-feature' for state type 'hello_constructors.v1.Hello' not constructed (call any writer to construct). Will silence this message for the next 5 minutes.\n2026-10-19 18:04:58,374 WARNING state_managers:3675: State 'shared-review-correction-feature' for state type 'hello_constructors.v1.Hello' not constructed (must call a constructor to construct)\n2026-10-19 18:04:58,381 ERROR state_managers:3519: State 'shared-review-correction-feature' for state type 'hello_constructors.v1.Hello' already constructed\nUsing .rbtrc (from .rbtrc) and working directory .\nINFO:root:\ud83d\udc4b Hello, World? Hello, Reboot! \ud83d\udc4b\nINFO:root:\ud83d\udc4b Hello, World? Hello, Reboot! \ud83d\udc4b\nAfter initialization, the Hello messages are: ['Welcome! This message was sent by a constructor.', 'This message was sent after construction!']\n"
+    }
+  ],
+  "terminal": true,
+  "all_waits_joined": true
+}

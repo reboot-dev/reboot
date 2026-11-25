@@ -1,0 +1,99 @@
+{
+  "verify-parent.json": "{\n  \"parent_pid\": 3038057,\n  \"started\": \"2026-10-21T08:23:08.068043+00:00\",\n  \"child_waited\": true,\n  \"complete\": true,\n  \"deadline_seconds\": 600,\n  \"child_pid\": 3038058,\n  \"child_exit\": 0,\n  \"finished\": \"2026-10-21T08:24:40.591208+00:00\"\n}",
+  "verify.stdout.json": "{\n  \"complete\": true,\n  \"archive_sha256\": \"af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4\",\n  \"members\": 9806,\n  \"source_commit\": \"4e4bb8e33f62cfbead226a0484753c0576fb1110\",\n  \"frozen_inputs\": 501,\n  \"final_runtime_causal_RED\": 2,\n  \"restored_matrix_executions\": 55,\n  \"additional_opted_Commit_replay_executions\": 6,\n  \"final_native_case_executions\": 61,\n  \"final_driver_child_joins\": 1096,\n  \"SDK_pass_executions\": 996,\n  \"SDK_ignored\": 175,\n  \"automatic_original_startup_admission\": true,\n  \"known_native_Abort_membership_retirement\": true,\n  \"unknown_authority\": \"owned Pending\",\n  \"source_Abort_Task_bridge\": false\n}\n",
+  "verify-full-parent.json": "{\n  \"parent_pid\": 3042315,\n  \"started\": \"2026-10-21T08:26:24.093851+00:00\",\n  \"child_waited\": true,\n  \"complete\": false,\n  \"deadline_seconds\": 600,\n  \"child_pid\": 3042316,\n  \"child_exit\": 1,\n  \"finished\": \"2026-10-21T08:27:54.400452+00:00\"\n}",
+  "verify-full.stderr.log": "Traceback (most recent call last):\n  File \"/home/ladin/.cache/canonical-startup-owner-20261021-retained/verify_canonical_startup_archive_full.py\", line 184, in <module>\n    assert bool(retained['mode']&0o111)==value['executable']\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+  "verify-full2-parent.json": "{\n  \"parent_pid\": 3043585,\n  \"started\": \"2026-10-21T08:28:32.215415+00:00\",\n  \"child_waited\": true,\n  \"complete\": true,\n  \"deadline_seconds\": 600,\n  \"child_pid\": 3043586,\n  \"child_exit\": 0,\n  \"finished\": \"2026-10-21T08:30:06.375895+00:00\"\n}",
+  "verify-full2.stdout.json": "{\n  \"complete\": true,\n  \"reference_tests\": 2,\n  \"doctests\": 8,\n  \"generated_binding_inventories\": 7,\n  \"postflight_unique_absent_pids\": 1680,\n  \"postflight_four_locks_available\": true,\n  \"archive_sha256\": \"af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4\",\n  \"members\": 9806,\n  \"source_commit\": \"4e4bb8e33f62cfbead226a0484753c0576fb1110\",\n  \"frozen_inputs\": 501,\n  \"final_runtime_causal_RED\": 2,\n  \"restored_matrix_executions\": 55,\n  \"additional_opted_Commit_replay_executions\": 6,\n  \"final_native_case_executions\": 61,\n  \"final_driver_child_joins\": 1096,\n  \"SDK_pass_executions\": 996,\n  \"SDK_ignored\": 175,\n  \"automatic_original_startup_admission\": true,\n  \"known_native_Abort_membership_retirement\": true,\n  \"unknown_authority\": \"owned Pending\",\n  \"source_Abort_Task_bridge\": false\n}\n",
+  "verify-full2.stderr.log": "",
+  "pack-parent.json": "{\n  \"parent_pid\": 2547852,\n  \"child_waited\": true,\n  \"complete\": true,\n  \"started\": \"2026-10-21T08:14:06.463197+00:00\",\n  \"child_pid\": 2547853,\n  \"child_exit\": 0,\n  \"finished\": \"2026-10-21T08:19:25.676667+00:00\"\n}",
+  "source_commit": "4e4bb8e33f62cfbead226a0484753c0576fb1110",
+  "verifier_sha256": "f47deac2405961bc0d7f463ea49e7717aa34e4d904565b76d339b8023d7d4b24",
+  "absent_pids": {
+    "3038057": true,
+    "3038058": true,
+    "3042315": true,
+    "3042316": true,
+    "3043585": true,
+    "3043586": true
+  },
+  "pack_retirement": {
+    "parent": {
+      "parent_pid": 2547852,
+      "child_waited": true,
+      "complete": true,
+      "started": "2026-10-21T08:14:06.463197+00:00",
+      "child_pid": 2547853,
+      "child_exit": 0,
+      "finished": "2026-10-21T08:19:25.676667+00:00"
+    },
+    "pids": {
+      "2547852": false,
+      "2547853": false
+    },
+    "manifest": {
+      "archive": "/home/benchbuild/.cache/canonical-startup-owner-20261021-proof.tar.xz",
+      "archive_bytes": 1002551616,
+      "archive_sha256": "af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4",
+      "members": 9806,
+      "unique_full_byte_objects": 6247
+    }
+  },
+  "transfer": {
+    "parent_pid": 1777367,
+    "started": "2026-10-21T08:19:42.794885+00:00",
+    "children": [
+      {
+        "role": "source-ssh",
+        "pid": 1777371,
+        "waited": true,
+        "exit": 0
+      },
+      {
+        "role": "destination-ssh",
+        "pid": 1777372,
+        "waited": true,
+        "exit": 0
+      }
+    ],
+    "complete": true,
+    "expected_sha256": "af82cc8ab1f87755d5c69a62d8f118d8a081cd1b3c2165998a24e6838ba5a8a4",
+    "expected_bytes": 1002551616,
+    "finished": "2026-10-21T08:22:43.132883+00:00"
+  },
+  "prior_immutable_archives": [
+    {
+      "path": "/home/benchbuild/.cache/remote-authority-recovery-20261021.tar.gz",
+      "sha256": "9ca6647845053424b091f9f2bc5cdcbc2ed554435e57564920131f393148f75a",
+      "bytes": 618045372,
+      "unchanged": true
+    },
+    {
+      "path": "/home/benchbuild/.cache/original-root-intent-20261021-proof.tar.xz",
+      "sha256": "8ca98a121ca976c0e1a5e2ce38d4d363e76e6a99c90092fb8c30acefce14777e",
+      "bytes": 804033484,
+      "unchanged": true
+    },
+    {
+      "path": "/home/benchbuild/.cache/original-root-intent-20261021-final-causal-proof.tar.xz",
+      "sha256": "438e929548899a961989406dad9615dd670786a9433dcf95a4023cdcf6a5e843",
+      "bytes": 390833016,
+      "unchanged": true
+    }
+  ],
+  "actual_original_SSH_waits": {
+    "pack_proc_cf0866dd816a": 0,
+    "verify": 0,
+    "verify_full_failed_mode_inspector": 1,
+    "verify_full2": 0
+  },
+  "fresh_validator_postflight": {
+    "observed": "2026-10-21T08:31:11.513946+00:00",
+    "host": "jean-reboot-rust-validation-ccx43",
+    "boot_id": "bdc3e231-59dd-45ae-a5d7-59e7e9384078",
+    "frozen_source_inputs_verified": 501,
+    "unique_absent_pids": 1680,
+    "four_locks_available": true,
+    "available_bytes": 15432683520
+  }
+}

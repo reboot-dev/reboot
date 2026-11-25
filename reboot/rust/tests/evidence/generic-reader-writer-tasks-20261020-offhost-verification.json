@@ -1,0 +1,203 @@
+{
+  "all_original_children_retired": true,
+  "all_targets": {
+    "generated_consumer_passed": 55,
+    "library_ignored": 7,
+    "library_passed": 850,
+    "suite_results": [
+      [
+        "ok",
+        "850",
+        "0",
+        "7"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "22",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "130"
+      ],
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "4",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "8"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "55",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "3"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ]
+    ],
+    "total_ignored": 173,
+    "total_passed": 964
+  },
+  "archive_bytes": 6599744,
+  "archive_sha256": "4983676901d4e1b29f7a677c36ec544c6e9b2f6aae02a1872508bc5b5b4d62e8",
+  "archived_source_objects_verified": 701,
+  "large_executables_included": false,
+  "local_source_inputs_verified": 430,
+  "members_verified": 6174,
+  "native_cases": 61,
+  "native_cpp_reused": true,
+  "native_red_mutants": [
+    {
+      "name": "final-workflow-only-admission",
+      "native_red": true,
+      "single_source_difference": "reboot/rust/src/workflow_spawn.rs"
+    },
+    {
+      "name": "final-skip-writer-checkpoint",
+      "native_red": true,
+      "single_source_difference": "reboot/rust/src/runtime.rs"
+    }
+  ],
+  "original_native_child_waits": 1574,
+  "verified": true,
+  "verified_at": "2026-10-20T16:45:58.752380+00:00"
+}

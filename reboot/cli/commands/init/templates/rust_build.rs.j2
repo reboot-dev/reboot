@@ -1,0 +1,14 @@
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=../api");
+    reboot::build::compile_protos_with_runtime(
+{% if example == "secured-user" %}        &[
+            "../api/{{ name }}/v1/hello_world.proto",
+            "../api/{{ name }}/v1/user_workflows.proto",
+        ],
+{% else %}        &["../api/{{ name }}/v1/hello_world.proto"],
+{% endif %}        &["../api"],
+        "crate::proto",
+        "reboot",
+    )?;
+    Ok(())
+}

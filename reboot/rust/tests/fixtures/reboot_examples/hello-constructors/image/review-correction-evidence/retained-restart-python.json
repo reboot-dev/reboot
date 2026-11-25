@@ -1,0 +1,51 @@
+{
+  "endpoint": "localhost:9991",
+  "cases": {
+    "startup": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "Welcome! This message was sent by a constructor.",
+          "This message was sent after construction!"
+        ]
+      }
+    },
+    "messages": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    },
+    "create-replay": {
+      "ok": true,
+      "response": {}
+    },
+    "send-replay": {
+      "ok": true,
+      "response": {}
+    },
+    "after-replays": {
+      "ok": true,
+      "response": {
+        "messages": [
+          "first message",
+          "second message",
+          "",
+          "duplicate",
+          "duplicate",
+          "雪 🦀",
+          "  whitespace\n"
+        ]
+      }
+    }
+  },
+  "complete": true
+}

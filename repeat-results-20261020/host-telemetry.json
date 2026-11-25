@@ -1,0 +1,17 @@
+{
+  "samples": 9180,
+  "host_memory_PSI_some_avg10_max": 5.1,
+  "host_cpu_PSI_some_avg10_max": 47.48,
+  "host_memory_PSI_full_avg10_max": 3.07,
+  "host_oom_kill_counter_bounds": [
+    0,
+    0
+  ],
+  "stack_swap_bytes_max": 0,
+  "stack_oom_events_max": 0,
+  "service_names": [
+    "containerd.service",
+    "docker.service",
+    "ssh.service"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "verified": true,
+  "archive_sha256": "4c09ea1fe76ec96f82936c0f7092d56a79f3bf80537e7c6ff3afb404946d8da9",
+  "file_members": 4361,
+  "source_manifest_sha256": "0eae7460bc4e471c3a7534188879760e6f60c35cf928d07b7c23ede263981799",
+  "source_input_count": 715,
+  "native": {
+    "canonical": {
+      "cases": 6,
+      "original_child_waits": 111
+    },
+    "migration": {
+      "cases": 1,
+      "original_child_waits": 30
+    },
+    "lifecycle": {
+      "cases": 19,
+      "original_child_waits": 657
+    },
+    "spawn": {
+      "cases": 16,
+      "original_child_waits": 410
+    }
+  },
+  "native_cases": 42,
+  "original_native_waits": 1208,
+  "mutants_verified": 3,
+  "library_passed": 850,
+  "generated_consumer_passed": 55,
+  "ignored": 171
+}

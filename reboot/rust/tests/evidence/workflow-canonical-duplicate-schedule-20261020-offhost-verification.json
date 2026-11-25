@@ -1,0 +1,295 @@
+{
+  "all_targets": {
+    "generated_consumer_passed": 55,
+    "library_ignored": 7,
+    "library_passed": 850,
+    "suite_results": [
+      [
+        "ok",
+        "850",
+        "0",
+        "7"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "22",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "130"
+      ],
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "4",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "8"
+      ],
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "55",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "4"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "3"
+      ],
+      [
+        "ok",
+        "5",
+        "0",
+        "0"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "5"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "2"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ],
+      [
+        "ok",
+        "0",
+        "0",
+        "1"
+      ]
+    ],
+    "total_ignored": 171,
+    "total_passed": 964
+  },
+  "archive_sha256": "3ce19c9bf415bed2728e3c0860fc667c2eb17d896fe7c774b88415981359904f",
+  "cleanup_drills_verified": true,
+  "file_members": 4701,
+  "historical_prior_waits_verified": 1208,
+  "inventory_verified": true,
+  "large_executables_included": false,
+  "local_source_inputs_checked": 426,
+  "native": {
+    "canonical": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "concurrent",
+        "future-cancel",
+        "admission-auth",
+        "admission-ack-loss",
+        "schedule-empty-future",
+        "schedule-future-empty",
+        "schedule-empty-single",
+        "schedule-empty-repeated",
+        "schedule-future-repeated"
+      ],
+      "cases": 11,
+      "original_child_waits": 199
+    },
+    "lifecycle": {
+      "case_names": [
+        "success",
+        "declared-error",
+        "running-cancel",
+        "scheduled-cancel",
+        "rust-handle-cancel",
+        "cancel-revocation",
+        "wait-revocation",
+        "cancel-ack-loss",
+        "cancel-catch-replay",
+        "cancel-retains-effects",
+        "cancel-race",
+        "terminal-wrong-code",
+        "terminal-malformed-detail",
+        "terminal-rpc-cancelled",
+        "relative-schedule",
+        "relative-concurrent",
+        "relative-replay",
+        "relative-ack-loss",
+        "relative-cancel"
+      ],
+      "cases": 19,
+      "original_child_waits": 657
+    },
+    "migration": {
+      "case_names": [
+        "legacy-started-intent-to-canonical-application-rpc"
+      ],
+      "cases": 1,
+      "original_child_waits": 30
+    },
+    "spawn": {
+      "case_names": [
+        "target-contract",
+        "basic",
+        "direct-call",
+        "concurrent",
+        "declared-error",
+        "ack-crash",
+        "payload-reject",
+        "destination-reject",
+        "schedule-reject",
+        "authorization-reject",
+        "wait-authorization-reject",
+        "cancel",
+        "future-schedule",
+        "unknown-spawn",
+        "unknown-started",
+        "unknown-stored"
+      ],
+      "cases": 16,
+      "original_child_waits": 411
+    }
+  },
+  "native_case_total": 47,
+  "native_original_wait_total": 1297,
+  "old_source_matches_reviewed_commit": true,
+  "original_parents_verified": true,
+  "red": {
+    "schedule-empty-future": {
+      "complete": false,
+      "error": "AssertionError('last future schedule dispatched immediately')",
+      "waits": 9
+    },
+    "schedule-empty-repeated": {
+      "complete": true,
+      "error": null,
+      "waits": 19
+    },
+    "schedule-empty-single": {
+      "complete": true,
+      "error": null,
+      "waits": 19
+    },
+    "schedule-future-empty": {
+      "complete": false,
+      "error": "<_InactiveRpcError of RPC that terminated with:\n\tstatus = StatusCode.FAILED_PRECONDITION\n\tdetails = \"spawn key reused with changed task/payload/schedule/schema contract\"\n\tdebug_error_string = \"UNKNOWN:Error received from peer  {grpc_message:\"spawn key reused with changed task/payload/schedule/schema contract\", grpc_status:9, created_time:\"2026-10-20T15:22:05.774584881+00:00\"}\"\n>",
+      "waits": 10
+    },
+    "schedule-future-repeated": {
+      "complete": true,
+      "error": null,
+      "waits": 18
+    }
+  },
+  "red_to_greenfinal_differences": [
+    "source/reboot/rust/src/workflow_spawn.rs"
+  ],
+  "source_objects_verified": true,
+  "verified": true
+}

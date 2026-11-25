@@ -1,0 +1,289 @@
+{
+  "base": "1cd2758f4695943f2cf9adb98ba08822ff45cfda",
+  "scope": "bounded acyclic transitive same-host/same-Database generated reader composition",
+  "source_pins_archive_member": "final-source-sha256.json",
+  "matching_source_files": 354,
+  "source_check": {
+    "matching_files": 354,
+    "mismatches": []
+  },
+  "raw_archive": "transitive-readers-20261019.tar.gz",
+  "raw_archive_sha256": "8f7c461d6f86608d6dc38e2b7500b301bc8d12bc55ee802920c85f6ae3175cc7",
+  "remote_source": "/home/benchbuild/.cache/crossactor-transitive-src",
+  "remote_evidence": "/home/benchbuild/.cache/crossactor-transitive-evidence",
+  "native_final_receipt_member": "native-final-exact/receipt.json",
+  "native_receipt": {
+    "complete": true,
+    "children": [
+      {
+        "pid": 591804,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-reactive-app",
+          "info",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/server-info.pb"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/00-server-info.log",
+        "wait_returncode": 0,
+        "waited_by_parent": true,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "pid": 591821,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/.cache/hello-image-evidence/rust-context/database",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/rocksdb",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/server-info.pb",
+          "44631"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/01-database.log",
+        "wait_returncode": -9,
+        "waited_by_parent": true,
+        "log_sha256": "159c748eb34ebd0414e2940eeda3370f7f3b91d5d80184fce089a2d2bfe10365"
+      },
+      {
+        "pid": 591879,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-reactive-app",
+          "transitive-serve",
+          "http://127.0.0.1:44631",
+          "127.0.0.1:42711",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/shutdown-2",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/stats-2"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/02-host.log",
+        "wait_returncode": 0,
+        "waited_by_parent": true,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "pid": 591896,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-reactive-app",
+          "transitive-exercise",
+          "http://127.0.0.1:42711",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/stats-2"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/03-exercise.log",
+        "wait_returncode": 0,
+        "waited_by_parent": true,
+        "log_sha256": "717d912002113b080f0101e8977bfbb314fbe1b7bcea3e8bae2967a9c779ce60"
+      },
+      {
+        "pid": 591914,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/.cache/hello-image-evidence/rust-context/database",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/rocksdb",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/server-info.pb",
+          "44631"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/04-database.log",
+        "wait_returncode": -9,
+        "waited_by_parent": true,
+        "log_sha256": "159c748eb34ebd0414e2940eeda3370f7f3b91d5d80184fce089a2d2bfe10365"
+      },
+      {
+        "pid": 591971,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-reactive-app",
+          "transitive-serve",
+          "http://127.0.0.1:44631",
+          "127.0.0.1:42711",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/shutdown-5",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/stats-5"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/05-host.log",
+        "wait_returncode": 0,
+        "waited_by_parent": true,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "pid": 591988,
+        "parent_pid": 591802,
+        "args": [
+          "/home/benchbuild/reboot-rust/.cargo-target-acceptance/debug/generated-reactive-app",
+          "transitive-restart",
+          "http://127.0.0.1:42711",
+          "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/transitive-rocks-_1ff97b7/stats-5"
+        ],
+        "log": "/home/benchbuild/.cache/crossactor-transitive-evidence/native-final-exact/06-restart.log",
+        "wait_returncode": 0,
+        "waited_by_parent": true,
+        "log_sha256": "ca0f5e96fecfb1ea3c0ee433298cb9095c2f59a0a489b8e684b98f4ac61e8fb7"
+      }
+    ],
+    "binary_sha256": "42b94eea01d06f70062ece07090013ce09a8974514595ba4bd269ee3306f2ba5",
+    "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "scope": "same-host same-sidecar acyclic transitive readers; reconnect rebuilds watches",
+    "child_count": 7,
+    "all_children_joined": true
+  },
+  "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "1.99.1 (5f94df478 2026-08-27)",
+  "checks": {
+    "locked_all_targets": "PASS; all-targets-final.log; includes 822 library passed / 7 ignored and 55 protoc integration tests",
+    "all_targets_summary_rows": [
+      {
+        "passed": 822,
+        "failed": 0,
+        "ignored": 7
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 128
+      },
+      {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 8
+      },
+      {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 55,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 5
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 4
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 3
+      },
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 2
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 5
+      }
+    ],
+    "generated_native": "PASS; cargo test --locked --test reactive_native_restart generated_transitive_readers_track_leaf_writers_and_rebuild_after_restart -- --ignored --exact --nocapture; native-final-exact.log; 1 passed, 4 filtered",
+    "native_red": "EXPECTED FAIL; old target dispatch bypass reinstated read(), actual result 0 instead of 7; native-red/03-exercise.log; all direct children joined",
+    "strict_clippy": "BLOCKED by two unchanged workflow_at_most_once.rs collapsible_if warnings at 830 and 945; clippy.log",
+    "clippy_with_baseline_exception": "PASS; cargo clippy --locked --all-targets -- -D warnings -A clippy::collapsible_if; clippy-final.log"
+  },
+  "proven": [
+    "generated A -> B -> C typed reader dispatch",
+    "transitive dependency unchanged remains pending",
+    "relevant durable generated writer wakes root",
+    "unrelated and retired writer commits do not reevaluate root (handler counters)",
+    "unchanged-output durable commit suppressed",
+    "transitive error terminates stream and releases admission",
+    "disconnect while pending releases admission",
+    "ancestor cycle rejects",
+    "ordinary generated unary reader composes",
+    "both host and C++ Database restart against retained RocksDB; reconnect reconstructs dependencies and next leaf writer wakes"
+  ],
+  "unit_additions": [
+    "transitive_leaf_wakes_retirement_cycles_and_global_call_budget",
+    "transitive_diamond_is_not_a_cycle_and_capacity_is_root_wide"
+  ],
+  "limits": [
+    "8 unique dependency actors and 64 total dependency calls per evaluation",
+    "one trusted host, one exact Database endpoint; no distributed watch",
+    "no general WeakReference or WorkflowContext callable writer/effect integration",
+    "subscriptions are not durable; reconnect rebuild is not pending-wait recovery",
+    "no generic durable reactive retry wrapper, no atomic multi-actor snapshot",
+    "existing immutable C++ binary reused; no fresh C++ compilation/attestation",
+    "strict Clippy not green without the explicitly disclosed baseline lint exception",
+    "no registry push, deployment, provisioning or server retention extension"
+  ],
+  "database_provenance": {
+    "path": "/home/benchbuild/.cache/hello-image-evidence/rust-context/database",
+    "sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "prior_manifest": "/home/benchbuild/.cache/hello-image-evidence/rust-artifacts.json"
+  },
+  "qualification_runner_note": "qualification-owner.json is retained as failed (pre-existing strict Clippy failure); final-native receipts and final logs, not that aborted runner, certify this slice. The archive also retains intermediate proof runs and the explicit RED control; they are not substituted for the final exact-source run."
+}

@@ -1,0 +1,16 @@
+[package]
+name = "mixed-constructor-original-fixture"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[dev-dependencies]
+tempfile = "3"
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["build"] }
+[dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["test-support"] }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+uuid = { version = "1", features = ["v4"] }

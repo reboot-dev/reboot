@@ -1,0 +1,428 @@
+{
+  "source": "d3b0642d0cb9962c839cfb57ebfd33f2a3cca389",
+  "harness_checkpoint": "66a3a86e",
+  "python_example": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "reused_native_pin": "8574ccb0df9893274e69d1a19eca469dad56d779",
+  "image_ids": {
+    "/tiny-perf-2-rust-app": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "/tiny-perf-2-rust-engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "/tiny-perf-2-rust-config": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "/tiny-perf-2-python-app": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "/tiny-perf-1-python-app": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "/tiny-perf-1-rust-app": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "/tiny-perf-1-rust-engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "/tiny-perf-1-rust-config": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "/tiny-qualification-python-app": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "/tiny-qualification-rust-app": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "/tiny-qualification-rust-engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd",
+    "/tiny-qualification-rust-config": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4"
+  },
+  "interrupted_source_manifest": {
+    "tiny-runtime-results/perf-2-rust-reader.json": {
+      "bytes": 427749,
+      "sha256": "fdf19033577510340e6d61c09a1b59f61ea60cde1aaf4bc3e5252b0e49ae1ee1",
+      "mtime_ns": 1792486257157902342
+    },
+    "tiny-runtime-results/restart-python.log": {
+      "bytes": 1189,
+      "sha256": "d855273da34bb55465f2f8b52a2eabcedd585989ac842975e90793369885ebcc",
+      "mtime_ns": 1792484627235014427
+    },
+    "tiny-runtime-results/tiny-qualification-rust-engine-65.log": {
+      "bytes": 95,
+      "sha256": "eeba5a049b94ad2f70eafa60bcd92c6ebb1c9d01db08ec9a14d71816207a5473",
+      "mtime_ns": 1792484167592726976
+    },
+    "tiny-runtime-results/python-soak-3.json": {
+      "bytes": 398143,
+      "sha256": "2409d16a7288a722a4e8e1939dfe3afc9c22af8684cd286d4d9382370194e501",
+      "mtime_ns": 1792484930429440735
+    },
+    "tiny-runtime-results/tiny-perf-2-rust-config-270.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792486170036962234
+    },
+    "tiny-runtime-results/per-container-resources.jsonl": {
+      "bytes": 17453056,
+      "sha256": "76a7aa57d7520fc59bb0bc970b5befac1cbf35f4c7c6c32db3e72ae6147fab41",
+      "mtime_ns": 1792486340266774727
+    },
+    "tiny-runtime-results/clock-check-persistent.json": {
+      "bytes": 2231,
+      "sha256": "9b65018072d5d887ad6fc9a52e99247c28e663ed214a4ee3d4330968bb200d70",
+      "mtime_ns": 1792484447773929197
+    },
+    "tiny-runtime-results/perf-2-python-single_send.json": {
+      "bytes": 38196,
+      "sha256": "7752b1d82e2eef70a8388607d9abda6ba00650842bc80f1ef3fae2f530af4cdb",
+      "mtime_ns": 1792486026633413603
+    },
+    "tiny-runtime-results/qualification-rust-resources.jsonl": {
+      "bytes": 4763269,
+      "sha256": "1739a97934cf2546ed3f6ffcc4543e463ae56aa1c7a2a9132760f4a60c395423",
+      "mtime_ns": 1792484586653547478
+    },
+    "tiny-runtime-results/perf-1-python-many_send.json": {
+      "bytes": 82520,
+      "sha256": "63947cc366edb8b357bdd6e89ad52a8ca3a9d12a1b62ecbbeacc4f3c41fca431",
+      "mtime_ns": 1792485696110836036
+    },
+    "tiny-runtime-results/tiny-perf-2-python-app-242.log": {
+      "bytes": 293,
+      "sha256": "04e4a7e8d4fd588e4c6c3fb3dcb239fc74c3ea3229e8976c21a70f22643e6c7d",
+      "mtime_ns": 1792486140782646442
+    },
+    "tiny-runtime-results/restart-rust-ready.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792484171509768436
+    },
+    "tiny-runtime-results/perf-1-rust-restart-ready.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792485277583275712
+    },
+    "tiny-runtime-results/perf-2-rust-many_send.json": {
+      "bytes": 80234,
+      "sha256": "ec9613621853acbaf3d73e348041ac7d1af63182efd32166e60cb32ffac4dc5e",
+      "mtime_ns": 1792486297909341929
+    },
+    "tiny-runtime-results/perf-2-python-restart-ready.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792486153279781352
+    },
+    "tiny-runtime-results/tiny-qualification-python-app-109.log": {
+      "bytes": 829,
+      "sha256": "1b7cd7d2c43632615cf9259fa823c491dd13770779d495b912e1e0bdb1558657",
+      "mtime_ns": 1792484613440855974
+    },
+    "tiny-runtime-results/tiny-perf-1-python-app-212.log": {
+      "bytes": 293,
+      "sha256": "04e4a7e8d4fd588e4c6c3fb3dcb239fc74c3ea3229e8976c21a70f22643e6c7d",
+      "mtime_ns": 1792485945233533753
+    },
+    "tiny-runtime-results/perf-2-python-reader.json": {
+      "bytes": 427438,
+      "sha256": "f862a26abcafe48cc18bbee619c4d4b03e12484ae0eb887c5152b8a285d0e6d0",
+      "mtime_ns": 1792486019145332691
+    },
+    "tiny-runtime-results/perf-2-python-resources.jsonl": {
+      "bytes": 2188592,
+      "sha256": "d8a8e21c63f505cc9e8a8e3aa54d06cf3c9110411a3f0d5105a963c276d25686",
+      "mtime_ns": 1792486160356857746
+    },
+    "tiny-runtime-results/tiny-perf-2-python-app-258.log": {
+      "bytes": 586,
+      "sha256": "86b898227b409ced1f5458354270cb4182a516120a02fdf96db148f776563290",
+      "mtime_ns": 1792486160491859204
+    },
+    "tiny-runtime-results/correctness-rust.log": {
+      "bytes": 6116,
+      "sha256": "ba19337d142698046b278d428c0ca38bbc16f2287a3623484cbd2fd23a73afd4",
+      "mtime_ns": 1792484161898666708
+    },
+    "tiny-runtime-results/tiny-qualification-rust-app-61.log": {
+      "bytes": 144,
+      "sha256": "37d5b8fe28b945a3cb014e7e133839fe635b55b51efe02d106b96a81e951a8af",
+      "mtime_ns": 1792484164782697234
+    },
+    "tiny-runtime-results/rust-soak-3.json": {
+      "bytes": 409504,
+      "sha256": "1b99783ad43de8d1b5ec9719a688584d77fab4579a68175089061ebe5750f2fb",
+      "mtime_ns": 1792484581027482549
+    },
+    "tiny-runtime-results/rust-soak-2.json": {
+      "bytes": 427740,
+      "sha256": "a97bd612fb04bcd738d54dcf1a8f721353eaff0223bbe42fe35f5df74415337f",
+      "mtime_ns": 1792484449976955143
+    },
+    "tiny-runtime-results/python-soak-0.json": {
+      "bytes": 427439,
+      "sha256": "6dfb6007f102af37eb42076fed38ea8714d37048d93f95d0b2f0241ec6c051e5",
+      "mtime_ns": 1792484690117733476
+    },
+    "tiny-runtime-results/tiny-perf-1-rust-engine-170.log": {
+      "bytes": 95,
+      "sha256": "eeba5a049b94ad2f70eafa60bcd92c6ebb1c9d01db08ec9a14d71816207a5473",
+      "mtime_ns": 1792485273601232066
+    },
+    "tiny-runtime-results/perf-2-rust-single_send.json": {
+      "bytes": 39366,
+      "sha256": "120fd567b45b9946463779497d3358d680dfad9d96b1ccbe2062ff564018f0b7",
+      "mtime_ns": 1792486271037052067
+    },
+    "tiny-runtime-results/perf-1-python-reader.json": {
+      "bytes": 427586,
+      "sha256": "f81fe2bc2993f9485bfd21171cb74ccda86e196dd456497a2236006316cbbb9f",
+      "mtime_ns": 1792485374001330734
+    },
+    "tiny-runtime-results/python-soak-1.json": {
+      "bytes": 398131,
+      "sha256": "ccebfd001781b778575f274ee07ceef38777566ba8d3356d8bab92ed137699cb",
+      "mtime_ns": 1792484781669771714
+    },
+    "tiny-runtime-results/perf-1-rust-many_send.json": {
+      "bytes": 80260,
+      "sha256": "bdbcba3f37e790ef8773e9fb444959a9a9affe6e48115ade129478edd9a726e9",
+      "mtime_ns": 1792485130532659336
+    },
+    "tiny-runtime-results/tiny-qualification-rust-engine-84.log": {
+      "bytes": 190,
+      "sha256": "2651dea25b48b16a85ba5f7229d54dbc95705221d70f44ab2fdb7bbbd76e9e64",
+      "mtime_ns": 1792484586796549128
+    },
+    "tiny-runtime-results/perf-1-rust-reader.json": {
+      "bytes": 427765,
+      "sha256": "13dc8a428fb5c7699d58192109734eb4eb516737e970259c9838797153111139",
+      "mtime_ns": 1792485090076212775
+    },
+    "tiny-runtime-results/tiny-qualification-python-app-131.log": {
+      "bytes": 1122,
+      "sha256": "e994aa7dece422a0f3095d4642f066155f77dab857b35f318a8f7ecdaa5c6e22",
+      "mtime_ns": 1792484994324152009
+    },
+    "tiny-runtime-results/perf-2-python-many_send.json": {
+      "bytes": 77723,
+      "sha256": "603746b0e2efbb1a1e98344f46805ab1707533402a7cae9725f107654a7ef5c2",
+      "mtime_ns": 1792486041752576956
+    },
+    "tiny-runtime-results/correctness-python.log": {
+      "bytes": 6116,
+      "sha256": "983bca53962dc12754715dc7f85a9025d2d4e41afcded47176d3c304ffdfdfa7",
+      "mtime_ns": 1792484608963804488
+    },
+    "tiny-runtime-results/tiny-qualification-rust-app-80.log": {
+      "bytes": 288,
+      "sha256": "391f9e9b407fb3ed01fec3530c78a6e60c1ab8c770c5de4f1d138a9c33e93a64",
+      "mtime_ns": 1792484583927516024
+    },
+    "tiny-runtime-results/perf-2-rust-resources.jsonl": {
+      "bytes": 1818624,
+      "sha256": "e210e0c83c35e169e83251e315c0d4680c712ab3d272f89a4c9928b1e965d9e6",
+      "mtime_ns": 1792486340183773969
+    },
+    "tiny-runtime-results/qualification-python-resources.jsonl": {
+      "bytes": 4167594,
+      "sha256": "e12b47673b24a2d3424be3b33ae6c15b14cb037afe7b7a6e58d6c397899e98b6",
+      "mtime_ns": 1792484994184150454
+    },
+    "tiny-runtime-results/tiny-perf-1-rust-engine-184.log": {
+      "bytes": 190,
+      "sha256": "2651dea25b48b16a85ba5f7229d54dbc95705221d70f44ab2fdb7bbbd76e9e64",
+      "mtime_ns": 1792485287696386532
+    },
+    "tiny-runtime-results/perf-1-rust-replay.json": {
+      "bytes": 409777,
+      "sha256": "0bb7455947930e8e6bf14bcae47e989475396d12b693fb19a6c3756cb9eeeb64",
+      "mtime_ns": 1792485262565111068
+    },
+    "tiny-runtime-results/owner.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792486431832621848
+    },
+    "tiny-runtime-results/perf-2-python-replay.json": {
+      "bytes": 398165,
+      "sha256": "5da1851b0f847ec167cb72fc0afa9d6e9cc45de911d597ebe1203155ae9acbf4",
+      "mtime_ns": 1792486133331566000
+    },
+    "tiny-runtime-results/boot-python.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792484607067782675
+    },
+    "tiny-runtime-results/rust-soak-1.json": {
+      "bytes": 409675,
+      "sha256": "092d34912cd73d22cb3750d246341c0349bee3120b722ecc6659d5eca0343d49",
+      "mtime_ns": 1792484380180128227
+    },
+    "tiny-runtime-results/perf-2-rust-boot.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792486181677087869
+    },
+    "tiny-runtime-results/tiny-perf-1-rust-app-166.log": {
+      "bytes": 144,
+      "sha256": "37d5b8fe28b945a3cb014e7e133839fe635b55b51efe02d106b96a81e951a8af",
+      "mtime_ns": 1792485270616199343
+    },
+    "tiny-runtime-results/tiny-perf-1-rust-app-180.log": {
+      "bytes": 288,
+      "sha256": "391f9e9b407fb3ed01fec3530c78a6e60c1ab8c770c5de4f1d138a9c33e93a64",
+      "mtime_ns": 1792485284713353848
+    },
+    "tiny-runtime-results/perf-2-python-boot.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792485966546764191
+    },
+    "tiny-runtime-results/perf-1-rust-resources.jsonl": {
+      "bytes": 2989801,
+      "sha256": "1177a3b2c8df4fe567c8fc4f3f5503366a3f0ccd6cc9ae6f6e4417c79920443d",
+      "mtime_ns": 1792485287754387168
+    },
+    "tiny-runtime-results/client-exec-events.jsonl": {
+      "bytes": 104523,
+      "sha256": "4846ce857e9656928c5329cc0e4d98cd969866e80ea83dd3ca932abf88c7ac64",
+      "mtime_ns": 1792486429684601749
+    },
+    "tiny-runtime-results/python-soak-2.json": {
+      "bytes": 427409,
+      "sha256": "4a7f7978fc2b02de5e557c8ee2a1561a832e6082ab52034d3cd51efbd4a0736e",
+      "mtime_ns": 1792484839080418223
+    },
+    "tiny-runtime-results/python-soak-4.json": {
+      "bytes": 427436,
+      "sha256": "37346c38379c819206074ec7dab1f0c10639539538efa16f96734456aaca37d3",
+      "mtime_ns": 1792484989491098310
+    },
+    "tiny-runtime-results/perf-1-python-resources.jsonl": {
+      "bytes": 6249222,
+      "sha256": "1058a02ce0924cf3160fbecf48cae6bb6ad9abbd04b637697488dbe8d18f497c",
+      "mtime_ns": 1792485945136532704
+    },
+    "tiny-runtime-results/perf-1-python-single_send.json": {
+      "bytes": 40683,
+      "sha256": "84aae17ded1e340bef26f949122dcfb7ca2b2b9d9edea621016f3ee90b148019",
+      "mtime_ns": 1792485516481884365
+    },
+    "tiny-runtime-results/restart-python-ready.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792484626381004625
+    },
+    "tiny-runtime-results/rust-soak-0.json": {
+      "bytes": 427762,
+      "sha256": "bf8444c1533f3697669797c16096ea5c9a841696c4fd5c791ae351e71fce59c4",
+      "mtime_ns": 1792484248354581774
+    },
+    "tiny-runtime-results/tiny-qualification-rust-config-20.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792484126759294769
+    },
+    "tiny-runtime-results/perf-1-rust-boot.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792485014645377620
+    },
+    "tiny-runtime-results/restart-rust.log": {
+      "bytes": 1189,
+      "sha256": "d855273da34bb55465f2f8b52a2eabcedd585989ac842975e90793369885ebcc",
+      "mtime_ns": 1792484172426778142
+    },
+    "tiny-runtime-results/perf-1-rust-single_send.json": {
+      "bytes": 39330,
+      "sha256": "9ca66fb504c694fd5c896fdf78c8ceadb6cef92499704f40b677ea10c6f505a9",
+      "mtime_ns": 1792485103802364386
+    },
+    "tiny-runtime-results/tiny-perf-1-rust-config-143.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792485003256251210
+    },
+    "tiny-runtime-results/ingress-correction.json": {
+      "bytes": 1040,
+      "sha256": "9aafcfada64de35afd0fd2f490abfc67b394cce61122ff9cac584bd7ae339657",
+      "mtime_ns": 1792486178675055468
+    },
+    "tiny-runtime-results/clock-check.json": {
+      "bytes": 391,
+      "sha256": "9ce05bda30f897d957d234eee75414b509d6e744b2302c75f263d8db810f9b9c",
+      "mtime_ns": 1792484436058791064
+    },
+    "tiny-runtime-results/perf-1-python-boot.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792485308637615882
+    },
+    "tiny-runtime-results/boot-rust.log": {
+      "bytes": 373,
+      "sha256": "3efbe915501768ca8356fbf45e656685e76360f3fd73e24361124d8f2999bd2b",
+      "mtime_ns": 1792484159988646491
+    },
+    "tiny_report.py": {
+      "bytes": 10101,
+      "sha256": "52a47c45292faa690fdd0850198c74a119b69e09f0ab40b3c5ddef943fb2a889",
+      "mtime_ns": 1792486265765995206
+    },
+    "tiny_client_wait.py": {
+      "bytes": 773,
+      "sha256": "a0f5396adfef8233291cdec82861c5fa858c15ef981635033d916e918ab99d46",
+      "mtime_ns": 1792484703076881030
+    },
+    "tiny_perf_retry.py": {
+      "bytes": 4100,
+      "sha256": "460f0702e48038fb9536a1d446859e6265c7062592a3a72b03a22c7265a24c38",
+      "mtime_ns": 1792486211053404896
+    },
+    "tiny_runtime.py": {
+      "bytes": 11461,
+      "sha256": "7a7fbf16c40e6cc7d47e8d1dc3d777dfffe938958eea8beb7d2f1141ef440f9a",
+      "mtime_ns": 1792484097428984309
+    },
+    "tiny_client_events.py": {
+      "bytes": 690,
+      "sha256": "9a3e0f2572a8d615bd9a63017fb1429f8470fa66231e489d0e073cd2a3f4ee07",
+      "mtime_ns": 1792484263772744958
+    },
+    "tiny_resources.py": {
+      "bytes": 1427,
+      "sha256": "722bedf4d025c67338aa014b98ef50e7f1dfc43d92446a7583cdd58d66268adb",
+      "mtime_ns": 1792484245804554785
+    },
+    "tiny_analyze.py": {
+      "bytes": 5536,
+      "sha256": "df342748f68a1fb45d24c701b4842b76fc393cb3ce213493875c614095c581c3",
+      "mtime_ns": 1792486242171740662
+    },
+    "tiny_ingress.py": {
+      "bytes": 1486,
+      "sha256": "4e965ceb4a84baceace4ef47d9b58b28f927e2a1c13eebe8d0da7efed719d729",
+      "mtime_ns": 1792484185820919911
+    },
+    "tiny_cleanup.py": {
+      "bytes": 2655,
+      "sha256": "b2101e652830441254e3907aedf93590ad4e85e66fd74236e16b369101c20512",
+      "mtime_ns": 1792485315377689665
+    },
+    "tiny_lower.py": {
+      "bytes": 4509,
+      "sha256": "2bf2caf014e144ae2e6d136f7b2ee114786af498f45bf51a304d9a9668d5c62b",
+      "mtime_ns": 1792484936744511169
+    },
+    "tiny_recover.py": {
+      "bytes": 3873,
+      "sha256": "6414bd7216b384cfeceb136fd97ba5f7eb597e98ddf3544ae4ea86cb4d51b84b",
+      "mtime_ns": 1792486960112792467
+    },
+    "tiny-ingress.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792484189567959571
+    },
+    "tiny-runtime-owner.log": {
+      "bytes": 4096,
+      "sha256": "aac6d9834ec3ffd5100656efaafa9d0922cae41b71a3c01df3e562ffadb5d808",
+      "mtime_ns": 1792486431834621867
+    },
+    "tiny-client-wait.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792484707231928296
+    },
+    "tiny-client-events.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792484267573785187
+    },
+    "tiny-resources.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mtime_ns": 1792484249849597597
+    }
+  },
+  "durable_directory": "omarchy-jean:/home/ladin/.cache/hermes-reboot-parity/tiny-20261020/"
+}

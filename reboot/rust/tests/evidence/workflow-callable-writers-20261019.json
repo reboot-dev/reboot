@@ -1,0 +1,209 @@
+{
+  "base": "3a28ea862cb869601d23a0980942fa4f9cb74067",
+  "scope": "generated fixed-channel ordinary writer references from dispatcher workflows; independently committed target calls",
+  "remote_source": "/home/benchbuild/.cache/crosswriter-src",
+  "remote_evidence": "/home/benchbuild/.cache/crosswriter-evidence/suite-final",
+  "raw_archive": "workflow-callable-writers-20261019.tar.gz",
+  "raw_archive_sha256": "8a08cf228002ed4b9ac7d86e6395a6085e33115dece0029218ee4d78e25d1812",
+  "raw_archive_files": 1131,
+  "source_pins_archive_member": "final-source-sha256.json",
+  "source_check": {
+    "matching_files": 383,
+    "mismatches": []
+  },
+  "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "1.99.1 (5f94df478 2026-08-27)",
+  "checks": {
+    "qualification_complete": true,
+    "outer_children": 6,
+    "library": {
+      "passed": 827,
+      "failed": 0,
+      "ignored": 7
+    },
+    "native": {
+      "complete": true,
+      "cases": [
+        "ack-crash",
+        "payload-reject",
+        "destination-reject",
+        "authorization-reject",
+        "local-retry",
+        "handler-error",
+        "cancel"
+      ],
+      "children": 105,
+      "all_children_joined": true,
+      "binary_sha256": "92513ae167dae0129efa6f9f53ef7809f1c0855e16a7fd4ed7759c610705b774",
+      "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803"
+    },
+    "red": {
+      "expected_failure": true,
+      "children": 13,
+      "all_children_joined": true,
+      "observed_wait": [
+        "{\"first\":14,\"second\":0}"
+      ]
+    },
+    "source_check": {
+      "matching_files": 383,
+      "mismatches": []
+    },
+    "lease_reacquired_after_retirement": true
+  },
+  "all_targets_summary_rows": [
+    {
+      "passed": 827,
+      "failed": 0,
+      "ignored": 7
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 22,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 128
+    },
+    {
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 8
+    },
+    {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 5
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 4
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 3
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 2
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 5
+    },
+    {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1
+    }
+  ],
+  "native_receipt_archive_member": "suite-final/native-final/receipt.json",
+  "negative_control": "Replace only target metadata receipt key with a fresh UUID each dispatch: native replay returns first=14 instead of 7; expected gate failure; production source restored before GREEN.",
+  "native_binary_provenance": {
+    "path": "/home/benchbuild/.cache/hello-image-evidence/rust-context/database",
+    "sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "matches_prior_committed_evidence": "transitive-readers-20261019.json:native_receipt.database_sha256",
+    "fresh_cpp_compile": false
+  },
+  "review": {
+    "archive_member": "independent-review.txt",
+    "sha256": "c19641698b969135ee98a1e9992f7ff0c3686cfb51712afa15f9e0c5d1172c93",
+    "verdict": "No correctness bugs found in the bounded path; ignored-native-gate evidence gap subsequently closed by executed GREEN gate.",
+    "method": "Independent read-only Hermes process; no Cargo or SSH by reviewer; subsequent changes only fixture lint-boundary annotations, extra source Stored-ACK test and whitespace."
+  },
+  "limits": [
+    "Not atomic multi-actor transactions, distributed ownership/fencing, scheduling/spawn, migration or automatic placement/routing.",
+    "Generated target references exclude constructors and services containing workflow/transaction methods. Canonical cursor calls explicitly reject because outbound receipt GC is unsupported.",
+    "Host explicitly supplies fixed channel/application caller and outbound credential; no trusted internal-call bypass or inherited user auth. Application identity on ingress remains server owned.",
+    "Target ordinary receipts are non-workflow-scoped; native proof covers retained native/host restart after acknowledged target write. Native lost-Store-ACK/distributed-fencing qualification is not claimed.",
+    "Unknown source/target Store outcomes are tested with private fake-transport futures; these are not C++ fault-injection evidence. Declared target errors are not memoized business-error checkpoints.",
+    "Legacy native ignored suites remain ignored in all-targets; the new explicit native gate executes one test with seven cases."
+  ],
+  "issues": [
+    "Initial native harness did not recognize typed StateNotConstructed readiness and its cleanup receipt loop removed process handles too early. Fixed; failed native1 has no complete custody receipt and is NOT qualification. Final GREEN has 105 original children waited by their parent; RED has 13.",
+    "A partial negative-control harness expected a listener even when recovered intent rejection failed before listen; corrected to expect supervised startup failure.",
+    "First generated strict Clippy found only result_large_err ABI warnings; fixture generated-module and two required callback boundaries now explicitly allow that established rich-Status ABI. SDK strict Clippy passes with the two pre-existing collapsible_if warnings corrected separately.",
+    "Standalone Codex and Claude review CLIs lacked usable login; independent review completed through a separate Hermes process instead."
+  ]
+}

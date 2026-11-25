@@ -1,0 +1,31 @@
+syntax = "proto3";
+package cursor.v1;
+import "rbt/v1alpha1/options.proto";
+message A { option (rbt.v1alpha1.state) = { implements: ["cursor.v1.AMethods"] }; uint64 consumed = 1; uint64 concurrent = 2; uint64 after = 3; }
+message B { option (rbt.v1alpha1.state) = { implements: ["cursor.v1.BMethods"] }; uint64 commits = 1; }
+message Empty {}
+message RunRequest { uint64 iterations = 1; }
+message Handle { bytes id = 1; }
+message EffectRequest { uint64 iteration = 1; }
+message EffectReply { uint64 ordinal = 1; uint64 iteration = 2; string proof = 3; }
+message Value { uint64 value = 1; }
+message Result { uint64 cursor = 1; uint64 ordinal = 2; string proof = 3; }
+// Fixture-owned canonical outbound identity; endpoint deliberately excluded.
+message CallContract { string state_type = 1; string state_ref = 2; string method = 3; bytes request = 4; }
+service AMethods {
+ option (rbt.v1alpha1.service) = { state: "cursor.v1.A" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc ReadState(Empty) returns (A) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc Concurrent(Empty) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc Consume(EffectReply) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc After(Empty) returns (Value) { option (rbt.v1alpha1.method).writer = {}; }
+ rpc StartRun(RunRequest) returns (Handle) { option (rbt.v1alpha1.method).writer = {}; }
+ // Cursor declaration belongs to generated registration, NOT a made-up proto option.
+ rpc Run(RunRequest) returns (Result) { option (rbt.v1alpha1.method).workflow = {}; }
+}
+service BMethods {
+ option (rbt.v1alpha1.service) = { state: "cursor.v1.B" };
+ rpc Create(Empty) returns (Empty) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc ReadState(Empty) returns (B) { option (rbt.v1alpha1.method).reader = {}; }
+ rpc Effect(EffectRequest) returns (EffectReply) { option (rbt.v1alpha1.method).writer = {}; }
+}

@@ -1,0 +1,360 @@
+# Approval-gated batch ledger
+
+Cargo-native Rust local application: one ledger, one transactional SortedMap,
+one workflow owner and canonical typed Tasks.Wait. Direct gRPC only; trusted
+single-server development network, not production or mixed-language placement.
+
+```sh
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database --port=12991
+# separate terminal:
+export RBT_RUST_URL=http://127.0.0.1:12991
+cargo run --manifest-path backend/Cargo.toml --bin client -- create
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit batch-001 3 11111111-1111-4111-8111-111111111111
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 0
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 1
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-001 2
+cargo run --manifest-path backend/Cargo.toml --bin client -- wait RETURNED_UUID 5000
+cargo run --manifest-path backend/Cargo.toml --bin client -- history batch-001
+```
+
+Submit keys replay the same task handle; only one active batch is accepted.
+Optional final submit argument is a future UTC Unix timestamp. Counts are 1..100,
+batch names bounded ASCII alphanumeric/hyphen. Approvals must arrive in order.
+Each approval commits ledger state and index entry in one fresh exclusive root;
+`approve-invalid` catches an invalid map range but still aborts the whole root.
+Workflow steps use finite `batch-v1` iterations, saved pure reader observations,
+and named writer checkpoints. No actor lease is held while awaiting approval.
+`read`/`watch` show batch, count, approved, completed and submissions. Handler
+entries in the normal host log make replay vs remutation inspectable.
+
+The host creates the empty map before public readiness; public `create` then
+constructs the Ledger separately. These are not an atomic two-actor constructor.
+A crash leaving only the empty map is repaired by stable constructor replay.
+
+## Declared business rejection
+
+`submit-rejecting batch count KEY NOT_BEFORE reject_after` schedules the same
+workflow but declares `BatchRejected` after that approved checkpoint. For example:
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit-rejecting batch-rejected 2 44444444-4444-4444-8444-444444444444 0 1
+cargo run --manifest-path backend/Cargo.toml --bin client -- approve batch-rejected 0
+cargo run --manifest-path backend/Cargo.toml --bin client -- wait RETURNED_UUID 5000
+```
+
+Wait prints `REJECTED batch-rejected 1 rejected after acknowledged checkpoint`.
+The typed declared error is a canonical durable terminal, not a transport retry.
+The approved map entry and acknowledged checkpoint remain committed; workflow
+business rejection is not a rollback of previous steps. Further approvals for
+the rejected batch are refused, and a new batch may be submitted. RocksDB restart
+returns the same typed error without rerunning the rejected body. The generated
+handler/Wait error enum distinguishes `BatchRejected` from `Grpc` transport errors;
+an arbitrary rich gRPC status does not mint a declared business-terminal receipt.
+Public `Checkpoint` RPCs are denied: only dispatcher-owned workflow steps may
+advance progress or mark rejection. Only the workflow method declares errors here; declared reader/writer errors in
+the same workflow service remain unsupported.
+
+
+## Atomic transfer between two collections
+
+`client archive batch-001:0000` moves an acknowledged approval entry from the
+`approvals` canonical SortedMap into a separately constructed
+`archived-approvals` SortedMap, atomically with the app's cumulative `archived`
+counter. The RPC returns key/value byte length/counter. Present-empty bytes are
+an existing value and transfer normally; absent source or occupied destination
+returns typed `ArchiveRejected`, never a false success or overwrite.
+`client history batch-001` and `client archive-history batch-001` read each map
+through public typed app transactions. Keys retain the existing map constraints.
+
+`client archive-invalid KEY` deliberately catches a declared invalid range after
+both map overlays and the tentative counter changed. The whole root must abort:
+source removal, destination insertion and counter all roll back. The native
+acceptance inspects exact canonical app/map/task/replay records and then verifies
+committed transfer plus another transfer after full host/Database restart.
+The original completed workflow terminal/checkpoints do not change when the
+current app state and collection contents change.
+
+This is a serial handler-awaited fresh exclusive app root with two DISTINCT
+same-host map actors; both maps restore ownership before coordinator/task
+recovery and readiness. Serial reopening of the same map under this exact root reuses its native
+participant. This is not nested/reusable sibling transaction paths, a public/network builtin adapter or distributed placement. Automatic
+root idempotency remains disabled for direct-map calls; duplicate transfer
+returns source-absent rejection. No status retries or external exactly-once
+claim. This acceptance is not a new multi-map lost-ACK/crash-at-Prepare proof.
+
+## Typed workflow-service reader
+
+`work-read batch-001` subscribes once to `Work.ObserveBatch`; `work-unary batch-001`
+uses the ordinary reader RPC. `work-mismatch other` returns method-declared
+`BatchMismatch` rather than treating a business error as a transport failure.
+`watch-work-reconnect` keeps one typed reader client across explicit reconnect,
+regeneration and restart; no automatic status retry or durable resume is implied.
+
+The workflow's saved approval observation uses `observe_batch_until`; successful
+observations retain existing named replay semantics. A failed observation still
+fails/fences the workflow attempt: this is not a saved catchable error decision,
+writer-step business-error support or broader workflow error recovery. Changing
+saved-step method/request identity for an existing workflow requires a separate
+migration; incompatible persisted replay fails closed rather than silently changing
+its meaning.
+
+## Catching a saved writer decision
+
+`submit-step-reject step-reject 2 <UUIDv4-key>` selects a workflow which deliberately
+tries a rejected `TryCheckpoint` at index zero. Approve index zero normally; the
+writer's tentative counter/rejected-state changes are discarded, while its typed
+`StepRejected` decision is stored at the named step. The body catches that decision,
+executes its ordinary checkpoint and parks for index one. Restart and approve index
+one: the same error replays without rerunning the rejected writer, then canonical
+Wait returns success. Ordinary Checkpoint and TryCheckpoint RPCs cannot bypass the
+private workflow authority.
+
+This is a bounded Rust named-step decision contract, not a claim that Python
+implicitly persists aborted writer RPCs. Saved errors require the exact declared
+method/type and an otherwise-clean serial attempt; malformed/foreign errors,
+framework `Grpc` failures, dropped work and uncertain Store remain fatal. There is
+no status-code retry, external-effect exactly-once, cross-actor error recovery or
+constructor-error expansion. Ordinary public scheduling-writer errors are transport
+responses, not this private saved-decision path.
+
+## Inspect pending tasks
+
+Listing is disabled unless the host receives a nonempty
+`RBT_RUST_TASK_ADMIN_TOKEN`. For this isolated development example, choose a
+credential privately and export the same value in the host and client terminals
+before starting them. Never commit it. Production applications should replace the
+example verifier/authorizer with their own identity provider and admin policy.
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- tasks
+cargo run --manifest-path backend/Cargo.toml --bin client -- tasks-watch local-rust 60000
+```
+
+The client calls canonical `Tasks.ListTasks` with `only_server_id=local-rust`, a
+bearer credential and a deadline. Output columns are UUID, observed phase, method,
+phase UTC timestamp, scheduled UTC timestamp (or `-`), task-level completed
+iterations and recent local retry failures. Workflow checkpoint indices are not
+task-level iterations. A parked approval workflow is `STARTED`; a future task is
+`SCHEDULED`. Only framework-owned local retry delays become `SCHEDULED_RETRY`.
+
+This is the singleton dispatcher's current pending-only cache, refreshed by
+canonical scans, not an atomic Database snapshot or durable transition history.
+Completion disappears on a subsequent scan. Recovery recreates phase timestamps
+and resets local failure counts; completed history is not recreated. Listing
+checks the original owner generation, uncertainty and accepted placement around
+authorization. `tasks-watch` calls canonical `Tasks.ListTasksStream` with the same
+explicit server and bearer; the final argument is the RPC deadline in milliseconds
+(default 60000). It prints `TASKS count` followed by the same columns for each
+initial/changed snapshot. A 200ms pull-owned observation loop rechecks the exact
+stream admin policy, original owner generations, activity, uncertainty and placement
+before disclosure. No detached polling worker or event queue is created. Slow
+consumers coalesce changes; revocation is checked on the next pulled observation,
+not pushed independently through transport backpressure. Reconnect after host
+restart/regeneration; there is no resume cursor or durable event history.
+Cross-server aggregation and shared-reader registry listing are not implemented.
+Ordinary RPCs and Wait retain their existing authorization behavior; this admin
+policy protects listing, its stream and the bounded cancellation operation below.
+
+## Cancel a scheduled workflow
+
+`client cancel RETURNED_UUID` sends canonical `Tasks.CancelTask` once with the same
+admin bearer and a deadline. Only a future-scheduled, not-yet-started workflow is
+eligible in the current dispatcher generation. The phase cache is not a durable
+never-started certificate across clock rollback/recovery; previous-generation
+effects, if any, remain. It persists a canonical system `Cancelled` terminal through completion
+CAS before returning `OK`; concurrent/repeated calls or completed/missing tasks
+return `NOT_FOUND`. Running/due workflows and ordinary reader/writer task targets
+are refused with `FailedPrecondition`, not interrupted. There is no asynchronous
+`CANCELLING` state in this bounded contract.
+
+Generated workflow Wait returns the error enum's `Grpc` variant with the exact rich
+`Cancelled` status; this example client prints `CANCELLED`. The same terminal survives
+RocksDB restart and cannot be reopened by submission replay. This is not business
+rejection or rollback: submission state, map entries and earlier effects remain.
+In this sample a cancelled batch still occupies its business reservation; a new
+submission is rejected. Releasing that reservation needs an application-defined
+compensation, not a caller-controlled reset or a fabricated successful workflow.
+Transport/ACK uncertainty fails the task owner and requires durable recovery; it
+never triggers automatic cancellation retry. General running-task cancellation,
+workflow compensation and distributed cancellation remain unsupported.
+
+Local app/map ownership restoration precedes coordinator convergence, stable
+EMPTY map constructor replay, task recovery and reactive reader activation.
+Stopping/restarting rbt preserves RocksDB in `.rbt/dev/{{ name }}/rust/rocksdb`.
+Proto/source edits rebuild the host while retaining Database. Reopen watch after
+rebuild. Public mutation commands send once with deadlines; failures may be
+uncertain and are not blindly retried. No external-effect exactly-once claim.
+
+```sh
+cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path backend/Cargo.toml -- --check
+cargo test --manifest-path backend/Cargo.toml --all-targets
+```
+
+## Explicit reactive reconnection
+
+`client watch-reconnect [deadline_ms]` retains a single typed query and caller
+metadata in one client process. It prints an initial snapshot; enter `next` to
+pull a change, `reconnect` to close the old RPC and start a fresh authenticated
+scope/baseline, `disconnect` to pause, or `quit` to release it. Reconnect errors
+are printed and leave it disconnected. There is no automatic retry by status.
+
+Generated `snapshot` subscriptions expose `disconnect()` and `reconnect()`.
+`snapshot_with_timeout(request, duration)` applies one absolute subscription
+budget across reads and explicit reconnects; reconnect never resets it.
+A successful reconnect emits the current baseline even if unchanged. It may
+lose/coalesce intermediate states while disconnected: no durable events, cursor
+resume, remote invalidation, or Python React interoperability are claimed.
+Server scope/auth is evaluated anew; this does not resurrect revoked authority.
+
+Reactive observation uses `LedgerWorkMethodsReactiveClient::observe` (or
+`observe_with_timeout`) on the same workflow-bearing service and handler as the
+saved workflow reader step. No separate view service/handler/placement entry is
+needed. Only ordinary unary readers are exposed by its local subscription
+companion: Create, SubmitBatch, Checkpoint and RunBatch are not subscribe targets.
+Private workflow execution/checkpoint authority is unchanged. Transaction-service
+subscriptions, mixed workflow/transaction services and declared reader/writer
+step errors remain unsupported.
+
+## Reactive approvals on the transaction-bearing service
+
+`LedgerIndexMethods.ApprovalSnapshot` is an ordinary immutable reader on the
+same service as `Approve` and `History` transactions. It now has a generated
+`LedgerIndexMethodsReactiveClient`; transaction RPCs themselves remain excluded
+from subscriptions. Supply a batch name to require it to match the current batch;
+a mismatch terminates the subscription with typed `BatchMismatch`, not a guessed
+transport status. An empty batch name follows the current batch.
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- index-read batch-001
+cargo run --manifest-path backend/Cargo.toml --bin client -- index-mismatch other
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch-index-reconnect 600000
+# Interactive commands: next / reconnect / disconnect / quit
+```
+
+Explicit reconnect preserves the original query, metadata and absolute deadline.
+There are no automatic status retries or distributed invalidation claims. The
+host combines workflow and transaction reader bindings behind one local reader
+owner for this actor, retaining the original handler/store/auth/transaction
+owners. Approval subscribers see acknowledged app/map transaction commits;
+failed approvals cannot be used as subscription calls to mutate the ledger.
+
+## Cooperative stop at a durable observation boundary
+
+Use `client submit-stoppable batch 3 <submission-uuid>` for an immediately scheduled
+opt-in batch (`submit-stoppable-step-reject` also exercises a saved writer rejection).
+Configure a nonempty `RBT_RUST_TASK_ADMIN_TOKEN` on the host and control client,
+then send `client stop batch <workflow-uuid> <stable-stop-uuid>`. Without server configuration or a
+valid credential, StopBatch denies before handler effects; other development RPCs
+retain their existing access rules. Production apps should replace this local
+admin verifier with their own identity provider.
+
+The stop request is an ordinary idempotent writer, not a task Cancelled terminal.
+It binds the original workflow UUID as well as the batch name; a fresh delayed stop
+cannot affect a same-name replacement. Reusing its key with another target is denied.
+Its original receipt is replayed for the same key even after completion or a newer
+batch; changed requests with the same key collide rather than being reinterpreted.
+A parked workflow observes the committed intent without another approval and
+saves that exact reader decision. Its private FinishStopped step records the
+stopped result; canonical typed Wait returns the original partial counters and
+`control true true true` (enabled/requested/stopped). Previously committed work,
+approval rows and saved writer-error decisions are retained across restart.
+The private completion RPC and reactive subscription to control writers are denied.
+
+New approvals are denied after stop is requested. A unit whose approval was already
+durably observed may still finish (including its declared rejection); stopping is
+honored at the next observation boundary. Finishing all units first remains normal
+completion with `stopped=false`. Thus request acceptance does not promise immediate
+or rollback cancellation. After stopped completion a new submission clears control
+flags; an old stop-key replay cannot mutate that new batch.
+
+Only immediately scheduled opt-in batches support this control. Delayed opt-in
+submission is rejected before staging; existing scheduled-workflow cancellation
+remains separate. This demonstrates finite same-actor saved-decision branching,
+not Python unbounded cursor/Break/GC parity, running/distributed task cancellation,
+or external-effects exactly-once semantics. Ordinary batches keep their existing
+condition identity and behavior; opt-in waits use `approved-or-stop.v1`.
+
+## Atomic multi-entry archive
+
+`client archive-many batch-001:0000,batch-001:0001` transfers 1..100 unique,
+nonempty keys in one exclusive app transaction. Each entry reopens the two map
+sessions under the same root and preserves present-empty byte values. All source
+removals, archive insertions and cumulative counter changes commit together.
+A missing later source or occupied destination aborts earlier transfers too;
+there is no per-entry commit or compensating rollback. `archive-many-invalid`
+exercises caught invalid range failure after the final transfer and must abort
+all participants.
+
+This reuses the exact root-owned same-host map incarnation, not nested child
+transaction snapshots, distributed siblings or a public map adapter. Commands
+send once without root idempotency or status retry; an uncertain result is not
+permission to send it again. Restart restores app and both map owners before
+coordinator/task recovery and public readiness.
+
+## Task result access
+
+Wait remains public for local development unless `RBT_RUST_TASK_RESULT_GRANT`
+is configured on the host. This opt-in file contains JSON `token` and `task_uuid`
+strings; create it outside the repository with private permissions and use a
+fresh credential. Canonical and generated Wait calls must provide that bearer
+credential and the granted task UUID. Task-admin credentials are independent.
+Missing, malformed or revoked grants fail closed; the host rechecks before and
+after canonical task loads and while a pending Wait polls. Revoking the file
+ends pending Wait without cancelling or changing the task. Restore the grant
+to retrieve its durable result, including after host/Database restart.
+
+This is a local-development policy example, not an identity provider, automatic
+task-creator ACL, Python middleware equivalence or an atomic policy-revocation
+transaction. Production applications supply their own verifier/authorizer through
+`ReaderTaskWaitService::with_wait_authorization`. Policies receive the exact
+encoded Wait request and actor identity, not the actor state or task result.
+
+## Live paginated history export
+
+`client history-page false 25 false - - -` reads the approval index. Use `true`
+for the archive index. Arguments are archive, page size (1..100), reverse,
+optional inclusive start, optional exclusive end, and optional continuation;
+`-` means absent. The JSON response contains ordered key/value entries and a
+nullable continuation. Repeat the original map/bounds/direction with that token;
+page size may change. Forward bounds increase, reverse bounds decrease.
+Unlike the legacy batch history command's 100-key cap, unbounded key ranges can
+browse every batch through bounded pages. Empty values remain byte arrays.
+
+Continuation uses the first unreturned key, not a fabricated key successor.
+It is versioned query data bound to map identity, original bounds and direction,
+not a credential or authorization token. Malformed/foreign-query tokens fail.
+This is **live keyset traversal, not a snapshot across RPCs**: changes between
+pages can appear or disappear; inserts before the resume key are not revisited.
+An unchanged dataset can resume after host/Database restart. Each page uses the
+existing serial exclusive app/map transaction and sends once; no automatic root
+idempotency, status retry, distributed map ingress or uncertain-outcome retry is
+introduced.
+
+## Grouped finite workflow processing
+
+`client submit-grouped BATCH COUNT KEY DUE GROUP_SIZE` partitions a bounded batch
+into named outer groups and inner item scopes. `GROUP_SIZE` must divide `COUNT`;
+zero retains the original single-loop behavior. `submit-grouped-break` adds a
+final `BREAK_AFTER` argument: its saved decision exits the entire group loop,
+then executes the existing private after-loop finalizer.
+
+For example, submit four items in two groups of two, stopping after item three:
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --bin client -- submit-grouped-break grouped 4 12345678-1234-4234-8234-123456789abc 0 2 3
+```
+
+Approvals keep their global item indices. A repeated inner index in a different
+group has a distinct durable checkpoint identity. On host/Database restart,
+acknowledged reader observations, writer outcomes and Continue/Break decisions
+replay without repeating their callbacks. Existing single-loop checkpoint keys
+are unchanged. SDK scopes admit at most eight levels and a Cartesian bound of
+1024 positions along a path; the scaffold retains its 100-item batch limit.
+
+This is same-actor finite replay composition, not nested transactions, automatic
+retry, cross-actor dispatch, Python's unbounded loop cursor/GC, or a snapshot of
+mutable state. Parent and inner bounds are part of the replay contract; changing
+them under an existing checkpoint fails closed.

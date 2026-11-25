@@ -1,0 +1,39 @@
+name: hello-image-review-correction
+services:
+  config:
+    image: sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06
+    init: true
+    command: ["--server-info", "/state/server-info.pb"]
+    volumes: ["rust-state:/state"]
+    networks: [private]
+  database:
+    image: sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd
+    init: true
+    command: ["/state/rocksdb", "/state/server-info.pb", "20000"]
+    depends_on:
+      config: {condition: service_completed_successfully}
+    volumes: ["rust-state:/state"]
+    networks: [private]
+    stop_grace_period: 20s
+  rust:
+    image: sha256:f2b48e8e9ef922b0aadc558c3c4e4c8db0b19ab712fc53f7ed75bf7e6e45fc06
+    init: true
+    depends_on:
+      database: {condition: service_healthy}
+    environment:
+      RBT_NAME: hello-image-qualified
+      RBT_RUST_DATABASE_URL: http://database:20000
+      RBT_RUST_LISTEN_ADDR: 0.0.0.0:9990
+    networks: [private]
+    stop_grace_period: 20s
+  python:
+    image: sha256:3e48dc3ed3642bd468e4a700acf8bdedb95fee038fda13c0749f01e381f67194
+    init: true
+    volumes: ["python-state:/state"]
+    networks: [private]
+    stop_grace_period: 30s
+networks:
+  private: {internal: true}
+volumes:
+  rust-state: {}
+  python-state: {}

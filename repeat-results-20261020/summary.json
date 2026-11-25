@@ -1,0 +1,1942 @@
+{
+  "accepted": false,
+  "strict_analyzer_passed": false,
+  "issues": [
+    {
+      "strict_analyzer": "ValueError('sampler errors (raw preserved; no silent repair)')"
+    }
+  ],
+  "resource_issues": [
+    {
+      "file": "repeat-perf-3-rust-resources.log",
+      "line": 1104,
+      "time": 1792494669.8538582,
+      "error": "ValueError('sampler errors (raw preserved; no silent repair)')",
+      "raw_errors": [
+        {
+          "container": "37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825",
+          "pid": "107199",
+          "error": "StopIteration()"
+        }
+      ]
+    }
+  ],
+  "raw_timed_cases": 24,
+  "total_timed_requests": 138000,
+  "repetitions": 3,
+  "rows": [
+    {
+      "language": "rust",
+      "case": "reader",
+      "repetition": 1,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 67.942855573,
+      "successful_rps": 147.18250970855465,
+      "p50_ms": 53.712972,
+      "p95_ms": 69.679688,
+      "p99_ms": 74.331954,
+      "whole_cgroup_MiB": 193.82421875,
+      "container_sum_cgroup_MiB": 110.08984375,
+      "rss_sum_MiB": 117.0859375,
+      "host_used_MiB": 454.6484375,
+      "min_MemAvailable_MiB": 477.84375,
+      "max_service_MiB": 170.0703125,
+      "client_cpu_cores": 0.03058458439044154,
+      "max_gap_seconds": 0.2512328624725342
+    },
+    {
+      "language": "rust",
+      "case": "single_send",
+      "repetition": 1,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 12.405179734,
+      "successful_rps": 80.61148822045757,
+      "p50_ms": 104.632615,
+      "p95_ms": 109.950824,
+      "p99_ms": 144.923229,
+      "whole_cgroup_MiB": 257.61328125,
+      "container_sum_cgroup_MiB": 173.8828125,
+      "rss_sum_MiB": 138.8046875,
+      "host_used_MiB": 480.69921875,
+      "min_MemAvailable_MiB": 451.79296875,
+      "max_service_MiB": 169.9296875,
+      "client_cpu_cores": 0.01707302953616359,
+      "max_gap_seconds": 0.25058603286743164
+    },
+    {
+      "language": "rust",
+      "case": "many_send",
+      "repetition": 1,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 24.863379878,
+      "successful_rps": 80.43958664564632,
+      "p50_ms": 104.695799,
+      "p95_ms": 106.80398,
+      "p99_ms": 139.170949,
+      "whole_cgroup_MiB": 268.109375,
+      "container_sum_cgroup_MiB": 184.37109375,
+      "rss_sum_MiB": 154.24609375,
+      "host_used_MiB": 489.71875,
+      "min_MemAvailable_MiB": 442.7734375,
+      "max_service_MiB": 167.89453125,
+      "client_cpu_cores": 0.016574375729368807,
+      "max_gap_seconds": 0.2504599094390869
+    },
+    {
+      "language": "rust",
+      "case": "replay",
+      "repetition": 1,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 124.050513331,
+      "successful_rps": 80.61232260536738,
+      "p50_ms": 104.657043,
+      "p95_ms": 105.516041,
+      "p99_ms": 114.289087,
+      "whole_cgroup_MiB": 270.80859375,
+      "container_sum_cgroup_MiB": 186.90625,
+      "rss_sum_MiB": 156.796875,
+      "host_used_MiB": 494.23828125,
+      "min_MemAvailable_MiB": 438.25390625,
+      "max_service_MiB": 168.86328125,
+      "client_cpu_cores": 0.016188985809687424,
+      "max_gap_seconds": 0.2507965564727783
+    },
+    {
+      "language": "python",
+      "case": "reader",
+      "repetition": 1,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 55.611895462,
+      "successful_rps": 179.81764363405074,
+      "p50_ms": 42.086118,
+      "p95_ms": 55.993312,
+      "p99_ms": 60.931213,
+      "whole_cgroup_MiB": 560.62890625,
+      "container_sum_cgroup_MiB": 557.9921875,
+      "rss_sum_MiB": 546.109375,
+      "host_used_MiB": 885.8515625,
+      "min_MemAvailable_MiB": 46.640625,
+      "max_service_MiB": 108.58203125,
+      "client_cpu_cores": 0.03917811076029172,
+      "max_gap_seconds": 0.25064921379089355
+    },
+    {
+      "language": "python",
+      "case": "single_send",
+      "repetition": 1,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 8.834796284,
+      "successful_rps": 113.18880117372042,
+      "p50_ms": 69.831155,
+      "p95_ms": 70.57266,
+      "p99_ms": 82.106581,
+      "whole_cgroup_MiB": 584.05078125,
+      "container_sum_cgroup_MiB": 581.57421875,
+      "rss_sum_MiB": 570.69921875,
+      "host_used_MiB": 885.82421875,
+      "min_MemAvailable_MiB": 46.66796875,
+      "max_service_MiB": 108.57421875,
+      "client_cpu_cores": 0.02173643781099775,
+      "max_gap_seconds": 0.25042247772216797
+    },
+    {
+      "language": "python",
+      "case": "many_send",
+      "repetition": 1,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 17.597764098,
+      "successful_rps": 113.65080182131216,
+      "p50_ms": 69.855469,
+      "p95_ms": 70.49392,
+      "p99_ms": 73.374321,
+      "whole_cgroup_MiB": 585.84375,
+      "container_sum_cgroup_MiB": 583.22265625,
+      "rss_sum_MiB": 571.50390625,
+      "host_used_MiB": 891.875,
+      "min_MemAvailable_MiB": 40.6171875,
+      "max_service_MiB": 107.69921875,
+      "client_cpu_cores": 0.02063813322973663,
+      "max_gap_seconds": 0.25101327896118164
+    },
+    {
+      "language": "python",
+      "case": "replay",
+      "repetition": 1,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 87.669647566,
+      "successful_rps": 114.06456256678504,
+      "p50_ms": 69.842569,
+      "p95_ms": 70.50962,
+      "p99_ms": 72.757894,
+      "whole_cgroup_MiB": 577.3359375,
+      "container_sum_cgroup_MiB": 574.6796875,
+      "rss_sum_MiB": 567.4609375,
+      "host_used_MiB": 901.69921875,
+      "min_MemAvailable_MiB": 30.79296875,
+      "max_service_MiB": 116.078125,
+      "client_cpu_cores": 0.020533366449828578,
+      "max_gap_seconds": 0.251997709274292
+    },
+    {
+      "language": "python",
+      "case": "reader",
+      "repetition": 2,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 55.743622827,
+      "successful_rps": 179.39271781877076,
+      "p50_ms": 42.313938,
+      "p95_ms": 55.891842,
+      "p99_ms": 60.745478,
+      "whole_cgroup_MiB": 579.66796875,
+      "container_sum_cgroup_MiB": 577.00390625,
+      "rss_sum_MiB": 568.83984375,
+      "host_used_MiB": 867.40234375,
+      "min_MemAvailable_MiB": 65.08984375,
+      "max_service_MiB": 105.04296875,
+      "client_cpu_cores": 0.03988770171792696,
+      "max_gap_seconds": 0.25071120262145996
+    },
+    {
+      "language": "python",
+      "case": "single_send",
+      "repetition": 2,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 8.850341646,
+      "successful_rps": 112.98998840931299,
+      "p50_ms": 69.976077,
+      "p95_ms": 70.491388,
+      "p99_ms": 83.438905,
+      "whole_cgroup_MiB": 588.484375,
+      "container_sum_cgroup_MiB": 586.1953125,
+      "rss_sum_MiB": 573.48828125,
+      "host_used_MiB": 883.90625,
+      "min_MemAvailable_MiB": 48.5859375,
+      "max_service_MiB": 105.03515625,
+      "client_cpu_cores": 0.022086604994322048,
+      "max_gap_seconds": 0.25069189071655273
+    },
+    {
+      "language": "python",
+      "case": "many_send",
+      "repetition": 2,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 17.600371842,
+      "successful_rps": 113.63396284772651,
+      "p50_ms": 69.825517,
+      "p95_ms": 70.905791,
+      "p99_ms": 75.426036,
+      "whole_cgroup_MiB": 589.1640625,
+      "container_sum_cgroup_MiB": 586.875,
+      "rss_sum_MiB": 569.79296875,
+      "host_used_MiB": 888.1171875,
+      "min_MemAvailable_MiB": 44.375,
+      "max_service_MiB": 102.85546875,
+      "client_cpu_cores": 0.020806946767232964,
+      "max_gap_seconds": 0.250718355178833
+    },
+    {
+      "language": "python",
+      "case": "replay",
+      "repetition": 2,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 87.697518434,
+      "successful_rps": 114.02831207277397,
+      "p50_ms": 69.888103,
+      "p95_ms": 70.389288,
+      "p99_ms": 73.120218,
+      "whole_cgroup_MiB": 589.8203125,
+      "container_sum_cgroup_MiB": 587.53515625,
+      "rss_sum_MiB": 570.24609375,
+      "host_used_MiB": 888.33203125,
+      "min_MemAvailable_MiB": 44.16015625,
+      "max_service_MiB": 114.703125,
+      "client_cpu_cores": 0.020301566472943056,
+      "max_gap_seconds": 0.2508668899536133
+    },
+    {
+      "language": "rust",
+      "case": "reader",
+      "repetition": 2,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 67.661285204,
+      "successful_rps": 147.7950052212254,
+      "p50_ms": 53.626549,
+      "p95_ms": 69.657734,
+      "p99_ms": 74.035871,
+      "whole_cgroup_MiB": 198.2109375,
+      "container_sum_cgroup_MiB": 112.62890625,
+      "rss_sum_MiB": 128.3125,
+      "host_used_MiB": 460.7109375,
+      "min_MemAvailable_MiB": 471.78125,
+      "max_service_MiB": 171.5,
+      "client_cpu_cores": 0.030928927727141137,
+      "max_gap_seconds": 0.2508373260498047
+    },
+    {
+      "language": "rust",
+      "case": "single_send",
+      "repetition": 2,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 12.388617373,
+      "successful_rps": 80.71925783900792,
+      "p50_ms": 104.64032,
+      "p95_ms": 109.611015,
+      "p99_ms": 144.436236,
+      "whole_cgroup_MiB": 259.52734375,
+      "container_sum_cgroup_MiB": 173.86328125,
+      "rss_sum_MiB": 138.5,
+      "host_used_MiB": 478.07421875,
+      "min_MemAvailable_MiB": 454.41796875,
+      "max_service_MiB": 168.48828125,
+      "client_cpu_cores": 0.016755542103705588,
+      "max_gap_seconds": 0.250657320022583
+    },
+    {
+      "language": "rust",
+      "case": "many_send",
+      "repetition": 2,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 24.936516807,
+      "successful_rps": 80.20366338568081,
+      "p50_ms": 104.723284,
+      "p95_ms": 106.679736,
+      "p99_ms": 139.269189,
+      "whole_cgroup_MiB": 270.00390625,
+      "container_sum_cgroup_MiB": 184.33984375,
+      "rss_sum_MiB": 165.11328125,
+      "host_used_MiB": 494.30859375,
+      "min_MemAvailable_MiB": 438.18359375,
+      "max_service_MiB": 169.23828125,
+      "client_cpu_cores": 0.01637702663771232,
+      "max_gap_seconds": 0.25164008140563965
+    },
+    {
+      "language": "rust",
+      "case": "replay",
+      "repetition": 2,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 124.635426372,
+      "successful_rps": 80.23400963184375,
+      "p50_ms": 104.784978,
+      "p95_ms": 106.009679,
+      "p99_ms": 115.668211,
+      "whole_cgroup_MiB": 275.03515625,
+      "container_sum_cgroup_MiB": 189.07421875,
+      "rss_sum_MiB": 168.87109375,
+      "host_used_MiB": 499.1796875,
+      "min_MemAvailable_MiB": 433.3125,
+      "max_service_MiB": 170.8828125,
+      "client_cpu_cores": 0.016434147654668402,
+      "max_gap_seconds": 0.2509133815765381
+    },
+    {
+      "language": "rust",
+      "case": "reader",
+      "repetition": 3,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 68.009602341,
+      "successful_rps": 147.03806015303576,
+      "p50_ms": 54.090628,
+      "p95_ms": 69.893264,
+      "p99_ms": 73.920374,
+      "whole_cgroup_MiB": 234.234375,
+      "container_sum_cgroup_MiB": 73.70703125,
+      "rss_sum_MiB": 117.60546875,
+      "host_used_MiB": 510.23046875,
+      "min_MemAvailable_MiB": 422.26171875,
+      "max_service_MiB": 172.265625,
+      "client_cpu_cores": 0.03117211286386162,
+      "max_gap_seconds": 0.25100183486938477
+    },
+    {
+      "language": "rust",
+      "case": "single_send",
+      "repetition": 3,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 12.492956636,
+      "successful_rps": 80.045102943716,
+      "p50_ms": 104.757047,
+      "p95_ms": 105.783873,
+      "p99_ms": 139.446948,
+      "whole_cgroup_MiB": 298.89453125,
+      "container_sum_cgroup_MiB": 138.5078125,
+      "rss_sum_MiB": 139.4609375,
+      "host_used_MiB": 487.015625,
+      "min_MemAvailable_MiB": 445.4765625,
+      "max_service_MiB": 168.52734375,
+      "client_cpu_cores": 0.016754880857972745,
+      "max_gap_seconds": 0.25020384788513184
+    },
+    {
+      "language": "rust",
+      "case": "many_send",
+      "repetition": 3,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 25.005262648,
+      "successful_rps": 79.9831630706733,
+      "p50_ms": 104.786545,
+      "p95_ms": 105.951194,
+      "p99_ms": 116.220437,
+      "whole_cgroup_MiB": 308.71875,
+      "container_sum_cgroup_MiB": 148.19140625,
+      "rss_sum_MiB": 153.97265625,
+      "host_used_MiB": 499.6484375,
+      "min_MemAvailable_MiB": 432.84375,
+      "max_service_MiB": 167.9609375,
+      "client_cpu_cores": 0.016685767547151578,
+      "max_gap_seconds": 0.25098729133605957
+    },
+    {
+      "language": "rust",
+      "case": "replay",
+      "repetition": 3,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 124.501459414,
+      "successful_rps": 80.32034360936588,
+      "p50_ms": 104.747631,
+      "p95_ms": 105.806112,
+      "p99_ms": 114.235654,
+      "whole_cgroup_MiB": 311.2734375,
+      "container_sum_cgroup_MiB": 153.1640625,
+      "rss_sum_MiB": 168.75390625,
+      "host_used_MiB": 508.02734375,
+      "min_MemAvailable_MiB": 424.46484375,
+      "max_service_MiB": 172.1796875,
+      "client_cpu_cores": 0.0161441722005548,
+      "max_gap_seconds": 0.2522850036621094
+    },
+    {
+      "language": "python",
+      "case": "reader",
+      "repetition": 3,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 55.630553282,
+      "successful_rps": 179.757334954201,
+      "p50_ms": 42.251834,
+      "p95_ms": 55.764388,
+      "p99_ms": 60.768497,
+      "whole_cgroup_MiB": 574.12890625,
+      "container_sum_cgroup_MiB": 570.4375,
+      "rss_sum_MiB": 574.03125,
+      "host_used_MiB": 867.109375,
+      "min_MemAvailable_MiB": 65.3828125,
+      "max_service_MiB": 104.53515625,
+      "client_cpu_cores": 0.03788164732637792,
+      "max_gap_seconds": 0.25097107887268066
+    },
+    {
+      "language": "python",
+      "case": "single_send",
+      "repetition": 3,
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 8.827518638,
+      "successful_rps": 113.28211709406985,
+      "p50_ms": 69.808574,
+      "p95_ms": 70.271444,
+      "p99_ms": 72.949932,
+      "whole_cgroup_MiB": 578.94140625,
+      "container_sum_cgroup_MiB": 575.88671875,
+      "rss_sum_MiB": 570.03515625,
+      "host_used_MiB": 885.15625,
+      "min_MemAvailable_MiB": 47.3359375,
+      "max_service_MiB": 113.89453125,
+      "client_cpu_cores": 0.021361155691960367,
+      "max_gap_seconds": 0.2511711120605469
+    },
+    {
+      "language": "python",
+      "case": "many_send",
+      "repetition": 3,
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 17.576114463,
+      "successful_rps": 113.7907928518706,
+      "p50_ms": 69.840007,
+      "p95_ms": 70.679506,
+      "p99_ms": 72.827604,
+      "whole_cgroup_MiB": 580.12109375,
+      "container_sum_cgroup_MiB": 577.09375,
+      "rss_sum_MiB": 570.859375,
+      "host_used_MiB": 888.27734375,
+      "min_MemAvailable_MiB": 44.21484375,
+      "max_service_MiB": 107.13671875,
+      "client_cpu_cores": 0.020710607043797558,
+      "max_gap_seconds": 0.25098443031311035
+    },
+    {
+      "language": "python",
+      "case": "replay",
+      "repetition": 3,
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 87.67769193,
+      "successful_rps": 114.0540972267357,
+      "p50_ms": 69.868887,
+      "p95_ms": 70.37032,
+      "p99_ms": 71.967006,
+      "whole_cgroup_MiB": 575.34375,
+      "container_sum_cgroup_MiB": 572.31640625,
+      "rss_sum_MiB": 565.7578125,
+      "host_used_MiB": 888.72265625,
+      "min_MemAvailable_MiB": 43.76953125,
+      "max_service_MiB": 109.359375,
+      "client_cpu_cores": 0.02108872803673038,
+      "max_gap_seconds": 0.25139451026916504
+    }
+  ],
+  "aggregates": [
+    {
+      "language": "rust",
+      "case": "reader",
+      "stats": {
+        "requests": {
+          "median": 10000,
+          "min": 10000,
+          "max": 10000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 67.942855573,
+          "min": 67.661285204,
+          "max": 68.009602341
+        },
+        "successful_rps": {
+          "median": 147.18250970855465,
+          "min": 147.03806015303576,
+          "max": 147.7950052212254
+        },
+        "p50_ms": {
+          "median": 53.712972,
+          "min": 53.626549,
+          "max": 54.090628
+        },
+        "p95_ms": {
+          "median": 69.679688,
+          "min": 69.657734,
+          "max": 69.893264
+        },
+        "p99_ms": {
+          "median": 74.035871,
+          "min": 73.920374,
+          "max": 74.331954
+        },
+        "whole_cgroup_MiB": {
+          "median": 198.2109375,
+          "min": 193.82421875,
+          "max": 234.234375
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 110.08984375,
+          "min": 73.70703125,
+          "max": 112.62890625
+        },
+        "rss_sum_MiB": {
+          "median": 117.60546875,
+          "min": 117.0859375,
+          "max": 128.3125
+        },
+        "host_used_MiB": {
+          "median": 460.7109375,
+          "min": 454.6484375,
+          "max": 510.23046875
+        },
+        "min_MemAvailable_MiB": {
+          "median": 471.78125,
+          "min": 422.26171875,
+          "max": 477.84375
+        },
+        "max_service_MiB": {
+          "median": 171.5,
+          "min": 170.0703125,
+          "max": 172.265625
+        },
+        "client_cpu_cores": {
+          "median": 0.030928927727141137,
+          "min": 0.03058458439044154,
+          "max": 0.03117211286386162
+        },
+        "max_gap_seconds": {
+          "median": 0.25100183486938477,
+          "min": 0.2508373260498047,
+          "max": 0.2512328624725342
+        }
+      }
+    },
+    {
+      "language": "rust",
+      "case": "single_send",
+      "stats": {
+        "requests": {
+          "median": 1000,
+          "min": 1000,
+          "max": 1000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 12.405179734,
+          "min": 12.388617373,
+          "max": 12.492956636
+        },
+        "successful_rps": {
+          "median": 80.61148822045757,
+          "min": 80.045102943716,
+          "max": 80.71925783900792
+        },
+        "p50_ms": {
+          "median": 104.64032,
+          "min": 104.632615,
+          "max": 104.757047
+        },
+        "p95_ms": {
+          "median": 109.611015,
+          "min": 105.783873,
+          "max": 109.950824
+        },
+        "p99_ms": {
+          "median": 144.436236,
+          "min": 139.446948,
+          "max": 144.923229
+        },
+        "whole_cgroup_MiB": {
+          "median": 259.52734375,
+          "min": 257.61328125,
+          "max": 298.89453125
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 173.86328125,
+          "min": 138.5078125,
+          "max": 173.8828125
+        },
+        "rss_sum_MiB": {
+          "median": 138.8046875,
+          "min": 138.5,
+          "max": 139.4609375
+        },
+        "host_used_MiB": {
+          "median": 480.69921875,
+          "min": 478.07421875,
+          "max": 487.015625
+        },
+        "min_MemAvailable_MiB": {
+          "median": 451.79296875,
+          "min": 445.4765625,
+          "max": 454.41796875
+        },
+        "max_service_MiB": {
+          "median": 168.52734375,
+          "min": 168.48828125,
+          "max": 169.9296875
+        },
+        "client_cpu_cores": {
+          "median": 0.016755542103705588,
+          "min": 0.016754880857972745,
+          "max": 0.01707302953616359
+        },
+        "max_gap_seconds": {
+          "median": 0.25058603286743164,
+          "min": 0.25020384788513184,
+          "max": 0.250657320022583
+        }
+      }
+    },
+    {
+      "language": "rust",
+      "case": "many_send",
+      "stats": {
+        "requests": {
+          "median": 2000,
+          "min": 2000,
+          "max": 2000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 24.936516807,
+          "min": 24.863379878,
+          "max": 25.005262648
+        },
+        "successful_rps": {
+          "median": 80.20366338568081,
+          "min": 79.9831630706733,
+          "max": 80.43958664564632
+        },
+        "p50_ms": {
+          "median": 104.723284,
+          "min": 104.695799,
+          "max": 104.786545
+        },
+        "p95_ms": {
+          "median": 106.679736,
+          "min": 105.951194,
+          "max": 106.80398
+        },
+        "p99_ms": {
+          "median": 139.170949,
+          "min": 116.220437,
+          "max": 139.269189
+        },
+        "whole_cgroup_MiB": {
+          "median": 270.00390625,
+          "min": 268.109375,
+          "max": 308.71875
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 184.33984375,
+          "min": 148.19140625,
+          "max": 184.37109375
+        },
+        "rss_sum_MiB": {
+          "median": 154.24609375,
+          "min": 153.97265625,
+          "max": 165.11328125
+        },
+        "host_used_MiB": {
+          "median": 494.30859375,
+          "min": 489.71875,
+          "max": 499.6484375
+        },
+        "min_MemAvailable_MiB": {
+          "median": 438.18359375,
+          "min": 432.84375,
+          "max": 442.7734375
+        },
+        "max_service_MiB": {
+          "median": 167.9609375,
+          "min": 167.89453125,
+          "max": 169.23828125
+        },
+        "client_cpu_cores": {
+          "median": 0.016574375729368807,
+          "min": 0.01637702663771232,
+          "max": 0.016685767547151578
+        },
+        "max_gap_seconds": {
+          "median": 0.25098729133605957,
+          "min": 0.2504599094390869,
+          "max": 0.25164008140563965
+        }
+      }
+    },
+    {
+      "language": "rust",
+      "case": "replay",
+      "stats": {
+        "requests": {
+          "median": 10000,
+          "min": 10000,
+          "max": 10000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 124.501459414,
+          "min": 124.050513331,
+          "max": 124.635426372
+        },
+        "successful_rps": {
+          "median": 80.32034360936588,
+          "min": 80.23400963184375,
+          "max": 80.61232260536738
+        },
+        "p50_ms": {
+          "median": 104.747631,
+          "min": 104.657043,
+          "max": 104.784978
+        },
+        "p95_ms": {
+          "median": 105.806112,
+          "min": 105.516041,
+          "max": 106.009679
+        },
+        "p99_ms": {
+          "median": 114.289087,
+          "min": 114.235654,
+          "max": 115.668211
+        },
+        "whole_cgroup_MiB": {
+          "median": 275.03515625,
+          "min": 270.80859375,
+          "max": 311.2734375
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 186.90625,
+          "min": 153.1640625,
+          "max": 189.07421875
+        },
+        "rss_sum_MiB": {
+          "median": 168.75390625,
+          "min": 156.796875,
+          "max": 168.87109375
+        },
+        "host_used_MiB": {
+          "median": 499.1796875,
+          "min": 494.23828125,
+          "max": 508.02734375
+        },
+        "min_MemAvailable_MiB": {
+          "median": 433.3125,
+          "min": 424.46484375,
+          "max": 438.25390625
+        },
+        "max_service_MiB": {
+          "median": 170.8828125,
+          "min": 168.86328125,
+          "max": 172.1796875
+        },
+        "client_cpu_cores": {
+          "median": 0.016188985809687424,
+          "min": 0.0161441722005548,
+          "max": 0.016434147654668402
+        },
+        "max_gap_seconds": {
+          "median": 0.2509133815765381,
+          "min": 0.2507965564727783,
+          "max": 0.2522850036621094
+        }
+      }
+    },
+    {
+      "language": "python",
+      "case": "reader",
+      "stats": {
+        "requests": {
+          "median": 10000,
+          "min": 10000,
+          "max": 10000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 55.630553282,
+          "min": 55.611895462,
+          "max": 55.743622827
+        },
+        "successful_rps": {
+          "median": 179.757334954201,
+          "min": 179.39271781877076,
+          "max": 179.81764363405074
+        },
+        "p50_ms": {
+          "median": 42.251834,
+          "min": 42.086118,
+          "max": 42.313938
+        },
+        "p95_ms": {
+          "median": 55.891842,
+          "min": 55.764388,
+          "max": 55.993312
+        },
+        "p99_ms": {
+          "median": 60.768497,
+          "min": 60.745478,
+          "max": 60.931213
+        },
+        "whole_cgroup_MiB": {
+          "median": 574.12890625,
+          "min": 560.62890625,
+          "max": 579.66796875
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 570.4375,
+          "min": 557.9921875,
+          "max": 577.00390625
+        },
+        "rss_sum_MiB": {
+          "median": 568.83984375,
+          "min": 546.109375,
+          "max": 574.03125
+        },
+        "host_used_MiB": {
+          "median": 867.40234375,
+          "min": 867.109375,
+          "max": 885.8515625
+        },
+        "min_MemAvailable_MiB": {
+          "median": 65.08984375,
+          "min": 46.640625,
+          "max": 65.3828125
+        },
+        "max_service_MiB": {
+          "median": 105.04296875,
+          "min": 104.53515625,
+          "max": 108.58203125
+        },
+        "client_cpu_cores": {
+          "median": 0.03917811076029172,
+          "min": 0.03788164732637792,
+          "max": 0.03988770171792696
+        },
+        "max_gap_seconds": {
+          "median": 0.25071120262145996,
+          "min": 0.25064921379089355,
+          "max": 0.25097107887268066
+        }
+      }
+    },
+    {
+      "language": "python",
+      "case": "single_send",
+      "stats": {
+        "requests": {
+          "median": 1000,
+          "min": 1000,
+          "max": 1000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 8.834796284,
+          "min": 8.827518638,
+          "max": 8.850341646
+        },
+        "successful_rps": {
+          "median": 113.18880117372042,
+          "min": 112.98998840931299,
+          "max": 113.28211709406985
+        },
+        "p50_ms": {
+          "median": 69.831155,
+          "min": 69.808574,
+          "max": 69.976077
+        },
+        "p95_ms": {
+          "median": 70.491388,
+          "min": 70.271444,
+          "max": 70.57266
+        },
+        "p99_ms": {
+          "median": 82.106581,
+          "min": 72.949932,
+          "max": 83.438905
+        },
+        "whole_cgroup_MiB": {
+          "median": 584.05078125,
+          "min": 578.94140625,
+          "max": 588.484375
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 581.57421875,
+          "min": 575.88671875,
+          "max": 586.1953125
+        },
+        "rss_sum_MiB": {
+          "median": 570.69921875,
+          "min": 570.03515625,
+          "max": 573.48828125
+        },
+        "host_used_MiB": {
+          "median": 885.15625,
+          "min": 883.90625,
+          "max": 885.82421875
+        },
+        "min_MemAvailable_MiB": {
+          "median": 47.3359375,
+          "min": 46.66796875,
+          "max": 48.5859375
+        },
+        "max_service_MiB": {
+          "median": 108.57421875,
+          "min": 105.03515625,
+          "max": 113.89453125
+        },
+        "client_cpu_cores": {
+          "median": 0.02173643781099775,
+          "min": 0.021361155691960367,
+          "max": 0.022086604994322048
+        },
+        "max_gap_seconds": {
+          "median": 0.25069189071655273,
+          "min": 0.25042247772216797,
+          "max": 0.2511711120605469
+        }
+      }
+    },
+    {
+      "language": "python",
+      "case": "many_send",
+      "stats": {
+        "requests": {
+          "median": 2000,
+          "min": 2000,
+          "max": 2000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 17.597764098,
+          "min": 17.576114463,
+          "max": 17.600371842
+        },
+        "successful_rps": {
+          "median": 113.65080182131216,
+          "min": 113.63396284772651,
+          "max": 113.7907928518706
+        },
+        "p50_ms": {
+          "median": 69.840007,
+          "min": 69.825517,
+          "max": 69.855469
+        },
+        "p95_ms": {
+          "median": 70.679506,
+          "min": 70.49392,
+          "max": 70.905791
+        },
+        "p99_ms": {
+          "median": 73.374321,
+          "min": 72.827604,
+          "max": 75.426036
+        },
+        "whole_cgroup_MiB": {
+          "median": 585.84375,
+          "min": 580.12109375,
+          "max": 589.1640625
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 583.22265625,
+          "min": 577.09375,
+          "max": 586.875
+        },
+        "rss_sum_MiB": {
+          "median": 570.859375,
+          "min": 569.79296875,
+          "max": 571.50390625
+        },
+        "host_used_MiB": {
+          "median": 888.27734375,
+          "min": 888.1171875,
+          "max": 891.875
+        },
+        "min_MemAvailable_MiB": {
+          "median": 44.21484375,
+          "min": 40.6171875,
+          "max": 44.375
+        },
+        "max_service_MiB": {
+          "median": 107.13671875,
+          "min": 102.85546875,
+          "max": 107.69921875
+        },
+        "client_cpu_cores": {
+          "median": 0.020710607043797558,
+          "min": 0.02063813322973663,
+          "max": 0.020806946767232964
+        },
+        "max_gap_seconds": {
+          "median": 0.25098443031311035,
+          "min": 0.250718355178833,
+          "max": 0.25101327896118164
+        }
+      }
+    },
+    {
+      "language": "python",
+      "case": "replay",
+      "stats": {
+        "requests": {
+          "median": 10000,
+          "min": 10000,
+          "max": 10000
+        },
+        "errors": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "seconds": {
+          "median": 87.67769193,
+          "min": 87.669647566,
+          "max": 87.697518434
+        },
+        "successful_rps": {
+          "median": 114.0540972267357,
+          "min": 114.02831207277397,
+          "max": 114.06456256678504
+        },
+        "p50_ms": {
+          "median": 69.868887,
+          "min": 69.842569,
+          "max": 69.888103
+        },
+        "p95_ms": {
+          "median": 70.389288,
+          "min": 70.37032,
+          "max": 70.50962
+        },
+        "p99_ms": {
+          "median": 72.757894,
+          "min": 71.967006,
+          "max": 73.120218
+        },
+        "whole_cgroup_MiB": {
+          "median": 577.3359375,
+          "min": 575.34375,
+          "max": 589.8203125
+        },
+        "container_sum_cgroup_MiB": {
+          "median": 574.6796875,
+          "min": 572.31640625,
+          "max": 587.53515625
+        },
+        "rss_sum_MiB": {
+          "median": 567.4609375,
+          "min": 565.7578125,
+          "max": 570.24609375
+        },
+        "host_used_MiB": {
+          "median": 888.72265625,
+          "min": 888.33203125,
+          "max": 901.69921875
+        },
+        "min_MemAvailable_MiB": {
+          "median": 43.76953125,
+          "min": 30.79296875,
+          "max": 44.16015625
+        },
+        "max_service_MiB": {
+          "median": 114.703125,
+          "min": 109.359375,
+          "max": 116.078125
+        },
+        "client_cpu_cores": {
+          "median": 0.020533366449828578,
+          "min": 0.020301566472943056,
+          "max": 0.02108872803673038
+        },
+        "max_gap_seconds": {
+          "median": 0.25139451026916504,
+          "min": 0.2508668899536133,
+          "max": 0.251997709274292
+        }
+      }
+    }
+  ],
+  "phase_resources": [
+    {
+      "label": "repeat-qualification-rust",
+      "samples": 1702,
+      "max_gap_seconds": 0.2510085105895996,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": 4,
+      "soak_elapsed_min": 300,
+      "max_stack_MiB": 196.53125,
+      "min_MemAvailable_MiB": 450.8984375,
+      "max_service_MiB": 172.39453125
+    },
+    {
+      "label": "repeat-qualification-python",
+      "samples": 1548,
+      "max_gap_seconds": 0.2512831687927246,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": 5,
+      "soak_elapsed_min": 300,
+      "max_stack_MiB": 600.7109375,
+      "min_MemAvailable_MiB": 54.44140625,
+      "max_service_MiB": 162.5234375
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "samples": 1108,
+      "max_gap_seconds": 0.2517690658569336,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 270.91015625,
+      "min_MemAvailable_MiB": 410.26953125,
+      "max_service_MiB": 170.0703125
+    },
+    {
+      "label": "repeat-perf-1-python",
+      "samples": 866,
+      "max_gap_seconds": 0.255659818649292,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 589.60546875,
+      "min_MemAvailable_MiB": 30.79296875,
+      "max_service_MiB": 165.296875
+    },
+    {
+      "label": "repeat-perf-2-python",
+      "samples": 870,
+      "max_gap_seconds": 0.2567167282104492,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 602.046875,
+      "min_MemAvailable_MiB": 44.16015625,
+      "max_service_MiB": 155.0546875
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "samples": 1110,
+      "max_gap_seconds": 0.25190067291259766,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 275.03515625,
+      "min_MemAvailable_MiB": 410.5859375,
+      "max_service_MiB": 172.28515625
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "samples": 1111,
+      "max_gap_seconds": 0.2522850036621094,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 311.2734375,
+      "min_MemAvailable_MiB": 422.26171875,
+      "max_service_MiB": 172.265625
+    },
+    {
+      "label": "repeat-perf-3-python",
+      "samples": 865,
+      "max_gap_seconds": 0.2604236602783203,
+      "nominal_sampling_ms": 250,
+      "soak_iterations": null,
+      "soak_elapsed_min": null,
+      "max_stack_MiB": 585.09375,
+      "min_MemAvailable_MiB": 42.84375,
+      "max_service_MiB": 162.44140625
+    }
+  ],
+  "interval_coverage": [
+    {
+      "label": "repeat-qualification-rust-boot-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-correctness",
+      "samples": 6,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-restart-ready-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-retained",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-seed",
+      "samples": 21,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-soak-0",
+      "samples": 271,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-soak-1",
+      "samples": 496,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-soak-2",
+      "samples": 272,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-rust-soak-3",
+      "samples": 499,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-boot-5",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-correctness",
+      "samples": 6,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-qualification-python-restart-ready-4",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-retained",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-seed",
+      "samples": 22,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-soak-0",
+      "samples": 224,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-soak-1",
+      "samples": 351,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-soak-2",
+      "samples": 223,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-soak-3",
+      "samples": 352,
+      "failures": []
+    },
+    {
+      "label": "repeat-qualification-python-soak-4",
+      "samples": 223,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-boot-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-seed",
+      "samples": 21,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-reader",
+      "samples": 272,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-single_send",
+      "samples": 50,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-many_send",
+      "samples": 100,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-replay",
+      "samples": 496,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-verify-before",
+      "samples": 15,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-restart-ready-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-rust-verify-after",
+      "samples": 15,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-boot-5",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-seed",
+      "samples": 21,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-reader",
+      "samples": 223,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-single_send",
+      "samples": 36,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-many_send",
+      "samples": 71,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-replay",
+      "samples": 351,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-verify-before",
+      "samples": 8,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-1-python-restart-ready-4",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-1-python-verify-after",
+      "samples": 8,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-4",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-boot-5",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-seed",
+      "samples": 22,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-reader",
+      "samples": 224,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-single_send",
+      "samples": 36,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-many_send",
+      "samples": 70,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-replay",
+      "samples": 352,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-verify-before",
+      "samples": 7,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-2-python-restart-ready-4",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-python-verify-after",
+      "samples": 8,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-boot-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-seed",
+      "samples": 20,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-reader",
+      "samples": 271,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-single_send",
+      "samples": 50,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-many_send",
+      "samples": 101,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-replay",
+      "samples": 500,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-verify-before",
+      "samples": 11,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-restart-ready-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-2-rust-verify-after",
+      "samples": 12,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-boot-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-seed",
+      "samples": 20,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-reader",
+      "samples": 273,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-single_send",
+      "samples": 50,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-many_send",
+      "samples": 101,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-replay",
+      "samples": 499,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-verify-before",
+      "samples": 12,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-restart-ready-0",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-rust-verify-after",
+      "samples": 11,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-boot-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-boot-4",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-seed",
+      "samples": 21,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-reader",
+      "samples": 223,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-single_send",
+      "samples": 36,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-many_send",
+      "samples": 71,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-replay",
+      "samples": 351,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-verify-before",
+      "samples": 8,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-0",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-1",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-2",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-3",
+      "samples": 0,
+      "failures": [
+        "client interval missing end event"
+      ],
+      "readiness_attempt": true
+    },
+    {
+      "label": "repeat-perf-3-python-restart-ready-4",
+      "samples": 2,
+      "failures": []
+    },
+    {
+      "label": "repeat-perf-3-python-verify-after",
+      "samples": 8,
+      "failures": []
+    }
+  ],
+  "percentile": "nearest rank; median and bounds across three per-run values, not pooled",
+  "resources": "whole tinyrepeat.slice cgroup and container sums separately; RSS sum can double count shared pages; nominal 250ms sampled maxima not exact peaks; host includes OS/Docker; footprint not minimum RAM",
+  "images": {
+    "rust": "sha256:3dcf9d9976f76a63b3a290ef6cf15329f1f6148692c72604e5dc797a237f7db4",
+    "python": "sha256:28241a509e8dbedda24bd2033ce556cc5648ddd02ef80bd349e417586fb84925",
+    "engine": "sha256:1a73705b0771f9c861d9ba96509806849423a3d8bbff140b1261da76280460cd"
+  },
+  "comparison": {
+    "complete": true,
+    "records_each": 22,
+    "deterministic_records_exact": 21,
+    "concurrent_membership_multiplicity_records": 1,
+    "concurrent_membership_multiplicity_equal": true,
+    "raw_concurrent_messages": [
+      [
+        "",
+        "concurrent-0",
+        "concurrent-3",
+        "concurrent-1",
+        "concurrent-2",
+        "concurrent-4",
+        "concurrent-6",
+        "concurrent-5",
+        "concurrent-7"
+      ],
+      [
+        "",
+        "concurrent-0",
+        "concurrent-1",
+        "concurrent-2",
+        "concurrent-3",
+        "concurrent-4",
+        "concurrent-5",
+        "concurrent-6",
+        "concurrent-7"
+      ]
+    ],
+    "raw_concurrent_order_equal": false,
+    "entire_cases_exact_equal_observed": false,
+    "ordering_required_for_concurrent_record": false
+  },
+  "clock_offset_bounds": [
+    -0.024678468704223633,
+    0.6469111442565918
+  ],
+  "all_resource_samples": 9180
+}

@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_analyze.py", line 208, in <module>
+    output=analyze(sys.argv[1])
+  File "/home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_analyze.py", line 105, in analyze
+    resources=[validate_resource(r, boundary=True) for r in read_jsonl(E/(run['label']+'-resources.log'))]
+               ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_analyze.py", line 69, in validate_resource
+    return strict_validate(r, boundary)
+  File "/home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_schema.py", line 63, in validate
+    require(not r['errors'],'sampler errors (raw preserved; no silent repair)')
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/openclaw/.hermes/profiles/jean/cache/scratch/tiny-repeat/tiny_repeat_analyze.py", line 14, in require
+    raise ValueError(message)
+ValueError: sampler errors (raw preserved; no silent repair)

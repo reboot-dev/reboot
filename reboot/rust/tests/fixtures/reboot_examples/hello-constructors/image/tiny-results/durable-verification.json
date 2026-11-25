@@ -1,0 +1,27 @@
+{
+  "verified": true,
+  "checks": {
+    "images": {
+      "verified": true,
+      "sha256": "f444904864b2c2bc0ca658ff4ffa4df40ad4de7838f2aee1827fb9f16b2b0349",
+      "bytes": 276983276,
+      "all_oci_blobs_verified": true
+    },
+    "build-proof": {
+      "verified": true,
+      "sha256": "28f9449617acecb2f304f664372ff53a21de759ac5d10e95db73e38b53691e66",
+      "bytes": 18447395
+    },
+    "volumes": {
+      "verified": true,
+      "files": 83,
+      "sha256": "69461c5d51238a3b630617546efd707d76b7b9a3f3561bf712b25bae59afedd2"
+    },
+    "runtime-evidence": {
+      "verified": true,
+      "members": 107,
+      "sha256": "da9aef3082f568c5420f24d00ac10d2c6988df5cd15cbe78c344c20099f732d4"
+    }
+  },
+  "observed_at": 1792487212.5795522
+}

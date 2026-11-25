@@ -1,0 +1,93 @@
+{
+  "repository": "reboot-dev/reboot-examples",
+  "revision": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "files": [
+    {
+      "upstream_path": "api/hello_constructors/v1/hello.proto",
+      "sha256": "c144183d68a73783f260886469706b865fcddbb393aae3899808f971ee5717c1",
+      "reference_path": "hello-constructors/upstream/api/hello_constructors/v1/hello.proto"
+    },
+    {
+      "upstream_path": "api/hello_tasks/v1/hello.proto",
+      "sha256": "6362f4a635766e534bcc2db0936af80ef412f3560d8216aa5a328e3d84997941"
+    },
+    {
+      "upstream_path": "api/bank/v1/account.proto",
+      "sha256": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d"
+    },
+    {
+      "upstream_path": "api/bank/v1/bank.proto",
+      "sha256": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5"
+    },
+    {
+      "upstream_path": "api/bank/v1/errors.proto",
+      "sha256": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3"
+    },
+    {
+      "upstream_path": "api/hello_legacy_grpc/v1/greeter.proto",
+      "sha256": "6adccf9ab0d1c6ace11ce05de74cbe0dc936c233af0d2b93dcccced03aa2d814",
+      "reference_path": "hello-legacy-grpc/upstream/api/hello_legacy_grpc/v1/greeter.proto"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/.rbtrc",
+      "sha256": "287133bd598bcc98cf5af23a9d511c5b43a8ca5715bea122f9b0cafc1ec56fd4",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/.rbtrc"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/.pytest.ini",
+      "sha256": "f1863943db91359344c235b3b55a4b0eeae61b48046b03cfdd15b950ecfccce6",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/.pytest.ini"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/deprecated_greeter_servicer.py",
+      "sha256": "12338bfc8a72138ce2b921baf33142028374fc599fa19765a05f03b19ed2d5ae",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/deprecated_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/main.py",
+      "sha256": "8448ce29d3e8639e0af8320501ce0c9784db868d41b539a0b34280cd29e54c5d",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/main.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/proxy_greeter_servicer.py",
+      "sha256": "f4491a036b8e3b5d13d324ebabc1cef4fb7f50430a04fbaca33f124d186afc4e",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/proxy_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/src/reboot_greeter_servicer.py",
+      "sha256": "f628094fbd4bdafe4f02defa2e61efd6d67812cc1fdb9a98e847d7038fb3d758",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/src/reboot_greeter_servicer.py"
+    },
+    {
+      "upstream_path": "hello-legacy-grpc/backend/tests/greeter_servicer_test.py",
+      "sha256": "53a0bce4e7e35a03a1b063cfd282d67e6b7ebcc983db8ca6f08c5e916a240d76",
+      "reference_path": "hello-legacy-grpc/upstream/hello-legacy-grpc/backend/tests/greeter_servicer_test.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/src/hello_servicer.py",
+      "sha256": "aa71c568defc4f1137b7951e58ce6b74f4f2ee9a312f11576fabd3c0cdadc822",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/src/hello_servicer.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/src/main.py",
+      "sha256": "d85c728a8f6c46ad2fbc274f5ccab39f3992eb618a5cf2ea2479f6da0c56e229",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/src/main.py"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/tests/hello.feature",
+      "sha256": "47f8af55c23965b034b377f99e46495336d53950f244d55e1de0cb1c8c1960e2",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/tests/hello.feature"
+    },
+    {
+      "upstream_path": "hello-constructors/backend/tests/hello_servicer_test.py",
+      "sha256": "b3a3b82e745b9f229d7f4830e2428d4180e00751d1faf3da182b8eaa65f36983",
+      "reference_path": "hello-constructors/upstream/hello-constructors/backend/tests/hello_servicer_test.py"
+    },
+    {
+      "upstream_path": "hello-constructors/.rbtrc",
+      "sha256": "287133bd598bcc98cf5af23a9d511c5b43a8ca5715bea122f9b0cafc1ec56fd4",
+      "reference_path": "hello-constructors/upstream/hello-constructors/.rbtrc"
+    }
+  ],
+  "status": "Pinned original schemas; Rust ports and execution acceptance in progress."
+}

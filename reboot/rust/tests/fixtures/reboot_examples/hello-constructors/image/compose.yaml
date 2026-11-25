@@ -1,0 +1,39 @@
+name: hello-image-qualification
+services:
+  config:
+    image: hello-rust:qualification
+    init: true
+    command: ["--server-info", "/state/server-info.pb"]
+    volumes: ["rust-state:/state"]
+    networks: [private]
+  database:
+    image: hello-database:qualification
+    init: true
+    command: ["/state/rocksdb", "/state/server-info.pb", "20000"]
+    depends_on:
+      config: {condition: service_completed_successfully}
+    volumes: ["rust-state:/state"]
+    networks: [private]
+    stop_grace_period: 20s
+  rust:
+    image: hello-rust:qualification
+    init: true
+    depends_on:
+      database: {condition: service_healthy}
+    environment:
+      RBT_NAME: hello-image-qualified
+      RBT_RUST_DATABASE_URL: http://database:20000
+      RBT_RUST_LISTEN_ADDR: 0.0.0.0:9990
+    networks: [private]
+    stop_grace_period: 20s
+  python:
+    image: hello-python:qualification
+    init: true
+    volumes: ["python-state:/state"]
+    networks: [private]
+    stop_grace_period: 30s
+networks:
+  private: {internal: true}
+volumes:
+  rust-state: {}
+  python-state: {}

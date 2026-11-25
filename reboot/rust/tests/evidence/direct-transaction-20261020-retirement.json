@@ -1,0 +1,9 @@
+{
+  "observed": "2026-10-20T21:33:51.236879+00:00",
+  "unit": "MainPID=0\nResult=success\nExecMainStatus=0\nActiveState=inactive\n",
+  "owner_proc_absent": true,
+  "all_gate_pids_absent": true,
+  "all_receipt_children_absent": true,
+  "four_cache_locks_acquired": true,
+  "note": "Timestamped absence plus terminal systemd state, not an external original-parent owner wait."
+}

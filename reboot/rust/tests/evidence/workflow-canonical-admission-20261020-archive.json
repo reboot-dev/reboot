@@ -1,0 +1,9 @@
+{
+  "archive_sha256": "4c09ea1fe76ec96f82936c0f7092d56a79f3bf80537e7c6ff3afb404946d8da9",
+  "bytes": 7269723,
+  "file_members": 4361,
+  "qualification_sha256": "0eb3e9119cb129ba288a4ba8e2e7337935aec9a60f4da958bf4d5075c907e84b",
+  "source_manifest_sha256": "0eae7460bc4e471c3a7534188879760e6f60c35cf928d07b7c23ede263981799",
+  "large_executables_included": false,
+  "created_at": "2026-10-20T15:06:06.829212+00:00"
+}

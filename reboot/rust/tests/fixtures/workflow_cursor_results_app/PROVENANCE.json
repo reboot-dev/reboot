@@ -1,0 +1,60 @@
+{
+  "kind": "new feature proof, NOT reboot-examples parity",
+  "source_root": "/home/openclaw/worktrees/reboot-rust-tree-participant-tasks/reboot/rust/tests/fixtures/workflow_app",
+  "inputs": {
+    "src/main.rs": "c899bfe9b1b1f591917640ec7977ca4dc4493398abff97c5ef241c820dfe5c99",
+    "build.rs": "5fdc78f7633c29d5228b974b8440942dcf2991e495351b59e94afe11519df836",
+    "Cargo.toml": "ec99de962789f2cbd3a0b83cbf64d4a393168208d49d74f5a6b03f80c406f718",
+    "workflow/v1/workflow.proto": "52ae766607f35915cd36ba58eb654745cfb9b12092b72beb5b5aed3d4a6579af",
+    "prove_loop_decision.py": "cf00f1fab9276516f4513fd7896408c0f9509e85378d2e8c169b8feebd0ffb57"
+  },
+  "examples_reference_only": {
+    "revision": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+    "schema": "api/hello_tasks/v1/hello.proto",
+    "sha256": "6362f4a635766e534bcc2db0936af80ef412f3560d8216aa5a328e3d84997941",
+    "claim": "local comparator schema only; not a corresponding cursor/results example; no independent revision verification in source-only task"
+  },
+  "repair": {
+    "status": "Actual native484 scenarios and independent database-only canonical489 readback passed with genuine verified retirement. Bounded cursor/results native fixture accepted; no full-native/public/upstream acceptance.",
+    "supervision": "Reviewed replacement helper contract, not exact original prefix; obsolete executable test body removed",
+    "baseline_supervision_sha256": "dc92efcf7ad8bc81c55362b108fa4b7b2c08f6ab6c50bc131d03eed36e177179",
+    "adapted_supervision_sha256": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608"
+  },
+  "current_source_sha256": {
+    "test_cleanup_barrier.py": "f8edf20cbc73490334bb6636a82e348a394cf10861cb574c420e0f2b5f4ef853",
+    "build.rs": "de3f5fdd677228c7822b32b38d346ffb371d7e35f2db8b5742049e91c50341d4",
+    "supervision_reference.py": "b00fc43ce7b9117798b4e7d66c7deed10876452b4fa543dbf981dca73f14f608",
+    "public_probe.py": "8ea0fe17acc401fe3d7356141a6658d78d25a93f0d411d8a7eae8e37ba612d5d",
+    "prove_cursor.py": "b3355f0fe548eb3bd7201c50bf1f88c6131f7a346b01eab33ee783187d77d1ec",
+    ".rbtrc": "a163db87ffd23358d3f73889f14fe8dc7318e908e6d98611cf05fd53062b4ac7",
+    "HANDOFF.md": "7d869cb4d23a3233816b3b5aaf1ba5d1eeac1c65617de7d66091f2b1af9459a6",
+    "Cargo.toml": "919f54961d37a8b84e80dc9306a73855cbdd8dcea04aa798884d2185d0fb870b",
+    "cursor/v1/cursor.proto": "2e6de5c84cd9f7ccc6f3324f0130ec2cfdd8d4f8d9d9be090fb605dc6b35ab1b",
+    "src/inspect.rs": "f188958ac6146021818e38389b1bcad9dc4be1b0134281c6556bfc61c59529ab",
+    "src/main.rs": "870d4b72bef978d4e5d411b3a0e6904a2b0a610913f9662ef1707d235a51ced4",
+    "src/placement.rs": "3b9c551f97c607466e55936b0b2f1fa2761c2e3c5d94202d346471a0003b0e6f",
+    "canonical_verifier.py": "9419914e70bfd48fc430ff54ea5a6cd609df9b0c2e0e7b03e3cde29e397b52ae"
+  },
+  "evidence_scope": {
+    "consumer_rust_inputs_equal_final_clippy446": [
+      "Cargo.toml",
+      "build.rs",
+      "src/placement.rs",
+      "src/inspect.rs",
+      "cursor/v1/cursor.proto"
+    ],
+    "native_acceptance": false,
+    "public_acceptance": false,
+    "cleanup_tests": "10 repository-local cleanup/wait UNIT regressions passed; external helper/gate units remain separate, no synthetic native acceptance.",
+    "runtime_requirements": "Parent-owned generated executable, verified source freeze, reviewed exact custody adapter, original exclusive task owner, and approved actual native run.",
+    "dispatch_metadata_fix": "Actual475 locked/offline rebuild and actual484 scenarios passed with fresh per-dispatch mandatory writer metadata; no stable destination dedupe key.",
+    "native_driver_scenarios_verified": true,
+    "independent_postrun_canonical_check": "passed: separate fresh Database, two CLI inspect processes, no SDK host; raw canonical snapshots matched",
+    "cursor_native_fixture_acceptance": true
+  },
+  "outer_wrapper": {
+    "path": "reboot/rust/tests/workflow_cursor_results_native.rs",
+    "sha256": "da543c6a9ec8035a5e83f39a29da79665ac845d6aaf1ab7bc755d365abfae27c",
+    "execution_result": "standalone rustc test compiled: 0 passed, 0 failed, 1 ignored; no native execution"
+  }
+}

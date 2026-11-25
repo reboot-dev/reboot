@@ -1,0 +1,392 @@
+{
+  "scope": "Actual normal merged CLI Rust init, standalone adapter generation, and terminate-after-health-check; distinct bounded gates, not whole new-consumer/hot-reload/upstream parity",
+  "verification": {
+    "passed": true,
+    "normal_init_adapter_generate_acceptance": true,
+    "terminate_after_health_check_acceptance": true,
+    "hot_reload_acceptance": false,
+    "generated_consumer_compilation_acceptance": false,
+    "full_native_acceptance": false,
+    "failure": null,
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "cid": "0f4f45f0c5a00f30fd63bdc8ec7cf9e09eb619bb7875cecb77abbcc3c38a9e9b",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T19:35:52.827453285Z",
+      "FinishedAt": "2026-10-15T19:37:09.92945799Z"
+    },
+    "config_sha256": "caeac5dac8e180550acaec2daa35e75610fa845e76a4e15630e545916a18d943",
+    "accepted_retired_sha256": "6e1e0c60955329a0f937e67c15bf0d4e266377cd76c6661793ae697be59330a4",
+    "source_manifest_sha256": "cb09ae0501055e380866ea5680a77d5d9cbf254ae36c5cf6ca326f4e0f48ccf0",
+    "source_count": 3255,
+    "closure_generated_count": 2665,
+    "project_artifact_count": 9,
+    "worker_sha256": "ee2e468776efd7ad0b8716e509becc063042737d8dc760627fc0890ef534bdb0",
+    "closure_sha256": "9e3b915f10ecd8ad7daf94d2c9bf9341d1224231b512394b3e791612604371f7"
+  },
+  "features": {
+    "normal_init": {
+      "passed": true,
+      "project": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/generated-project",
+      "manifest_sha256": "ead95417b4cf85f53b8235c98c399b444d70b29799569a3a127f74aa5824a550",
+      "rc_sha256": "f0ca6db62ec13f31a417f786bc01843f35e99e9afce2cf8a9a9cba8c38b1efd2"
+    },
+    "normal_adapter_generate": {
+      "passed": true,
+      "plugin": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/protoc-gen-reboot_rust",
+      "plugin_sha256": "146f2a4f50a968ca0523cf075acba1dc32a941eee465141fdd90b7e64ec16b16",
+      "outputs": {
+        "generated-adapters/rust_greetings/v1/hello_world.reboot.rs": "a8c9fcebed3513aec3c4de4a250af18bd0d95615e8c0bfd46757a93ff26aabb9"
+      },
+      "source_manifest_sha256": "cb09ae0501055e380866ea5680a77d5d9cbf254ae36c5cf6ca326f4e0f48ccf0"
+    }
+  },
+  "attach_kernel_wait": {
+    "pid": 1532110,
+    "birth": "91307766",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "rows": [
+    {
+      "name": "closure",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/closure.log",
+      "sha256": "f01205138a8ad5799bf9485bb13376c009c88e74796ee39dfaa55bc1c2e8e50a"
+    },
+    {
+      "name": "imports",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/imports.log",
+      "sha256": "be9cf6db6a54555ce780962678c22a2ef8b07dd2b4db4911236aeab0a519b991"
+    },
+    {
+      "name": "help",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/help.log",
+      "sha256": "ea1650da6573e54c3270c80f312e5df4a8b206cd8b37e55cdea9e6f1acc2455b"
+    },
+    {
+      "name": "insecure-refusal",
+      "exit": 1,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/insecure-refusal.log",
+      "sha256": "12d4311ac3d2be76491857cde31dc46dc4c2f4b1ad6f1ea9fc3422da0f360e36"
+    },
+    {
+      "name": "init",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/init.log",
+      "sha256": "d4a3eef56c980ec17f61d42fa0c931aface4e3763c153d79506ab16c692db69a"
+    },
+    {
+      "name": "rust-plugin-build",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rust-plugin-build.log",
+      "sha256": "33a29151e1c5cd71a77610d951c56a3d16c27dc149d741f52cca29367be46850"
+    },
+    {
+      "name": "generate",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/generate.log",
+      "sha256": "cbde17c13f069f341aa75d6f9e92a1393ace10632e92e1f9c3b02498fe434cf5"
+    },
+    {
+      "name": "terminate-after-health-check",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/terminate-after-health-check.log",
+      "sha256": "50f3aa98b6e6006d895633995d58fceb389c98eb85c5b5f5ec34d7255486222a",
+      "children": [
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/.rbt/dev/merged511-terminate/rust/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/.rbt/dev/merged511-terminate/rust/server-info.pb",
+            "20000"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "label": "Database",
+          "pid": 92,
+          "starttime": "91315404",
+          "version": 1
+        },
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+          "label": "app",
+          "pid": 143,
+          "starttime": "91315434",
+          "version": 1
+        }
+      ],
+      "canonical_health_serving": true,
+      "leaders_groups_listener_gone": true
+    },
+    {
+      "name": "unrelated-sentinel",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/unrelated-sentinel.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "91308050",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/closure.py",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015"
+        ],
+        "fd_identity": [
+          6,
+          1533505
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/closure.log"
+      },
+      {
+        "pid": 9,
+        "birth": "91310834",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import sys;sys.path.insert(0,'/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/python-overlay');import reboot.cli.main,reboot.cli.common.cli,reboot.cli.commands.rust_dev,reboot.server.envoy_nanny;from rbt.dashboard.v1 import dashboard_pb2,dashboard_rbt;from rbt.std.presence.v1 import presence_rbt;from rbt.v1alpha1.bdd import grammar_pb2;from rbt.v1alpha1 import database_pb2_grpc;assert hasattr(dashboard_rbt,\"Preferences\");assert \"SetSuppressAutomaticOpen\" in dashboard_pb2.DESCRIPTOR.services_by_name[\"PreferencesMethods\"].methods_by_name;assert \"suppress_automatic_open\" in dashboard_pb2.PreferencesGetResponse.DESCRIPTOR.fields_by_name;assert \"color_scheme\" in grammar_pb2.OpensWebApp.DESCRIPTOR.fields_by_name;assert hasattr(database_pb2_grpc.DatabaseServicer,\"GetCapabilities\");assert reboot.cli.main.__file__.startswith('/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/python-overlay');print(\"MERGED_MAIN_IMPORT_OK\")"
+        ],
+        "fd_identity": [
+          6,
+          1519117
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/imports.log"
+      },
+      {
+        "pid": 10,
+        "birth": "91311357",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged",
+          "--help"
+        ],
+        "fd_identity": [
+          6,
+          1533548
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/help.log"
+      },
+      {
+        "pid": 11,
+        "birth": "91311889",
+        "exit": 1,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged511-refusal"
+        ],
+        "fd_identity": [
+          6,
+          1533590
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/insecure-refusal.log"
+      },
+      {
+        "pid": 13,
+        "birth": "91312402",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged",
+          "init",
+          "--backend=rust",
+          "--frontend=none",
+          "--application-name=rust_greetings",
+          "--rust-sdk=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/source/reboot/rust"
+        ],
+        "fd_identity": [
+          6,
+          1533647
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/init.log"
+      },
+      {
+        "pid": 16,
+        "birth": "91312924",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "build",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/source/reboot/rust/Cargo.toml",
+          "--bin",
+          "protoc-gen-reboot_rust"
+        ],
+        "fd_identity": [
+          6,
+          1533695
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rust-plugin-build.log"
+      },
+      {
+        "pid": 72,
+        "birth": "91314368",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged",
+          "generate",
+          "--rust=generated-adapters",
+          "--rust-module=crate::proto",
+          "api"
+        ],
+        "fd_identity": [
+          6,
+          1533826
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/generate.log"
+      },
+      {
+        "pid": 79,
+        "birth": "91314909",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import time;time.sleep(460)"
+        ],
+        "fd_identity": [
+          6,
+          1519199
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/unrelated-sentinel.log"
+      },
+      {
+        "pid": 80,
+        "birth": "91314910",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged511-terminate",
+          "--port=50689",
+          "--rust-allow-insecure-database",
+          "--terminate-after-health-check"
+        ],
+        "fd_identity": [
+          6,
+          1519200
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/terminate-after-health-check.log"
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "logs": {
+    "closure": "{\"proto_count\": 40, \"overlay_files\": 2665, \"rbt\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/rbt-merged\"}\n",
+    "imports": "MERGED_MAIN_IMPORT_OK\n",
+    "help": "usage: rbt [-h] [--version] [--state-directory=STATE_DIRECTORY]\n           {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n           ...\n\npositional arguments:\n  {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n  --state-directory=STATE_DIRECTORY\n                        parent directory for the `.rbt` directory, which\n                        stores application state; defaults to the directory\n                        containing an `.rbtrc` file.\n",
+    "insecure-refusal": "Using working directory .\nThe C++ Database binds 0.0.0.0 without authentication. Use an isolated trusted development network and explicitly pass --rust-allow-insecure-database to opt in; not for production/cloud.\n",
+    "init": "Rust app initialized. Set RBT_RUST_DATABASE_BINARY and use an isolated trusted network, then run 'rbt dev run --rust-allow-insecure-database'. See README.md for the typed Cargo client and runtime limits.\n",
+    "rust-plugin-build": "   Compiling reboot-rust-schema v0.0.0 (/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/source/reboot/rust)\n    Finished `dev` profile [unoptimized] target(s) in 14.24s\n",
+    "generate": "Running `generate ...` (use --verbose to see full command) \u2705\n\n",
+    "terminate-after-health-check": "Using working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.15s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/.rbt/dev/merged511-terminate/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/.rbt/dev/merged511-terminate/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 92, \"starttime\": \"91315404\", \"version\": 1}\nRust Database PID=92, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI511-20261015/runtime/trials/.rbt/dev/merged511-terminate/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 143, \"starttime\": \"91315434\", \"version\": 1}\nRust app PID=143, endpoint=http://127.0.0.1:50689\nRust app SERVING (canonical gRPC health check)\n",
+    "unrelated-sentinel": ""
+  },
+  "project_artifacts": {
+    ".rbtrc": {
+      "sha256": "f0ca6db62ec13f31a417f786bc01843f35e99e9afce2cf8a9a9cba8c38b1efd2",
+      "bytes": 444
+    },
+    "README.md": {
+      "sha256": "5cb693c93e664a0d5cb0608e9402324b3458a02b5e3b82c2fd6c9a719767d2db",
+      "bytes": 8804
+    },
+    "api/rust_greetings/v1/hello_world.proto": {
+      "sha256": "499827aee06bda0a070f8a1a1a9e0915bbd69ff0754042b2bcc0fb3c3805be67",
+      "bytes": 1096
+    },
+    "backend/Cargo.toml": {
+      "sha256": "ead95417b4cf85f53b8235c98c399b444d70b29799569a3a127f74aa5824a550",
+      "bytes": 742
+    },
+    "backend/build.rs": {
+      "sha256": "5ed485d7018be51444c4bd7f9096dc06feb82bd3829203bf2d61016defe83bb6",
+      "bytes": 290
+    },
+    "backend/src/bin/client.rs": {
+      "sha256": "df7af0bfa8d5be38beed26da1420ac67fd1530c712545081fd5c0a121470e4c7",
+      "bytes": 4784
+    },
+    "backend/src/lib.rs": {
+      "sha256": "e20a62a22f271d9d9f5526c05423f02f7c001bdc72c1ed48d4c0f5ec39933bbc",
+      "bytes": 3114
+    },
+    "backend/src/main.rs": {
+      "sha256": "1074547db033c82ea1f04d77c9de3da9c3a41a4e95330c8944946d04fe27e6af",
+      "bytes": 4042
+    },
+    "generated-adapters/rust_greetings/v1/hello_world.reboot.rs": {
+      "sha256": "a8c9fcebed3513aec3c4de4a250af18bd0d95615e8c0bfd46757a93ff26aabb9",
+      "bytes": 108942
+    }
+  },
+  "source_qualification": "Frozen merged417 snapshot, complete3255pins verified; same qualified Python package native extension as CLI507, not fresh upstream native build.",
+  "termination_application": "The original qualified public414 hello-tasks application; newly initialized rust_greetings app was not compiled or served in this batch.",
+  "inherited_wording_note": "Original runtime result retained an inherited unresolved sentence saying init/generate not claimed; dedicated executed feature receipts and actual outputs establish these bounded gates. No hot reload or generated-consumer compilation claimed."
+}

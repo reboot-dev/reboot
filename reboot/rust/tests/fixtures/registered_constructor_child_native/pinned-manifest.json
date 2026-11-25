@@ -1,0 +1,20 @@
+{
+  "pin": "5c332a",
+  "schemas": [
+    {
+      "path": "pinned/api/bank/v1/account.proto",
+      "source": "/tmp/reboot-rust-wakeup187-20261013/bank-example-source/pinned/api/bank/v1/account.proto",
+      "sha256": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d"
+    },
+    {
+      "path": "pinned/api/bank/v1/bank.proto",
+      "source": "/tmp/reboot-rust-wakeup187-20261013/bank-example-source/pinned/api/bank/v1/bank.proto",
+      "sha256": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5"
+    },
+    {
+      "path": "pinned/api/bank/v1/errors.proto",
+      "source": "/tmp/reboot-rust-wakeup187-20261013/bank-example-source/pinned/api/bank/v1/errors.proto",
+      "sha256": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3"
+    }
+  ]
+}

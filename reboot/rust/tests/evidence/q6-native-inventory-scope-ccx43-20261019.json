@@ -1,0 +1,77 @@
+{
+  "scope": "Q6 native generated two-service cursor/typed-result/Break/GC feature acceptance; not public CLI, Docker app, or Python-example parity",
+  "validated_revision": "4cee506d7c52091c03542f04674cda8401c89258",
+  "host": {"server_id": 171072439, "type": "ccx43", "address": "2.29.27.53", "user": "benchbuild", "existing_resources_only": true},
+  "repair": "Root plus ten disjoint canonical decimal first-digit prefix scans; validate every decoded scope and current-task bound; retain every row without filtering/deduplication; unchanged total-GC assertions",
+  "original_failure": {
+    "host": "omarchy-jean",
+    "read_only_access": true,
+    "owner_pid": 2839593,
+    "gate_pid": 2840487,
+    "owner_and_gate_terminal_verified": true,
+    "exact_joined_children": 25,
+    "custody_failure": null,
+    "owner_complete": false,
+    "cursor_exit": 1,
+    "diagnostic": "inventory returned wrong iteration scope",
+    "preserved_archive": "/home/openclaw/.hermes/profiles/jean/cache/scratch/q6-failed-native-preserved.tar.gz",
+    "preserved_archive_sha256": "bfcbec669a49c37b4f40c04046cdb2c8d5ee8a41333323b0a88d8bc5df40395e"
+  },
+  "offline_failed_rocksdb_copy": {
+    "complete": true,
+    "original_inspector_revision": "2a593ad634711fe6fe5780733cab8040cb77da0e",
+    "original_exit": 1,
+    "repaired_exit": 0,
+    "sdk_host_started": false,
+    "inventory_count": 5,
+    "decoded_iteration_scopes": [9999, 9999, 9999, null, null],
+    "unchanged_total_gc_assertions_passed": true,
+    "exact_joined_children": 3,
+    "receipt_sha256": "e2aa7003eefec41f6dce6f64560bcd68f9a7d2f684d5240d40cc5d5692f93c2d"
+  },
+  "native_gate": {
+    "complete": true,
+    "iterations": 10000,
+    "elapsed_seconds": 382.8455340862274,
+    "owner_pid": 397061,
+    "gate_pid": 397064,
+    "owner_and_gate_terminal_verified": true,
+    "exit": 0,
+    "scenarios": ["stored-cursor-break-terminal", "started-after-actual-b-commit"],
+    "exact_joined_children": 43,
+    "all_owned_children_joined": true,
+    "custody_failure": null,
+    "cleanup_errors": [],
+    "source_and_executable_freeze_verified": true,
+    "inventory_counts": {"initial": 3, "advanced_9995": 2, "break_9999": 5, "completed_9999": 6},
+    "unchanged_total_gc_assertions_passed": true,
+    "gate_sha256": "b673554ed135626a34ab32a657501098a03ce17b6618684416c4898504d85725",
+    "evidence_sha256": "4e9ff9158c67145d486d593db89874bf4da3d3607142d056e5d9658729a424e3",
+    "owner_receipt_sha256": "6138e3a0562d70b796120b37159d59cc34292e76a4bc71730557de10d5403a06"
+  },
+  "artifacts": {
+    "app_sha256": "f47b7413cbc4ff42c402cc72a33439c8db78d4da8074b2ca96d580f77947d87a",
+    "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "database_cc_sha256": "79404e6ed4f8b227aa0f56505eab04908d03adaae68a7af0f8d11348a45549c1",
+    "database_provenance": "Reused existing accepted CCX43 Bazel artifact from checkout 8574ccb0df9893274e69d1a19eca469dad56d779. git diff from that source to validated_revision is empty for reboot/server, rbt, WORKSPACE.bazel, and third_party.",
+    "app_build": "cargo build --offline --locked --manifest-path reboot/rust/tests/fixtures/workflow_cursor_results_app/Cargo.toml --bin app; copied into retained evidence before original-inspector RED rebuild",
+    "results_archive": "/home/openclaw/.hermes/profiles/jean/cache/scratch/q6-inventory-repair-results.tar.gz",
+    "results_archive_sha256": "86155958d671ae33eb131b18fd006e9031fade42e9e01a4c03547c2ef0568b9d"
+  },
+  "other_checks": {
+    "offline_cargo_test_all_targets": {"passed": true, "executions": 6},
+    "python_fixture_regressions": {"passed": true, "tests": 24},
+    "offline_strict_clippy_all_targets": {"passed": true, "initial_failure_preserved": "clippy.log; generated Tonic result_large_err only", "repair": "module-local generated proto/adapter allowance"}
+  },
+  "handoff": {
+    "source": "/home/benchbuild/.cache/q6-inventory-repair-src",
+    "evidence": "/home/benchbuild/.cache/q6-inventory-repair-evidence",
+    "cargo_target": "/home/benchbuild/reboot-rust/.cargo-target-acceptance",
+    "cargo_home": "/home/benchbuild/.cargo",
+    "bazel_root": "/home/benchbuild/.bazel-reboot",
+    "original_checkout": "/home/benchbuild/reboot-rust",
+    "application_tests_run": false,
+    "no_install_pull_capacity_or_deletion": true,
+    "remote_source_and_retained_executables_not_to_be_modified": true
+  }
+}

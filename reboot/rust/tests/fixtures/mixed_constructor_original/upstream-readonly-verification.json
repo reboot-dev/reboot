@@ -1,0 +1,26 @@
+{
+  "initial_wrong_repository": "reboot-dev/examples returned HTTP404; authoritative reboot-dev/reboot-examples git tree resolved exact revision and paths",
+  "files": [
+    {
+      "path": "api/bank/v1/account.proto",
+      "url": "https://raw.githubusercontent.com/reboot-dev/reboot-examples/5c332a2910122d6035799bfaf2a314bf1de830b8/api/bank/v1/account.proto",
+      "sha256": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d",
+      "matches_pin": true,
+      "matches_local": true
+    },
+    {
+      "path": "api/bank/v1/bank.proto",
+      "url": "https://raw.githubusercontent.com/reboot-dev/reboot-examples/5c332a2910122d6035799bfaf2a314bf1de830b8/api/bank/v1/bank.proto",
+      "sha256": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5",
+      "matches_pin": true,
+      "matches_local": true
+    },
+    {
+      "path": "api/bank/v1/errors.proto",
+      "url": "https://raw.githubusercontent.com/reboot-dev/reboot-examples/5c332a2910122d6035799bfaf2a314bf1de830b8/api/bank/v1/errors.proto",
+      "sha256": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3",
+      "matches_pin": true,
+      "matches_local": true
+    }
+  ]
+}

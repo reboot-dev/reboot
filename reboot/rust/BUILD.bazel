@@ -1,0 +1,8 @@
+# Metadata/sources for CLI scaffold validation tests; no Bazel Rust build.
+exports_files(["Cargo.toml"])
+
+filegroup(
+    name = "scaffold_sdk_sources",
+    srcs = ["Cargo.toml", "src/build.rs"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,7 @@
+{
+  "complete": true,
+  "records_each": 5,
+  "deterministic_records_exact": 5,
+  "exact_deterministic_cases_equal": true,
+  "same_actor_prefix_and_keys": true
+}

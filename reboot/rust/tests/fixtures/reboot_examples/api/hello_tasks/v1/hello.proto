@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hello_tasks.v1;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service HelloMethods {
+  // Returns the current list of recorded messages.
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Adds a new message to the list of recorded messages.
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Adds a "Disappearing soon!" alert to a message.
+  rpc Warning(WarningRequest) returns (WarningResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Removes a message from the history.
+  rpc Erase(EraseRequest) returns (EraseResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
+
+message Message {
+  string id = 1;
+  string text = 2;
+}
+
+message Hello {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated Message messages = 1;
+  int32 num_erased_messages = 2;
+}
+
+message MessagesRequest {}
+
+message MessagesResponse {
+  repeated string messages = 1;
+}
+
+message SendRequest {
+  string message = 1;
+}
+
+message SendResponse {
+  // The ID of the task scheduled to add a warning to the new message.
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message WarningRequest {
+  string message_id = 1;
+}
+
+message WarningResponse {
+  // The ID of the task scheduled to erase the message.
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message EraseRequest {
+  string message_id = 1;
+}
+
+message EraseResponse {}

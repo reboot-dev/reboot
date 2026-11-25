@@ -1,0 +1,842 @@
+{
+  "original_children_joined": 445,
+  "container_lifecycles": 28,
+  "unique_stack_container_ids": 16,
+  "app_before_engine": true,
+  "records": [
+    {
+      "label": "repeat-qualification-rust",
+      "id": "282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e",
+      "role": "config",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-31",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 282e2a09e646a28c97d0460f77a7d20fb8f6c83243fbae82ba3bd7c89a4c6c8e"
+        ],
+        "started": 1792492570.886302,
+        "log": "wait-31.log",
+        "joined": true,
+        "pid": 867658,
+        "exit": 0,
+        "ended": 1792492573.8009746
+      }
+    },
+    {
+      "label": "repeat-qualification-rust",
+      "id": "8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e",
+      "role": "engine",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-39",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e"
+        ],
+        "started": 1792492576.1958284,
+        "log": "wait-39.log",
+        "joined": true,
+        "pid": 867666,
+        "exit": 0,
+        "ended": 1792492593.0466957
+      }
+    },
+    {
+      "label": "repeat-qualification-rust",
+      "id": "5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294",
+      "role": "app",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-47",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294"
+        ],
+        "started": 1792492583.6631267,
+        "log": "wait-47.log",
+        "joined": true,
+        "pid": 867674,
+        "exit": 0,
+        "ended": 1792492590.001944
+      }
+    },
+    {
+      "label": "repeat-qualification-rust",
+      "id": "8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e",
+      "role": "engine",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-62",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 8a5a6a4fd4fc91ee4201c2267773178c1f3c43ba7ae5daae544089cb13a6617e"
+        ],
+        "started": 1792492595.369812,
+        "log": "wait-62.log",
+        "joined": true,
+        "pid": 867794,
+        "exit": 0,
+        "ended": 1792492994.5358756
+      }
+    },
+    {
+      "label": "repeat-qualification-rust",
+      "id": "5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294",
+      "role": "app",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-65",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 5c9386f6efe0cc00daff1da114c57820b3960fd13a2ed5908e6f13deaaeba294"
+        ],
+        "started": 1792492597.1551826,
+        "log": "wait-65.log",
+        "joined": true,
+        "pid": 867797,
+        "exit": 0,
+        "ended": 1792492991.4177716
+      }
+    },
+    {
+      "label": "repeat-qualification-python",
+      "id": "533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8",
+      "role": "app",
+      "restart": false,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-88",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8"
+        ],
+        "started": 1792493000.1181562,
+        "log": "wait-88.log",
+        "joined": true,
+        "pid": 868294,
+        "exit": 0,
+        "ended": 1792493019.205781
+      }
+    },
+    {
+      "label": "repeat-qualification-python",
+      "id": "533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8",
+      "role": "app",
+      "restart": true,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-109",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 533a193e240fd569094f46cfa3eb63d657ec9752a2d452342e460e5a6b7e4ca8"
+        ],
+        "started": 1792493021.7076313,
+        "log": "wait-109.log",
+        "joined": true,
+        "pid": 868727,
+        "exit": 0,
+        "ended": 1792493385.0685086
+      }
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "id": "a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88",
+      "role": "config",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-137",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait a8c840e95cb9c17aa1906afd93c7cb03321849a76383366c5485f08a48c06c88"
+        ],
+        "started": 1792493390.8360612,
+        "log": "wait-137.log",
+        "joined": true,
+        "pid": 869542,
+        "exit": 0,
+        "ended": 1792493393.9083948
+      }
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "id": "865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969",
+      "role": "engine",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-145",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969"
+        ],
+        "started": 1792493396.385132,
+        "log": "wait-145.log",
+        "joined": true,
+        "pid": 869550,
+        "exit": 0,
+        "ended": 1792493651.7165694
+      }
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "id": "2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850",
+      "role": "app",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-153",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850"
+        ],
+        "started": 1792493403.942238,
+        "log": "wait-153.log",
+        "joined": true,
+        "pid": 869558,
+        "exit": 0,
+        "ended": 1792493648.6198764
+      }
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "id": "865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969",
+      "role": "engine",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-173",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 865d5473b08d5ef66c9209c4f73bd4aab87d62b3083c133c59c7d24cbdd28969"
+        ],
+        "started": 1792493654.1687138,
+        "log": "wait-173.log",
+        "joined": true,
+        "pid": 869994,
+        "exit": 0,
+        "ended": 1792493665.8460486
+      }
+    },
+    {
+      "label": "repeat-perf-1-rust",
+      "id": "2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850",
+      "role": "app",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-176",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 2bcf9ad1a9dc7c509bc66af2491f2bf9d9726adf065c8e716de89e1b7f04d850"
+        ],
+        "started": 1792493655.92369,
+        "log": "wait-176.log",
+        "joined": true,
+        "pid": 869997,
+        "exit": 0,
+        "ended": 1792493662.671479
+      }
+    },
+    {
+      "label": "repeat-perf-1-python",
+      "id": "351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d",
+      "role": "app",
+      "restart": false,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-194",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d"
+        ],
+        "started": 1792493671.5829206,
+        "log": "wait-194.log",
+        "joined": true,
+        "pid": 870201,
+        "exit": 0,
+        "ended": 1792493868.143486
+      }
+    },
+    {
+      "label": "repeat-perf-1-python",
+      "id": "351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d",
+      "role": "app",
+      "restart": true,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-220",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 351563f70ad83ab7709915f828b1d7dc3e3fa1803747ab0f2793bb323a83234d"
+        ],
+        "started": 1792493870.7374601,
+        "log": "wait-220.log",
+        "joined": true,
+        "pid": 870894,
+        "exit": 0,
+        "ended": 1792493886.2218678
+      }
+    },
+    {
+      "label": "repeat-perf-2-python",
+      "id": "4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d",
+      "role": "app",
+      "restart": false,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-242",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d"
+        ],
+        "started": 1792493892.1479688,
+        "log": "wait-242.log",
+        "joined": true,
+        "pid": 871220,
+        "exit": 0,
+        "ended": 1792494089.2382288
+      }
+    },
+    {
+      "label": "repeat-perf-2-python",
+      "id": "4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d",
+      "role": "app",
+      "restart": true,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-268",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 4c70c704922ab93ba0112725f7fefb5983ab718e4a7c216f537cdd408ca23c8d"
+        ],
+        "started": 1792494091.870748,
+        "log": "wait-268.log",
+        "joined": true,
+        "pid": 871975,
+        "exit": 0,
+        "ended": 1792494107.698072
+      }
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "id": "fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1",
+      "role": "config",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-290",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait fdb61952ade6963f3e7190418d209d8322353db5c593efeae529318e2f91a4c1"
+        ],
+        "started": 1792494113.8027472,
+        "log": "wait-290.log",
+        "joined": true,
+        "pid": 872302,
+        "exit": 0,
+        "ended": 1792494116.935454
+      }
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "id": "fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333",
+      "role": "engine",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-298",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333"
+        ],
+        "started": 1792494119.537683,
+        "log": "wait-298.log",
+        "joined": true,
+        "pid": 872314,
+        "exit": 0,
+        "ended": 1792494375.356859
+      }
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "id": "d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784",
+      "role": "app",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-306",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784"
+        ],
+        "started": 1792494127.7243438,
+        "log": "wait-306.log",
+        "joined": true,
+        "pid": 872323,
+        "exit": 0,
+        "ended": 1792494372.05475
+      }
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "id": "fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333",
+      "role": "engine",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-326",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait fe355b1a2125986d947e79e92cf4249d5d361128e35ade54ea6fca169ac07333"
+        ],
+        "started": 1792494377.9333797,
+        "log": "wait-326.log",
+        "joined": true,
+        "pid": 872830,
+        "exit": 0,
+        "ended": 1792494389.1755843
+      }
+    },
+    {
+      "label": "repeat-perf-2-rust",
+      "id": "d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784",
+      "role": "app",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-329",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait d63bb36e3c7c0326b1ff3711fcbdf72559d22121d121be67bfe5b840f67cb784"
+        ],
+        "started": 1792494379.7392259,
+        "log": "wait-329.log",
+        "joined": true,
+        "pid": 872833,
+        "exit": 0,
+        "ended": 1792494385.828701
+      }
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "id": "3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab",
+      "role": "config",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-347",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 3926d4b725043b05086028f7e013b6a2771156f541a2aa9afb3237b5759921ab"
+        ],
+        "started": 1792494395.193303,
+        "log": "wait-347.log",
+        "joined": true,
+        "pid": 872959,
+        "exit": 0,
+        "ended": 1792494398.351146
+      }
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "id": "37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825",
+      "role": "engine",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-355",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825"
+        ],
+        "started": 1792494401.013966,
+        "log": "wait-355.log",
+        "joined": true,
+        "pid": 872967,
+        "exit": 0,
+        "ended": 1792494656.8978267
+      }
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "id": "87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3",
+      "role": "app",
+      "restart": false,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-363",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3"
+        ],
+        "started": 1792494408.8150368,
+        "log": "wait-363.log",
+        "joined": true,
+        "pid": 872975,
+        "exit": 0,
+        "ended": 1792494653.5257797
+      }
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "id": "37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825",
+      "role": "engine",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-383",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 37164b2753e9d8ecb86c87d46db065dd3dbb114108a0595153bae65c37b3f825"
+        ],
+        "started": 1792494659.4812782,
+        "log": "wait-383.log",
+        "joined": true,
+        "pid": 873520,
+        "exit": 0,
+        "ended": 1792494670.8173048
+      }
+    },
+    {
+      "label": "repeat-perf-3-rust",
+      "id": "87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3",
+      "role": "app",
+      "restart": true,
+      "exit_code": 0,
+      "original_wait": {
+        "name": "wait-386",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 87fbee85cf046b52434bb7831f81e6325fadc4c8ed12e6b72d53fa1ea05780a3"
+        ],
+        "started": 1792494661.2887475,
+        "log": "wait-386.log",
+        "joined": true,
+        "pid": 873523,
+        "exit": 0,
+        "ended": 1792494667.419006
+      }
+    },
+    {
+      "label": "repeat-perf-3-python",
+      "id": "4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847",
+      "role": "app",
+      "restart": false,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-404",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847"
+        ],
+        "started": 1792494676.91214,
+        "log": "wait-404.log",
+        "joined": true,
+        "pid": 873647,
+        "exit": 0,
+        "ended": 1792494872.1743946
+      }
+    },
+    {
+      "label": "repeat-perf-3-python",
+      "id": "4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847",
+      "role": "app",
+      "restart": true,
+      "exit_code": 143,
+      "original_wait": {
+        "name": "wait-428",
+        "argv": [
+          "ssh",
+          "-i",
+          "/root/.ssh/tiny-repeat-control-20261020",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          "-o",
+          "ConnectTimeout=10",
+          "root@2.31.73.10",
+          "docker wait 4d31d0453e37c15b67f5083563b882f720b1deceb7e73a22d1e96271710c5847"
+        ],
+        "started": 1792494874.9520724,
+        "log": "wait-428.log",
+        "joined": true,
+        "pid": 874318,
+        "exit": 0,
+        "ended": 1792494890.9223685
+      }
+    }
+  ],
+  "client": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 143,
+    "Error": "",
+    "StartedAt": "2026-10-20T10:36:04.047506094Z",
+    "FinishedAt": "2026-10-20T11:14:51.980875562Z"
+  },
+  "exit_receipt": {
+    "owner_pid": 866962,
+    "exit_status": 0,
+    "gate": "completed",
+    "failure_gate": null,
+    "failures": [],
+    "end": 1792494892.2370362,
+    "all_original_unix_children_joined": true
+  }
+}

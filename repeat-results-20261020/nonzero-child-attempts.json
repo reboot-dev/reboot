@@ -1,0 +1,212 @@
+[
+  {
+    "name": "repeat-qualification-python-boot-0",
+    "exit": 1,
+    "log": "repeat-qualification-python-boot-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-boot-1",
+    "exit": 1,
+    "log": "repeat-qualification-python-boot-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-boot-2",
+    "exit": 1,
+    "log": "repeat-qualification-python-boot-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-boot-3",
+    "exit": 1,
+    "log": "repeat-qualification-python-boot-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-boot-4",
+    "exit": 1,
+    "log": "repeat-qualification-python-boot-4.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-restart-ready-0",
+    "exit": 1,
+    "log": "repeat-qualification-python-restart-ready-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-restart-ready-1",
+    "exit": 1,
+    "log": "repeat-qualification-python-restart-ready-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-restart-ready-2",
+    "exit": 1,
+    "log": "repeat-qualification-python-restart-ready-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-qualification-python-restart-ready-3",
+    "exit": 1,
+    "log": "repeat-qualification-python-restart-ready-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-boot-0",
+    "exit": 1,
+    "log": "repeat-perf-1-python-boot-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-boot-1",
+    "exit": 1,
+    "log": "repeat-perf-1-python-boot-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-boot-2",
+    "exit": 1,
+    "log": "repeat-perf-1-python-boot-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-boot-3",
+    "exit": 1,
+    "log": "repeat-perf-1-python-boot-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-boot-4",
+    "exit": 1,
+    "log": "repeat-perf-1-python-boot-4.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-restart-ready-0",
+    "exit": 1,
+    "log": "repeat-perf-1-python-restart-ready-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-restart-ready-1",
+    "exit": 1,
+    "log": "repeat-perf-1-python-restart-ready-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-restart-ready-2",
+    "exit": 1,
+    "log": "repeat-perf-1-python-restart-ready-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-1-python-restart-ready-3",
+    "exit": 1,
+    "log": "repeat-perf-1-python-restart-ready-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-boot-0",
+    "exit": 1,
+    "log": "repeat-perf-2-python-boot-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-boot-1",
+    "exit": 1,
+    "log": "repeat-perf-2-python-boot-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-boot-2",
+    "exit": 1,
+    "log": "repeat-perf-2-python-boot-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-boot-3",
+    "exit": 1,
+    "log": "repeat-perf-2-python-boot-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-boot-4",
+    "exit": 1,
+    "log": "repeat-perf-2-python-boot-4.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-restart-ready-0",
+    "exit": 1,
+    "log": "repeat-perf-2-python-restart-ready-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-restart-ready-1",
+    "exit": 1,
+    "log": "repeat-perf-2-python-restart-ready-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-restart-ready-2",
+    "exit": 1,
+    "log": "repeat-perf-2-python-restart-ready-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-2-python-restart-ready-3",
+    "exit": 1,
+    "log": "repeat-perf-2-python-restart-ready-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-boot-0",
+    "exit": 1,
+    "log": "repeat-perf-3-python-boot-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-boot-1",
+    "exit": 1,
+    "log": "repeat-perf-3-python-boot-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-boot-2",
+    "exit": 1,
+    "log": "repeat-perf-3-python-boot-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-boot-3",
+    "exit": 1,
+    "log": "repeat-perf-3-python-boot-3.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-restart-ready-0",
+    "exit": 1,
+    "log": "repeat-perf-3-python-restart-ready-0.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-restart-ready-1",
+    "exit": 1,
+    "log": "repeat-perf-3-python-restart-ready-1.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-restart-ready-2",
+    "exit": 1,
+    "log": "repeat-perf-3-python-restart-ready-2.log",
+    "classification": "startup/readiness retry"
+  },
+  {
+    "name": "repeat-perf-3-python-restart-ready-3",
+    "exit": 1,
+    "log": "repeat-perf-3-python-restart-ready-3.log",
+    "classification": "startup/readiness retry"
+  }
+]

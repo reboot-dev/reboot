@@ -1,0 +1,573 @@
+{
+  "status": "partial_interrupted_not_qualified",
+  "three_repetitions_completed": false,
+  "original_owner_ledger_bytes": 0,
+  "original_wait_custody_recovered": false,
+  "new_recovery_retirement_verified": true,
+  "correctness": {
+    "complete": true,
+    "records_each": 22,
+    "deterministic_records_exact": 21,
+    "concurrent_membership_multiplicity_records": 1,
+    "concurrent_membership_multiplicity_equal": true,
+    "raw_concurrent_messages": [
+      [
+        "",
+        "concurrent-1",
+        "concurrent-0",
+        "concurrent-2",
+        "concurrent-3",
+        "concurrent-4",
+        "concurrent-7",
+        "concurrent-6",
+        "concurrent-5"
+      ],
+      [
+        "",
+        "concurrent-0",
+        "concurrent-1",
+        "concurrent-3",
+        "concurrent-2",
+        "concurrent-4",
+        "concurrent-5",
+        "concurrent-7",
+        "concurrent-6"
+      ]
+    ],
+    "raw_concurrent_order_equal": false,
+    "entire_cases_exact_equal_observed": false,
+    "ordering_required_for_concurrent_record": false
+  },
+  "restart_transcripts": {
+    "rust": {
+      "endpoint": "127.0.0.1:50051",
+      "cases": {
+        "startup": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "Welcome! This message was sent by a constructor.",
+              "This message was sent after construction!"
+            ]
+          }
+        },
+        "messages": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "first message",
+              "second message",
+              "",
+              "duplicate",
+              "duplicate",
+              "\u96ea \ud83e\udd80",
+              "  whitespace\n"
+            ]
+          }
+        },
+        "create-replay": {
+          "ok": true,
+          "response": {}
+        },
+        "send-replay": {
+          "ok": true,
+          "response": {}
+        },
+        "after-replays": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "first message",
+              "second message",
+              "",
+              "duplicate",
+              "duplicate",
+              "\u96ea \ud83e\udd80",
+              "  whitespace\n"
+            ]
+          }
+        }
+      },
+      "complete": true
+    },
+    "python": {
+      "endpoint": "127.0.0.1:50051",
+      "cases": {
+        "startup": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "Welcome! This message was sent by a constructor.",
+              "This message was sent after construction!"
+            ]
+          }
+        },
+        "messages": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "first message",
+              "second message",
+              "",
+              "duplicate",
+              "duplicate",
+              "\u96ea \ud83e\udd80",
+              "  whitespace\n"
+            ]
+          }
+        },
+        "create-replay": {
+          "ok": true,
+          "response": {}
+        },
+        "send-replay": {
+          "ok": true,
+          "response": {}
+        },
+        "after-replays": {
+          "ok": true,
+          "response": {
+            "messages": [
+              "first message",
+              "second message",
+              "",
+              "duplicate",
+              "duplicate",
+              "\u96ea \ud83e\udd80",
+              "  whitespace\n"
+            ]
+          }
+        }
+      },
+      "complete": true
+    }
+  },
+  "soaks": {
+    "rust": {
+      "completed_batches": 4,
+      "rpc_seconds": 400.71078764000004,
+      "requests": 40000,
+      "errors": 0
+    },
+    "python": {
+      "completed_batches": 5,
+      "rpc_seconds": 353.200313226,
+      "requests": 50000,
+      "errors": 0
+    }
+  },
+  "rows": [
+    {
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 178.829084363,
+      "successful_rps": 11.183863112223165,
+      "p50_ms": 475.000584,
+      "p95_ms": 2152.208939,
+      "p99_ms": 2761.731616,
+      "file": "perf-1-python-many_send.json",
+      "label": "perf-1-python",
+      "language": "python",
+      "case": "many_send",
+      "repetition": 1,
+      "sample_count": 2000,
+      "resource_samples": 648,
+      "event_start": 1792485516.9531882,
+      "event_end": 1792485696.0594313,
+      "resource_first": 1792485516.9955707,
+      "resource_last": 1792485695.7879207,
+      "resource_tail_gap_seconds": 0.27151060104370117,
+      "max_sampled_stack_cgroup_bytes": 602640384,
+      "max_sampled_stack_rss_sum_bytes": 585060352,
+      "cpu_seconds_observed_interval": 55.258344,
+      "container_ids": [
+        "f9c4c63a755a93070db400e0020f53f2dc93fb035e7b5e773bdcd0ba6d63ed5c"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 59.038330484,
+      "successful_rps": 169.38148348741169,
+      "p50_ms": 42.882798,
+      "p95_ms": 64.196685,
+      "p99_ms": 71.694065,
+      "file": "perf-1-python-reader.json",
+      "label": "perf-1-python",
+      "language": "python",
+      "case": "reader",
+      "repetition": 1,
+      "sample_count": 10000,
+      "resource_samples": 234,
+      "event_start": 1792485314.685008,
+      "event_end": 1792485373.9554043,
+      "resource_first": 1792485314.7495344,
+      "resource_last": 1792485373.8447068,
+      "resource_tail_gap_seconds": 0.11069750785827637,
+      "max_sampled_stack_cgroup_bytes": 586170368,
+      "max_sampled_stack_rss_sum_bytes": 581210112,
+      "cpu_seconds_observed_interval": 17.344739,
+      "container_ids": [
+        "f9c4c63a755a93070db400e0020f53f2dc93fb035e7b5e773bdcd0ba6d63ed5c"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 141.709635081,
+      "successful_rps": 7.056683191855012,
+      "p50_ms": 1222.990863,
+      "p95_ms": 3228.712186,
+      "p99_ms": 4123.14584,
+      "file": "perf-1-python-single_send.json",
+      "label": "perf-1-python",
+      "language": "python",
+      "case": "single_send",
+      "repetition": 1,
+      "sample_count": 1000,
+      "resource_samples": 512,
+      "event_start": 1792485374.483287,
+      "event_end": 1792485516.434243,
+      "resource_first": 1792485374.6401808,
+      "resource_last": 1792485516.1759164,
+      "resource_tail_gap_seconds": 0.25832653045654297,
+      "max_sampled_stack_cgroup_bytes": 590782464,
+      "max_sampled_stack_rss_sum_bytes": 577056768,
+      "cpu_seconds_observed_interval": 44.749152,
+      "container_ids": [
+        "f9c4c63a755a93070db400e0020f53f2dc93fb035e7b5e773bdcd0ba6d63ed5c"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 26.215093497,
+      "successful_rps": 76.29192702398241,
+      "p50_ms": 108.101638,
+      "p95_ms": 110.498048,
+      "p99_ms": 144.208607,
+      "file": "perf-1-rust-many_send.json",
+      "label": "perf-1-rust",
+      "language": "rust",
+      "case": "many_send",
+      "repetition": 1,
+      "sample_count": 2000,
+      "resource_samples": 105,
+      "event_start": 1792485104.0558984,
+      "event_end": 1792485130.4925184,
+      "resource_first": 1792485104.2360885,
+      "resource_last": 1792485130.4404328,
+      "resource_tail_gap_seconds": 0.05208563804626465,
+      "max_sampled_stack_cgroup_bytes": 193585152,
+      "max_sampled_stack_rss_sum_bytes": 161878016,
+      "cpu_seconds_observed_interval": 5.998448,
+      "container_ids": [
+        "37dc4b33ce204983a405932f873e730a06de14826f828a37829c1f7def6d1234",
+        "729398cf8229cde40d69b04e888430837bd8a168e67fdcd57fe593d6a28dc6a9"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 69.424137408,
+      "successful_rps": 144.04212098784626,
+      "p50_ms": 55.692525,
+      "p95_ms": 72.067524,
+      "p99_ms": 75.379245,
+      "file": "perf-1-rust-reader.json",
+      "label": "perf-1-rust",
+      "language": "rust",
+      "case": "reader",
+      "repetition": 1,
+      "sample_count": 10000,
+      "resource_samples": 276,
+      "event_start": 1792485020.3779347,
+      "event_end": 1792485090.035507,
+      "resource_first": 1792485020.558325,
+      "resource_last": 1792485089.8753822,
+      "resource_tail_gap_seconds": 0.1601247787475586,
+      "max_sampled_stack_cgroup_bytes": 118304768,
+      "max_sampled_stack_rss_sum_bytes": 135184384,
+      "cpu_seconds_observed_interval": 12.95667,
+      "container_ids": [
+        "37dc4b33ce204983a405932f873e730a06de14826f828a37829c1f7def6d1234",
+        "729398cf8229cde40d69b04e888430837bd8a168e67fdcd57fe593d6a28dc6a9"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 131.503115504,
+      "successful_rps": 76.04382574263668,
+      "p50_ms": 108.340386,
+      "p95_ms": 109.59471,
+      "p99_ms": 124.003806,
+      "file": "perf-1-rust-replay.json",
+      "label": "perf-1-rust",
+      "language": "rust",
+      "case": "replay",
+      "repetition": 1,
+      "sample_count": 10000,
+      "resource_samples": 522,
+      "event_start": 1792485130.7900586,
+      "event_end": 1792485262.5258918,
+      "resource_first": 1792485130.9444637,
+      "resource_last": 1792485262.3278635,
+      "resource_tail_gap_seconds": 0.1980283260345459,
+      "max_sampled_stack_cgroup_bytes": 196177920,
+      "max_sampled_stack_rss_sum_bytes": 164147200,
+      "cpu_seconds_observed_interval": 26.444426,
+      "container_ids": [
+        "37dc4b33ce204983a405932f873e730a06de14826f828a37829c1f7def6d1234",
+        "729398cf8229cde40d69b04e888430837bd8a168e67fdcd57fe593d6a28dc6a9"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 13.011208772,
+      "successful_rps": 76.85680996465068,
+      "p50_ms": 108.04978,
+      "p95_ms": 112.96608,
+      "p99_ms": 148.978965,
+      "file": "perf-1-rust-single_send.json",
+      "label": "perf-1-rust",
+      "language": "rust",
+      "case": "single_send",
+      "repetition": 1,
+      "sample_count": 1000,
+      "resource_samples": 53,
+      "event_start": 1792485090.5363297,
+      "event_end": 1792485103.7659254,
+      "resource_first": 1792485090.630723,
+      "resource_last": 1792485103.7329645,
+      "resource_tail_gap_seconds": 0.03296089172363281,
+      "max_sampled_stack_cgroup_bytes": 183492608,
+      "max_sampled_stack_rss_sum_bytes": 145580032,
+      "cpu_seconds_observed_interval": 3.605383,
+      "container_ids": [
+        "37dc4b33ce204983a405932f873e730a06de14826f828a37829c1f7def6d1234",
+        "729398cf8229cde40d69b04e888430837bd8a168e67fdcd57fe593d6a28dc6a9"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 14.604689127,
+      "successful_rps": 136.94231918312846,
+      "p50_ms": 51.859232,
+      "p95_ms": 72.683685,
+      "p99_ms": 93.526634,
+      "file": "perf-2-python-many_send.json",
+      "label": "perf-2-python",
+      "language": "python",
+      "case": "many_send",
+      "repetition": 2,
+      "sample_count": 2000,
+      "resource_samples": 59,
+      "event_start": 1792486026.889752,
+      "event_end": 1792486041.7045665,
+      "resource_first": 1792486026.9294846,
+      "resource_last": 1792486041.5609539,
+      "resource_tail_gap_seconds": 0.14361262321472168,
+      "max_sampled_stack_cgroup_bytes": 608915456,
+      "max_sampled_stack_rss_sum_bytes": 590675968,
+      "cpu_seconds_observed_interval": 7.953868,
+      "container_ids": [
+        "2f0a6eb3b75964a4196509887b2b31a414257412352975a09374c0fe9ffd3077"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 46.175133522,
+      "successful_rps": 216.56678036968816,
+      "p50_ms": 33.821434,
+      "p95_ms": 52.335598,
+      "p99_ms": 64.463331,
+      "file": "perf-2-python-reader.json",
+      "label": "perf-2-python",
+      "language": "python",
+      "case": "reader",
+      "repetition": 2,
+      "sample_count": 10000,
+      "resource_samples": 184,
+      "event_start": 1792485972.6764312,
+      "event_end": 1792486019.09069,
+      "resource_first": 1792485972.7454982,
+      "resource_last": 1792486018.8633168,
+      "resource_tail_gap_seconds": 0.2273731231689453,
+      "max_sampled_stack_cgroup_bytes": 625823744,
+      "max_sampled_stack_rss_sum_bytes": 625807360,
+      "cpu_seconds_observed_interval": 16.223185,
+      "container_ids": [
+        "2f0a6eb3b75964a4196509887b2b31a414257412352975a09374c0fe9ffd3077"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 91.020873626,
+      "successful_rps": 109.86490902174238,
+      "p50_ms": 72.450941,
+      "p95_ms": 73.270606,
+      "p99_ms": 75.254229,
+      "file": "perf-2-python-replay.json",
+      "label": "perf-2-python",
+      "language": "python",
+      "case": "replay",
+      "repetition": 2,
+      "sample_count": 10000,
+      "resource_samples": 362,
+      "event_start": 1792486042.0119047,
+      "event_end": 1792486133.2796185,
+      "resource_first": 1792486042.064168,
+      "resource_last": 1792486133.1083221,
+      "resource_tail_gap_seconds": 0.1712963581085205,
+      "max_sampled_stack_cgroup_bytes": 604643328,
+      "max_sampled_stack_rss_sum_bytes": 592023552,
+      "cpu_seconds_observed_interval": 32.751096,
+      "container_ids": [
+        "2f0a6eb3b75964a4196509887b2b31a414257412352975a09374c0fe9ffd3077"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 6.728608025,
+      "successful_rps": 148.61914920359771,
+      "p50_ms": 51.45379,
+      "p95_ms": 76.829278,
+      "p99_ms": 77.619748,
+      "file": "perf-2-python-single_send.json",
+      "label": "perf-2-python",
+      "language": "python",
+      "case": "single_send",
+      "repetition": 2,
+      "sample_count": 1000,
+      "resource_samples": 27,
+      "event_start": 1792486019.6477108,
+      "event_end": 1792486026.5857368,
+      "resource_first": 1792486019.869382,
+      "resource_last": 1792486026.4254174,
+      "resource_tail_gap_seconds": 0.16031932830810547,
+      "max_sampled_stack_cgroup_bytes": 605040640,
+      "max_sampled_stack_rss_sum_bytes": 584368128,
+      "cpu_seconds_observed_interval": 4.047046,
+      "container_ids": [
+        "2f0a6eb3b75964a4196509887b2b31a414257412352975a09374c0fe9ffd3077"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 2000,
+      "errors": 0,
+      "seconds": 26.309030892,
+      "successful_rps": 76.01952379812501,
+      "p50_ms": 108.276706,
+      "p95_ms": 112.84444,
+      "p99_ms": 150.877894,
+      "file": "perf-2-rust-many_send.json",
+      "label": "perf-2-rust",
+      "language": "rust",
+      "case": "many_send",
+      "repetition": 2,
+      "sample_count": 2000,
+      "resource_samples": 105,
+      "event_start": 1792486271.3092246,
+      "event_end": 1792486297.8406448,
+      "resource_first": 1792486271.4255483,
+      "resource_last": 1792486297.6420302,
+      "resource_tail_gap_seconds": 0.19861459732055664,
+      "max_sampled_stack_cgroup_bytes": 193994752,
+      "max_sampled_stack_rss_sum_bytes": 160632832,
+      "cpu_seconds_observed_interval": 6.367485,
+      "container_ids": [
+        "20812678fbad58bdbb2758bca79700550d5bde582f936bda095311471d011179",
+        "c7a8ccb37443ed9fa9ce71c7510895d862a52d46a5315d718f4294bb290226be"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 10000,
+      "errors": 0,
+      "seconds": 69.298476281,
+      "successful_rps": 144.30331713861597,
+      "p50_ms": 55.819274,
+      "p95_ms": 71.894941,
+      "p99_ms": 75.121807,
+      "file": "perf-2-rust-reader.json",
+      "label": "perf-2-rust",
+      "language": "rust",
+      "case": "reader",
+      "repetition": 2,
+      "sample_count": 10000,
+      "resource_samples": 276,
+      "event_start": 1792486187.5629084,
+      "event_end": 1792486257.0932317,
+      "resource_first": 1792486187.7617428,
+      "resource_last": 1792486257.0661407,
+      "resource_tail_gap_seconds": 0.027091026306152344,
+      "max_sampled_stack_cgroup_bytes": 115597312,
+      "max_sampled_stack_rss_sum_bytes": 122302464,
+      "cpu_seconds_observed_interval": 12.660925,
+      "container_ids": [
+        "20812678fbad58bdbb2758bca79700550d5bde582f936bda095311471d011179",
+        "c7a8ccb37443ed9fa9ce71c7510895d862a52d46a5315d718f4294bb290226be"
+      ],
+      "exec_exit_code": "0"
+    },
+    {
+      "requests": 1000,
+      "errors": 0,
+      "seconds": 13.126230123,
+      "successful_rps": 76.18333600961203,
+      "p50_ms": 108.248727,
+      "p95_ms": 114.756271,
+      "p99_ms": 151.551535,
+      "file": "perf-2-rust-single_send.json",
+      "label": "perf-2-rust",
+      "language": "rust",
+      "case": "single_send",
+      "repetition": 2,
+      "sample_count": 1000,
+      "resource_samples": 53,
+      "event_start": 1792486257.632316,
+      "event_end": 1792486270.9800174,
+      "resource_first": 1792486257.8214602,
+      "resource_last": 1792486270.9209883,
+      "resource_tail_gap_seconds": 0.05902910232543945,
+      "max_sampled_stack_cgroup_bytes": 184000512,
+      "max_sampled_stack_rss_sum_bytes": 145965056,
+      "cpu_seconds_observed_interval": 4.060419,
+      "container_ids": [
+        "20812678fbad58bdbb2758bca79700550d5bde582f936bda095311471d011179",
+        "c7a8ccb37443ed9fa9ce71c7510895d862a52d46a5315d718f4294bb290226be"
+      ],
+      "exec_exit_code": "0"
+    }
+  ],
+  "raw_sample_count": 72000,
+  "invalid_resource_lines": [
+    8087
+  ],
+  "invalid_event_lines": [],
+  "resource_observer_first": 1792484250.6300304,
+  "resource_observer_last": 1792486340.0106266,
+  "last_retained_client_event": 1792486429.6841886,
+  "recovery_start": 1792486963.3739774,
+  "recovery_end": 1792486981.6702414,
+  "minimum_ram_qualified": false,
+  "lower_limit_runs_executed": false,
+  "note": "Surviving timing rows only; no three-pair aggregate, speedup or saturation claim. Original interrupted files unmodified."
+}

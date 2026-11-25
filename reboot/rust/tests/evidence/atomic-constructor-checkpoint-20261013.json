@@ -1,0 +1,176 @@
+{
+  "all_child_exits_zero": true,
+  "companion_model_tests": {
+    "native_cases_not_reexercised": 7,
+    "passed": 6
+  },
+  "documentation_verifier": {
+    "behavioral_proof": false,
+    "local_links": 230,
+    "self_tests": 9,
+    "source_files": 342,
+    "source_fingerprint_matches": true
+  },
+  "exact_container_retired": true,
+  "final_formatted_regression": {
+    "generated_contract_tests": 2,
+    "mixed_original_model_tests": 4,
+    "result_sha256": "f989833f69bc70991d39cd1da26a5eb2819e610535480c6348209d45c70122c6",
+    "sdk_full": {
+      "failed": 0,
+      "ignored": 6,
+      "passed": 645
+    },
+    "sdk_strict_all_targets_clippy": true,
+    "source_unchanged": true
+  },
+  "first_token_sha256": "8683b9cc8fc2c9e9149430a1f4fd8970469475422b4ba4aaf5d1025904d20a1a",
+  "fixture_ordinary": {
+    "failed": 0,
+    "ignored": 5,
+    "passed": 5
+  },
+  "integrated_closing_gates": [
+    {
+      "counts": [
+        2,
+        0,
+        0
+      ],
+      "exit": 0,
+      "log_sha256": "d9fecf8e8fe3823f270d8376e98fa2bee2e4fef049026ab037b084db122d68ab",
+      "name": "generated-contract"
+    },
+    {
+      "counts": [
+        4,
+        0,
+        0
+      ],
+      "exit": 0,
+      "log_sha256": "e70b2e0ae34dcd31020862f0df71c7e79aa3d35d067c5d18c767c2670294566d",
+      "name": "mixed-constructor-original"
+    }
+  ],
+  "joined_direct_children": 8,
+  "limitations": [
+    "No full original Bank/default Bank construction/transaction-owned constructor child/dynamic writer owner recovery",
+    "Retention is bounded and fail-closed; no live adoption/reconciliation",
+    "Managed serving topology excludes independent producers; no global native Prepare/import fence",
+    "Successful Recover trailers not transparently forwarded by fixture proxy",
+    "Fixture process retirement is not universal production-host cleanup",
+    "No exactly-once external email delivery claim",
+    "CI fork approval separate; PR remains draft"
+  ],
+  "local_resource_incident": {
+    "approved_cap_bytes": 15000000000,
+    "cause": "An unguarded final direct Cargo invocation used default debug settings and grew the target beyond the cap. No more local builds or deletion; explicit cleanup approval required.",
+    "free_bytes": 25798565888,
+    "target_bytes": 15218432180
+  },
+  "native_binary_sha256": "6661ead0e6857639f618da22b1ede64e775663d0af6e45689453abcfd9109463",
+  "native_database_suite": {
+    "failed": 0,
+    "log_sha256": "88c831ba4d86275c05a84b80e2eb29267d0d7352c04d25486358a4b422b352f8",
+    "passed": 76
+  },
+  "old_sidecar_negative": {
+    "all_two_children_exited_zero_and_reaped": true,
+    "native_sha256": "5240488d0a9ff3ed3a6685c93b70fd2c59533df0c150b1c65008aa9f4dc89845",
+    "not_reexecuted_in_202": true,
+    "passed": true,
+    "production_sdk_and_negative_fixture_bytes_match_current": true,
+    "receipt_sha256": "86573846db9ecaaccf816443a36d4a9d4f1b26f0151951074f7e6c8c72efb94d",
+    "scope": "actual original generated Rust SDK vs old canonical native: unsupported capability only",
+    "sdk_log_sha256": "29565c617670a5d89638ea6bd95795e1e2647d3a15886b0e43f8c0d6d571a854",
+    "sdk_sha256": "7b1d3eb7e61439c50ddbe2c6a1e3cd73c7e49e13a10e98ad6444024519191528",
+    "source_match_paths": [
+      "reboot/rust/src/codegen.rs",
+      "reboot/rust/src/one_shot_tasks.rs",
+      "reboot/rust/src/ordinary_writer_store.rs",
+      "reboot/rust/src/runtime.rs",
+      "reboot/rust/tests/fixtures/typed_shared_bank/src/native.rs"
+    ]
+  },
+  "owner_lock_free": true,
+  "phases": [
+    {
+      "exact_test": "native_positive::original_account_open_native_ack_pending_completed_public_wait",
+      "log_sha256": "ac90d9c6f9f22e7e52b92d2b318d36ea7815c33d452e06e48b8aa8f119122caa",
+      "native_exit": 0,
+      "test_exit": 0
+    },
+    {
+      "exact_test": "native_positive::original_account_open_pending_at_shutdown_for_restart",
+      "log_sha256": "46b0a9746db77d2ca556e17ce0227ef3984ab21028059719e82f85dd78601296",
+      "native_exit": 0,
+      "test_exit": 0
+    },
+    {
+      "exact_test": "native_positive::original_account_saved_token_restart_recovery_public_wait",
+      "log_sha256": "7231406498dfdf9ea7969693b400bc3a109ae95bf548524ec4d806ec8cc294d2",
+      "native_exit": 0,
+      "test_exit": 0
+    },
+    {
+      "exact_test": "native_positive::native_positive_ack_loss::original_account_native_ack_transport_loss_retains_uncertainty_failed_host_cold_refusal",
+      "log_sha256": "3d2ebba4f9d4b201cf0b31155e8e8628bc774e6259fed0d82ac736177179a259",
+      "native_exit": 0,
+      "test_exit": 0
+    }
+  ],
+  "positive_result_sha256": "cdf2319df22de2fe732906b0118749877e21846ee63f77fe837c75cf1c6057e9",
+  "publication_format_only_adjustments": {
+    "reboot/rust/src/runtime.rs": {
+      "publication_sha256": "7e2127fd88b94b8cdbeaee4a385ca3994a18bf02f3355a81134b09aad1ec3995",
+      "tested_input_sha256": "edb12953bfd7981aedb21a507d51680d50d3d76fa2e938389de8945ed05e9274"
+    },
+    "reboot/rust/tests/fixtures/mixed_constructor_original/build.rs": {
+      "publication_sha256": "673e64c7d7bce451e52be020c1c3322b005012f197c18e0ec02808a7dc826fa6",
+      "tested_input_sha256": "5939397e79311852a635462bce05dfd2cee931c7df51cf1df6f3ff2ea0ef1940"
+    }
+  },
+  "same_state_restart": true,
+  "scope": "standalone taskful constructor; managed pristine single-shard authority, not a global Prepare/import fence or full Bank",
+  "sdk_library": {
+    "failed": 0,
+    "ignored": 6,
+    "inventory": 651,
+    "log_sha256": "601277a1a91f19e8de358930208c49c535131b7044d30c1b08c8479cb3cd2a0d",
+    "passed": 645
+  },
+  "sdk_source_manifest_sha256": "80694f9aaa3d6eaff7d85191bb76fb4cdfd6607da11d589bba79c5b003a8b952",
+  "source_base": "666d10c2cda34e6213bb4c81c59824b815e4dd44",
+  "source_delta": {
+    "rbt/v1alpha1/database.proto": "8b322265ff8fbd7ac3b6baf317181cce7e121d5c04dc122fa9f96f69890ec554",
+    "reboot/rust/src/codegen.rs": "6801b49e53692449f70cc8163e4b61e47afcb4e71fc93ea5f8e1c96676518da3",
+    "reboot/rust/src/constructor_host_lifecycle_tests.rs": "1bf6bab14bc20e7ba9e7ef2d538702aa24ea1676e9e4c91cccc7bac40ee41543",
+    "reboot/rust/src/constructor_lifecycle_tests.rs": "7b49595316f491d9efbd1ae3d55d1d108f9d5c45bcd9f9930472f19630dd0b15",
+    "reboot/rust/src/constructor_scheduling_tests.rs": "14f769b5e71e171e890e75cc9e9e5be8f7efb62ba87f157c8fc37b5039730e06",
+    "reboot/rust/src/one_shot_tasks.rs": "7f97c8a008350e42adb78e52b28097791c9edde8c1876ac3b336ffb6753ebf91",
+    "reboot/rust/src/ordinary_writer_store.rs": "406cb50928b9aa93f5acf4415559d5cf489cfb682426038b98e50f195ba40475",
+    "reboot/rust/src/runtime.rs": "7e2127fd88b94b8cdbeaee4a385ca3994a18bf02f3355a81134b09aad1ec3995",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.lock": "d803f1f24223ae40bcebe30e64dbf5531786bd3010bcfa0ce7b207b67c173059",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.toml": "3a2e5aa61a3b58e9356eec0f05d286d7b32ba5c28f876c9384a8387c6d3091e4",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/build.rs": "673e64c7d7bce451e52be020c1c3322b005012f197c18e0ec02808a7dc826fa6",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/pinned-manifest.json": "6bded053715bc55e2a9ee178d72bcf7286fad022435019c57fe9d99666514147",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/pinned/api/bank/v1/account.proto": "35704f425b4e987182274f6475fab7bf9958245f996f3ebc0b51e18bca5f9d4d",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/pinned/api/bank/v1/bank.proto": "058fb0fa6db9844d9f6f2131cf4810982a4d871a888f0466e7b3a09c2667dad5",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/pinned/api/bank/v1/errors.proto": "7993ba5445e9a600f6bd2e0bf327d09b66c747030b10b22bacde8116d1b424e3",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/src/lib.rs": "11c1bc9d6ebaa21ad097f7b37e54e2751be690bc1aaff33717fdd4d54b9b15ee",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/src/semantics.rs": "f86da236f6c1ff76369e44f8d465c609f20fa76d4af7e63abf3d352e02909bb3",
+    "reboot/rust/tests/fixtures/mixed_constructor_original/upstream-readonly-verification.json": "c8aae69f955244a2983f42bb6e6ddcd2d4410f1fba76d4de16fb00cfc0e97156",
+    "reboot/rust/tests/fixtures/typed_shared_bank/Cargo.lock": "fe704fa95b76aa46f00063bf0f16eca0075a954b805f60d1e89323f164b1e312",
+    "reboot/rust/tests/fixtures/typed_shared_bank/Cargo.toml": "10d9d9bdb59d404f6dd30dde9dba0cf5ccb6b4c1086ec7113f85bbd05091bad8",
+    "reboot/rust/tests/fixtures/typed_shared_bank/src/lib.rs": "61da46bead1feb0d5c19a8aae120ec9b6e5ee6c01418113823577d2407315fec",
+    "reboot/rust/tests/fixtures/typed_shared_bank/src/native.rs": "d14f03bc36aaaba4b6782ee8ff371c67f6ab49efcbcf21181bf39875b6c0f2eb",
+    "reboot/rust/tests/fixtures/typed_shared_bank/src/native_positive.rs": "504f7f85bc329df9fec95b2e555dbd9f3a3088d053fcba9e6df5b9a1f8e1dc29",
+    "reboot/rust/tests/fixtures/typed_shared_bank/src/native_positive_ack_loss.rs": "1e4ddf32125d4e302d4643c6ff86d9afc6097d058630a01eec78850b888e3165",
+    "reboot/rust/tests/fixtures/typed_shared_bank/src/registered_ticket_probe.rs": "227d64736cc0b8a2814688417b27b8612fe7711653888e3bf1bc06f4db0a0c38",
+    "reboot/rust/tests/fixtures/typed_shared_bank/supported-companion/src/ticket_negative.rs": "0a0f02c8822dd917859a6cde44fea2bf7286231b09575ad9677ee2761bf13606",
+    "reboot/server/database.cc": "152be8a6a79752401f976f77df9071642bcd260fbabe43c70a1c0af4e4036e82",
+    "tests/reboot/server/database_tests.cc": "8ad3006433d83aacd08653fd23a512c835a4b564a253d0b90fee7ab0d14a6a99"
+  },
+  "upstream_example_pin": "5c332a2910122d6035799bfaf2a314bf1de830b8",
+  "upstream_original_inputs_verified": 9
+}

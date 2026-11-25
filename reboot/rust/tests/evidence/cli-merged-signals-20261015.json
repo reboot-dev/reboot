@@ -1,0 +1,543 @@
+{
+  "scope": "Real normal merged-main serving and TERM/INT/HUP/QUIT cleanup acceptance on frozen merged snapshot417; not full/native/current-upstream qualification",
+  "verification": {
+    "merged_main_signal_acceptance": true,
+    "full_native_acceptance": false,
+    "current_upstream_bazel_build_acceptance": false,
+    "failure": null,
+    "source_count": 3255,
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "config_sha256": "afd0c8461fa6f75bdc9a74e0a18e50bb1f4fad7fc16963ee4d06e0c38036dd13",
+    "accepted_retired_sha256": "d3b29d941d3b0512e06b97ae4ca1ce3f1fbba3b28e06640573df5e626b8d2e75",
+    "cid": "7b1f766ec3267eb0232b937fcb6259a9af3748ff6baede8cc66a591e61bd5d15",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T19:27:18.653320145Z",
+      "FinishedAt": "2026-10-15T19:28:28.81240646Z"
+    },
+    "closure_proto_count": 40,
+    "closure_generated_count": 2665,
+    "closure_receipt_sha256": "0a4905983cb8c0d664da306f39fd3c26545cd0bb653a9ab0eaa738a65214841b",
+    "packaging_native_extension": {
+      "source": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/lib/python3.12/site-packages/reboot/server/libdatabase_native.so",
+      "sha256": "3245c72162b9ae7bdc9b7c9b7a757feb4a4e60c8a9db641700fb7a517949a986",
+      "claim": "qualified installed package native extension; not a fresh upstream build"
+    }
+  },
+  "attach_kernel_wait": {
+    "pid": 1527010,
+    "birth": "91256348",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "rows": [
+    {
+      "name": "closure",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/closure.log",
+      "sha256": "aac07f629d0b542b8c0022bc8e5aaf67a684257ef395ed247e73d0dc7b9effb3"
+    },
+    {
+      "name": "imports",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/imports.log",
+      "sha256": "be9cf6db6a54555ce780962678c22a2ef8b07dd2b4db4911236aeab0a519b991"
+    },
+    {
+      "name": "help",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/help.log",
+      "sha256": "ea1650da6573e54c3270c80f312e5df4a8b206cd8b37e55cdea9e6f1acc2455b"
+    },
+    {
+      "name": "insecure-refusal",
+      "exit": 1,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/insecure-refusal.log",
+      "sha256": "12d4311ac3d2be76491857cde31dc46dc4c2f4b1ad6f1ea9fc3422da0f360e36"
+    },
+    {
+      "name": "signal-sigterm-health",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigterm-health.log",
+      "sha256": "302c00b8e3f30dcc562fbc7f504149f209637dbfc077e1c7815dfd24c2e7d662"
+    },
+    {
+      "name": "signal-sigterm",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigterm.log",
+      "sha256": "fdc98bd91a512a59583f3908df904fe2d0af7c155fb4d0efc578a9a31e191b30",
+      "children": [
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigterm/rust/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigterm/rust/server-info.pb",
+            "20000"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "label": "Database",
+          "pid": 26,
+          "starttime": "91261492",
+          "version": 1
+        },
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+          "label": "app",
+          "pid": 77,
+          "starttime": "91261522",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "signal-sigint-health",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigint-health.log",
+      "sha256": "302c00b8e3f30dcc562fbc7f504149f209637dbfc077e1c7815dfd24c2e7d662"
+    },
+    {
+      "name": "signal-sigint",
+      "exit": -2,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigint.log",
+      "sha256": "416dd0931e53461fced2fc8786b19847b7465e67e98868c4f7a8b4e7f2d12720",
+      "children": [
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigint/rust/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigint/rust/server-info.pb",
+            "20000"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "label": "Database",
+          "pid": 105,
+          "starttime": "91262054",
+          "version": 1
+        },
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+          "label": "app",
+          "pid": 156,
+          "starttime": "91262084",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "signal-sighup-health",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sighup-health.log",
+      "sha256": "302c00b8e3f30dcc562fbc7f504149f209637dbfc077e1c7815dfd24c2e7d662"
+    },
+    {
+      "name": "signal-sighup",
+      "exit": -1,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sighup.log",
+      "sha256": "0f6544d39ad8194acdcea3572b9729d792a41edfcf04e8c1a7425da86c0c28be",
+      "children": [
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sighup/rust/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sighup/rust/server-info.pb",
+            "20000"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "label": "Database",
+          "pid": 184,
+          "starttime": "91262615",
+          "version": 1
+        },
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+          "label": "app",
+          "pid": 235,
+          "starttime": "91262645",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "signal-sigquit-health",
+      "exit": 0,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigquit-health.log",
+      "sha256": "302c00b8e3f30dcc562fbc7f504149f209637dbfc077e1c7815dfd24c2e7d662"
+    },
+    {
+      "name": "signal-sigquit",
+      "exit": -3,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigquit.log",
+      "sha256": "b47d3c46cf0107926ac3c3c60fa471748ab154ed21cd30a40d4d077a1234d035",
+      "children": [
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigquit/rust/rocksdb",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigquit/rust/server-info.pb",
+            "20000"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database",
+          "label": "Database",
+          "pid": 263,
+          "starttime": "91263183",
+          "version": 1
+        },
+        {
+          "argv": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app"
+          ],
+          "birth_and_argv_observed": true,
+          "executable": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app",
+          "label": "app",
+          "pid": 314,
+          "starttime": "91263214",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "name": "unrelated-sentinel",
+      "exit": -15,
+      "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/unrelated-sentinel.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "custody": {
+    "direct": [
+      {
+        "pid": 7,
+        "birth": "91256632",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/closure.py",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015"
+        ],
+        "fd_identity": [
+          6,
+          1533087
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/closure.log"
+      },
+      {
+        "pid": 9,
+        "birth": "91259426",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import sys;sys.path.insert(0,'/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/python-overlay');import reboot.cli.main,reboot.cli.common.cli,reboot.cli.commands.rust_dev,reboot.server.envoy_nanny;from rbt.dashboard.v1 import dashboard_pb2,dashboard_rbt;from rbt.std.presence.v1 import presence_rbt;from rbt.v1alpha1.bdd import grammar_pb2;from rbt.v1alpha1 import database_pb2_grpc;assert hasattr(dashboard_rbt,\"Preferences\");assert \"SetSuppressAutomaticOpen\" in dashboard_pb2.DESCRIPTOR.services_by_name[\"PreferencesMethods\"].methods_by_name;assert \"suppress_automatic_open\" in dashboard_pb2.PreferencesGetResponse.DESCRIPTOR.fields_by_name;assert \"color_scheme\" in grammar_pb2.OpensWebApp.DESCRIPTOR.fields_by_name;assert hasattr(database_pb2_grpc.DatabaseServicer,\"GetCapabilities\");assert reboot.cli.main.__file__.startswith('/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/python-overlay');print(\"MERGED_MAIN_IMPORT_OK\")"
+        ],
+        "fd_identity": [
+          6,
+          1518354
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/imports.log"
+      },
+      {
+        "pid": 10,
+        "birth": "91259938",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--help"
+        ],
+        "fd_identity": [
+          6,
+          1518405
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/help.log"
+      },
+      {
+        "pid": 11,
+        "birth": "91260471",
+        "exit": 1,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged507-refusal"
+        ],
+        "fd_identity": [
+          6,
+          1518467
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/insecure-refusal.log"
+      },
+      {
+        "pid": 13,
+        "birth": "91261000",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/bin/python3.12",
+          "-I",
+          "-B",
+          "-c",
+          "import time;time.sleep(460)"
+        ],
+        "fd_identity": [
+          6,
+          1533181
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/unrelated-sentinel.log"
+      },
+      {
+        "pid": 14,
+        "birth": "91261002",
+        "exit": -15,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged507-sigterm",
+          "--port=54953",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1533182
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigterm.log"
+      },
+      {
+        "pid": 90,
+        "birth": "91261538",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "health"
+        ],
+        "fd_identity": [
+          6,
+          1518513
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigterm-health.log"
+      },
+      {
+        "pid": 93,
+        "birth": "91261559",
+        "exit": -2,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged507-sigint",
+          "--port=58365",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1518515
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigint.log"
+      },
+      {
+        "pid": 169,
+        "birth": "91262105",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "health"
+        ],
+        "fd_identity": [
+          6,
+          1518572
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigint-health.log"
+      },
+      {
+        "pid": 172,
+        "birth": "91262127",
+        "exit": -1,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged507-sighup",
+          "--port=42197",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1518574
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sighup.log"
+      },
+      {
+        "pid": 248,
+        "birth": "91262672",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "health"
+        ],
+        "fd_identity": [
+          6,
+          1518654
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sighup-health.log"
+      },
+      {
+        "pid": 251,
+        "birth": "91262694",
+        "exit": -3,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged",
+          "--state-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "dev",
+          "run",
+          "--working-directory=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials",
+          "--rust",
+          "--application=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustPublic414-20261015/runtime/tmp/reboot-rust-upstream-tasks-adey8u7t/examples/hello-tasks/backend/Cargo.toml",
+          "--servers=1",
+          "--no-chaos",
+          "--no-generate-watch",
+          "--application-name=merged507-sigquit",
+          "--port=57815",
+          "--rust-allow-insecure-database"
+        ],
+        "fd_identity": [
+          6,
+          1518656
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigquit.log"
+      },
+      {
+        "pid": 327,
+        "birth": "91263241",
+        "exit": 0,
+        "spawn_returned": true,
+        "joined": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/client",
+          "health"
+        ],
+        "fd_identity": [
+          6,
+          1533392
+        ],
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/signal-sigquit-health.log"
+      }
+    ],
+    "adopted": [],
+    "cleanup_failure": null
+  },
+  "logs": {
+    "closure": "{\"proto_count\": 40, \"overlay_files\": 2665, \"rbt\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/rbt-merged\"}\n",
+    "imports": "MERGED_MAIN_IMPORT_OK\n",
+    "help": "usage: rbt [-h] [--version] [--state-directory=STATE_DIRECTORY]\n           {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n           ...\n\npositional arguments:\n  {cloud,dashboard,dev,export,import,generate,init,inspect,serve,task}\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n  --state-directory=STATE_DIRECTORY\n                        parent directory for the `.rbt` directory, which\n                        stores application state; defaults to the directory\n                        containing an `.rbtrc` file.\n",
+    "insecure-refusal": "Using working directory .\nThe C++ Database binds 0.0.0.0 without authentication. Use an isolated trusted development network and explicitly pass --rust-allow-insecure-database to opt in; not for production/cloud.\n",
+    "signal-sigterm-health": "SERVING\n",
+    "signal-sigterm": "Using working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.11s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigterm/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigterm/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 26, \"starttime\": \"91261492\", \"version\": 1}\nRust Database PID=26, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigterm/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 77, \"starttime\": \"91261522\", \"version\": 1}\nRust app PID=77, endpoint=http://127.0.0.1:54953\nRust app SERVING (canonical gRPC health check)\n",
+    "signal-sigint-health": "SERVING\n",
+    "signal-sigint": "Using working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.10s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigint/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigint/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 105, \"starttime\": \"91262054\", \"version\": 1}\nRust Database PID=105, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigint/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 156, \"starttime\": \"91262084\", \"version\": 1}\nRust app PID=156, endpoint=http://127.0.0.1:58365\nRust app SERVING (canonical gRPC health check)\n",
+    "signal-sighup-health": "SERVING\n",
+    "signal-sighup": "Using working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.11s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sighup/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sighup/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 184, \"starttime\": \"91262615\", \"version\": 1}\nRust Database PID=184, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sighup/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 235, \"starttime\": \"91262645\", \"version\": 1}\nRust app PID=235, endpoint=http://127.0.0.1:42197\nRust app SERVING (canonical gRPC health check)\n",
+    "signal-sigquit-health": "SERVING\n",
+    "signal-sigquit": "Using working directory .\nWARNING: raw C++ Database listens on ALL interfaces without authentication; use only an isolated trusted development network. Rust public host remains loopback.\nRust development mode: missing authorizers are explicitly permitted; not production-safe\n    Finished `dev` profile [unoptimized] target(s) in 0.11s\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigquit/rust/rocksdb\", \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigquit/rust/server-info.pb\", \"20000\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/container6/cache/output/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/server/database\", \"label\": \"Database\", \"pid\": 263, \"starttime\": \"91263183\", \"version\": 1}\nRust Database PID=263, durable state=/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedCLI507-20261015/runtime/trials/.rbt/dev/merged507-sigquit/rust/rocksdb\nRUST_CHILD_LAUNCH {\"argv\": [\"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\"], \"birth_and_argv_observed\": true, \"executable\": \"/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/app\", \"label\": \"app\", \"pid\": 314, \"starttime\": \"91263214\", \"version\": 1}\nRust app PID=314, endpoint=http://127.0.0.1:57815\nRust app SERVING (canonical gRPC health check)\n",
+    "unrelated-sentinel": ""
+  },
+  "worker_sha256": "060d1ebfc67e6c36ca5e7af8a2c2cf4c042a5a1e50c43559ff518b1a7dabd8fe",
+  "closure_sha256": "9e3b915f10ecd8ad7daf94d2c9bf9341d1224231b512394b3e791612604371f7",
+  "source_manifest_sha256": "cb09ae0501055e380866ea5680a77d5d9cbf254ae36c5cf6ca326f4e0f48ccf0",
+  "source_relationship": "rust_dev.py and focused regression equal published fix; merged dev run_rust_dev call AST equal. Whole frozen merged source417 is not latest PR/upstream HEAD.",
+  "namespace_qualification": "Pinned worker checked child leaders/groups/listeners absent and sentinel survival inside original container namespace; parent verified exact attach join then fresh exact-CID Pid0. Container child PID numbers were not interpreted in host /proc.",
+  "qualified_package_dependency": {
+    "source": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/publicEnv405/python/lib/python3.12/site-packages/reboot/server/libdatabase_native.so",
+    "sha256": "3245c72162b9ae7bdc9b7c9b7a757feb4a4e60c8a9db641700fb7a517949a986",
+    "claim": "qualified installed package native extension; not a fresh upstream build"
+  },
+  "non_claims": [
+    "fresh upstream native library or executable build",
+    "current-upstream Bazel acceptance",
+    "normal init/generate",
+    "terminate-after-health-check",
+    "hot reload and restart durability",
+    "complete public constructor/task qualification",
+    "overall SDK parity"
+  ]
+}

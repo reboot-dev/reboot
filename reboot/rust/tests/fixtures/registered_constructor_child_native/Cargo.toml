@@ -1,0 +1,19 @@
+[package]
+name = "registered-constructor-child-native-fixture"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[dev-dependencies]
+tempfile = "3"
+tokio-stream = { version = "0.1", features = ["net"] }
+[build-dependencies]
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["build"] }
+[dependencies]
+# Sole test-support use: factual, bounded owner wait_for_idle_for_test observers.
+# No REBOOT_TEST_* environment hook is permitted by the native prerequisites.
+reboot = { package = "reboot-rust-schema", path = "../../..", features = ["test-support"] }
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "sync", "io-util"] }
+uuid = { version = "1", features = ["v4"] }

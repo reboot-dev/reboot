@@ -1,0 +1,205 @@
+{
+  "accepted": true,
+  "base": "d3160c1b833ee4ec5267ceca432c392981c7e1d5",
+  "tested_source": "e4a570a8f76581acb7738cb9853c0c2d16e38382",
+  "implementation_change": "Fixture/proof only: existing runtime and generator already execute eligible durable transaction successors",
+  "qualification": {
+    "accepted": true,
+    "source_commit": "e4a570a8f76581acb7738cb9853c0c2d16e38382",
+    "gates": 26,
+    "native_positive_case_executions": 87,
+    "new_successor_scenarios": 8,
+    "successor_execution_cases": 6,
+    "abort_nonescape_cases": 2,
+    "successor_root_handler_entries": 12,
+    "successor_leaf_handler_entries": 12,
+    "original_driver_child_waits": 1236,
+    "native_receipts": [
+      {
+        "path": "final1/canonical-raw/receipt.json",
+        "cases": 11,
+        "waits": 199
+      },
+      {
+        "path": "final1/generic-raw/receipt.json",
+        "cases": 12,
+        "waits": 229
+      },
+      {
+        "path": "final1/mixed-declared-raw/receipt.json",
+        "cases": 10,
+        "waits": 116
+      },
+      {
+        "path": "final1/mixed-direct-raw/receipt.json",
+        "cases": 9,
+        "waits": 60
+      },
+      {
+        "path": "final1/mixed-successor-abort-raw/receipt.json",
+        "cases": 1,
+        "waits": 10
+      },
+      {
+        "path": "final1/mixed-successor-raw/receipt.json",
+        "cases": 3,
+        "waits": 39
+      },
+      {
+        "path": "final1/outbound-ack-raw/receipt.json",
+        "cases": 4,
+        "waits": 95
+      },
+      {
+        "path": "final1/outbound-raw/receipt.json",
+        "cases": 7,
+        "waits": 105
+      },
+      {
+        "path": "final1/parent-error-raw/receipt.json",
+        "cases": 0,
+        "waits": 6
+      },
+      {
+        "path": "final1/parent-signal-raw/receipt.json",
+        "cases": 0,
+        "waits": 6
+      },
+      {
+        "path": "final1/pure-declared-raw/receipt.json",
+        "cases": 10,
+        "waits": 136
+      },
+      {
+        "path": "final1/pure-direct-raw/receipt.json",
+        "cases": 9,
+        "waits": 78
+      },
+      {
+        "path": "final1/pure-successor-abort-raw/receipt.json",
+        "cases": 1,
+        "waits": 12
+      },
+      {
+        "path": "final1/pure-successor-raw/receipt.json",
+        "cases": 3,
+        "waits": 45
+      },
+      {
+        "path": "final1/transaction-raw/receipt.json",
+        "cases": 7,
+        "waits": 100
+      }
+    ],
+    "counts": {
+      "sdk": {
+        "passed": 980,
+        "ignored": 175
+      },
+      "doctests": {
+        "passed": 8,
+        "ignored": 0
+      },
+      "pure_consumer": {
+        "passed": 1,
+        "ignored": 0
+      },
+      "mixed_consumer": {
+        "passed": 1,
+        "ignored": 0
+      }
+    },
+    "inventory_files": 5865,
+    "fresh_cpp_build": false
+  },
+  "regression_case_executions": 79,
+  "counts_are_executions_not_unique_coverage": true,
+  "binaries": {
+    "pure": "3fcce5782c2b4ce5b70b585a9c09f9180fb346c8c1224e8d7a0c65563b4dc18f",
+    "mixed": "6bad359335303fa8d482bb955023fef8138af4677156b63aa65205449353f313"
+  },
+  "native": {
+    "database_sha256": "619002c569e9841144a8bbedf4f2ce6a753bb0e6b103af71883d91d43f413803",
+    "database_source_sha256": "79404e6ed4f8b227aa0f56505eab04908d03adaae68a7af0f8d11348a45549c1",
+    "fresh_cpp_build": false,
+    "source_association": "Existing authorized C++ binary reused, not fresh hermetic build attestation"
+  },
+  "red": {
+    "ignore-due": {
+      "binary_sha256": "fc704087bfb5eb67919019e4cde7136514b86c8a68328f81063fa97f2471eeb2",
+      "wrong_values": [
+        18,
+        18
+      ],
+      "original_child_waits": 6
+    },
+    "skip-target-receipt": {
+      "binary_sha256": "3645fc393b5481eb9f8f162ee22094f6c7205cadc43dbf6725c09ba2770e0a13",
+      "wrong_values": [
+        29,
+        29
+      ],
+      "original_child_waits": 10
+    }
+  },
+  "mutations": {
+    "ignore-due": {
+      "path": "reboot/rust/src/one_shot_tasks.rs",
+      "original_sha256": "14769c505dcc94b0b5d551eba89afdb651e400c257e57b4e59d936fec1e74f52",
+      "modified_sha256": "029cb71e11cdb102bb43bbf76ff7c2bf2e9bcf83af451186584f4765e976b1f5",
+      "root": "/home/benchbuild/.cache/transaction-successor-20261021-evidence/mutants/ignore-due"
+    },
+    "skip-target-receipt": {
+      "path": "reboot/rust/src/codegen.rs",
+      "original_sha256": "77becfbf8cc5ad63ee7ed0c1c968d78b6620a8a881bac997950c2763f32e837a",
+      "modified_sha256": "66076e41edae1021d802a571059402b9c26c68447d1531e1e0253085d6cf03fc",
+      "root": "/home/benchbuild/.cache/transaction-successor-20261021-evidence/mutants/skip-target-receipt"
+    }
+  },
+  "source_readback": {
+    "all_locally_matched": true,
+    "source_inputs": 484,
+    "source_commit": "e4a570a8f76581acb7738cb9853c0c2d16e38382"
+  },
+  "archive": {
+    "path": "/home/benchbuild/.cache/transaction-successor-20261021-raw.tar.gz",
+    "sha256": "026879fd809a6bef610dd9920a324577f8da736b39c4ce35ab05f0424c1b9be4",
+    "bytes": 833455311,
+    "files": 5866,
+    "hardlinks": 1587,
+    "source_commit": "e4a570a8f76581acb7738cb9853c0c2d16e38382",
+    "fresh_cpp_build": false,
+    "inventory_sha256": "e6bb83ee09697c1f78a6aaa27952b6e67a454a09a9f91ae26eb4825a4211df55",
+    "retirement_sha256": "14517c3f08adb1a472b950133caec74d226c9fdea06b7a5cd6a90dc8e2db739d"
+  },
+  "offhost_artifact_directory": "/home/openclaw/.hermes/profiles/jean/artifacts/transaction-successor-20261021",
+  "predecessor": {
+    "path": "/home/benchbuild/.cache/pure-transaction-20261021-raw.tar.gz",
+    "sha256": "2ccf7a7826cd0a8c8d530f2371d401badc5338af0b26a4b94a25f21a1541a188",
+    "preserved": true
+  },
+  "retirement": {
+    "observed": "2026-10-21T00:18:27.056621+00:00",
+    "four_cache_locks_acquired": true,
+    "all_owners_and_gate_children_absent": true,
+    "all_receipt_children_absent": true,
+    "final_original_owner_wait": {
+      "parent_pid": 2026260,
+      "owner_waited": true,
+      "started": "2026-10-21T00:04:04.730644+00:00",
+      "owner_pid": 2026261,
+      "owner_wait_returncode": 0,
+      "finished": "2026-10-21T00:17:26.203373+00:00"
+    }
+  },
+  "verifier_sha256": "16da636b7f717fb13568b421641d62ae38047c417bf92e815bf81c84e80287d2",
+  "inspector_correction": "Raw archive retains pre-publication verifier with incorrect parent-root task_ids expectation. Current committed verifier follows runtime.rs validate_bound_root_effects (task_ids empty) and was executed successfully offhost against the unchanged archive. Failed verifier log retained separately.",
+  "limits": [
+    "Existing actors, exclusive same-host registered root-star, mixed and pure adapters only",
+    "Shared/factory task targets and due/running transaction Cancel remain rejected",
+    "No arbitrary external-effect exactly-once, remote-child composition, migration or full Python retry/identity equivalence claim",
+    "Canonical/local protobuf Empty consumer compilation and strict lint, not native Empty-service execution",
+    "Existing native C++ binary reused, not a fresh hermetic native build",
+    "175 ignored SDK tests are not counted as native execution passes"
+  ]
+}

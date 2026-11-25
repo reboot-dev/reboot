@@ -1,0 +1,17 @@
+syntax = "proto3";
+package shared.probe;
+import "rbt/v1alpha1/options.proto";
+// Keep shared rbt bindings complete across this fixture's two generation calls:
+// the separately generated Account response contains a TaskId.
+import "rbt/v1alpha1/tasks.proto";
+message SharedRoot { option (rbt.v1alpha1.state) = { implements: ["shared.probe.SharedRootMethods"] }; uint64 marker = 1; }
+message InitializeRequest {}
+message InitializeResponse {}
+message TransferRequest { string from = 1; string to = 2; uint64 amount = 3; uint32 scenario = 4; }
+message TransferResponse {}
+message OverdraftError { uint32 amount = 1; }
+service SharedRootMethods {
+ option (rbt.v1alpha1.service) = { state: "shared.probe.SharedRoot" };
+ rpc Initialize(InitializeRequest) returns (InitializeResponse) { option (rbt.v1alpha1.method).writer = { constructor: {} }; }
+ rpc Transfer(TransferRequest) returns (TransferResponse) { option (rbt.v1alpha1.method) = { transaction: { shared: {} }, errors: ["OverdraftError"] }; }
+}

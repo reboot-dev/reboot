@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+
+package tests.reboot.protoc;
+
+message TransactionCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.TransactionCounterWritesMethods"]
+  };
+  int64 value = 1;
+}
+
+message TransactionIncrementRequest {
+  int64 amount = 1;
+}
+
+message TransactionCounterValue {
+  int64 value = 1;
+}
+
+message TransactionLimitExceeded {
+  int64 limit = 1;
+}
+
+message ExternalConstructorCounter {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.ExternalConstructorMethods"]
+  };
+  int64 value = 1;
+}
+
+message ExternalConstructorRequest {
+  int64 amount = 1;
+}
+
+message ExternalConstructorValue {
+  int64 value = 1;
+}
+
+message ExternalConstructorLimitExceeded {
+  int64 limit = 1;
+}
+
+service TransactionCounterWritesMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.TransactionCounter"
+  };
+
+  rpc Query(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).reader = {};
+  }
+
+  rpc Apply(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).writer = {};
+  }
+
+  rpc QueryDeclared(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = { reader: {} errors: ".tests.reboot.protoc.TransactionLimitExceeded" };
+  }
+  rpc ApplyDeclared(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = { writer: {} errors: ".tests.reboot.protoc.TransactionLimitExceeded" };
+  }
+
+  rpc Increment(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { exclusive: {} }
+      errors: ".tests.reboot.protoc.TransactionLimitExceeded"
+    };
+  }
+
+  rpc FactoryIncrement(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { constructor: {} exclusive: {} }
+      errors: ".tests.reboot.protoc.TransactionLimitExceeded"
+    };
+  }
+
+  rpc FactoryIncrementTarget(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {}
+      exclusive: {}
+    };
+  }
+
+  rpc SharedRead(TransactionIncrementRequest) returns (TransactionCounterValue) {
+    option (rbt.v1alpha1.method).transaction = {
+      shared: {}
+    };
+  }
+}
+
+// A distinct generated task binding for heterogeneous Wait-registry proof.
+message RegistryGauge {
+  option (rbt.v1alpha1.state) = {
+    implements: ["tests.reboot.protoc.RegistryGaugeMethods"]
+  };
+  int64 value = 1;
+}
+message RegistryGaugeValue {
+  string reading = 1;
+}
+service RegistryGaugeMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.RegistryGauge"
+  };
+  rpc Query(TransactionIncrementRequest) returns (RegistryGaugeValue) {
+    option (rbt.v1alpha1.method).reader = {};
+  }
+  rpc Increment(TransactionIncrementRequest) returns (RegistryGaugeValue) {
+    option (rbt.v1alpha1.method).transaction = { exclusive: {} };
+  }
+}
+
+// This deliberately has no transaction methods. The C++ Database fixture
+// serves it directly through its generated external unary Tonic adapter.
+service ExternalConstructorMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.ExternalConstructorCounter"
+  };
+
+  rpc Construct(ExternalConstructorRequest) returns (ExternalConstructorValue) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} }
+      errors: ".tests.reboot.protoc.ExternalConstructorLimitExceeded"
+    };
+  }
+}

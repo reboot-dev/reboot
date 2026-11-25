@@ -22,6 +22,13 @@ from reboot.cli.common.directories import (
 )
 from reboot.cli.common.rc import ArgumentParser
 from reboot.cli.common.subprocesses import Subprocesses
+from reboot.cli.rust_generate import (
+    RUST_PLUGIN_NAME,
+    RUST_PLUGIN_OUT_FLAG,
+    missing_rust_plugin_message,
+    rust_options_validation_error,
+    rust_plugin_args,
+)
 from reboot.pydantic_schema_to_proto import generate_proto_file_from_api
 from reboot.pydantic_schema_to_zod import (
     collect_all_error_models,
@@ -35,9 +42,9 @@ from reboot.settings import (
     ENVVAR_REBOOT_REACT_EXTENSIONS,
     ENVVAR_REBOOT_WEB_EXTENSIONS,
 )
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
-REBOOT_SPECIFIC_PLUGINS = ['python', 'react', 'nodejs', 'web']
+REBOOT_SPECIFIC_PLUGINS = ['python', 'react', 'nodejs', 'web', 'rust']
 REBOOT_EXPERIMENTAL_PLUGINS: list[str] = []
 
 # Dictionary from out path to list of sufficient plugins (it's a list
@@ -51,6 +58,7 @@ PLUGINS_SUFFICIENT_FOR_EXPLICIT_OUT_FLAGS = {
     '--reboot_react_out': ['react'],
     '--reboot_nodejs_out': ['nodejs'],
     '--reboot_web_out': ['web'],
+    RUST_PLUGIN_OUT_FLAG: ['rust'],
 }
 
 # Specify all possible flags for supported languages, in a priority order.
@@ -74,6 +82,7 @@ OUTPUT_FLAGS_BY_LANGUAGE = {
         "--reboot_web_out",
         "--es_out",
     ],
+    "rust": [RUST_PLUGIN_OUT_FLAG],
 }
 
 PROTOC_PLUGIN_BY_LANGUAGE = {
@@ -81,6 +90,7 @@ PROTOC_PLUGIN_BY_LANGUAGE = {
     "react": "protoc-gen-reboot_react",
     "nodejs": "protoc-gen-reboot_nodejs",
     "web": "protoc-gen-reboot_web",
+    "rust": RUST_PLUGIN_NAME,
 }
 
 BOILERPLATE_SUPPORTED_LANGUAGES = ['python', 'nodejs']
@@ -162,6 +172,20 @@ def register_generate(parser: ArgumentParser):
         type=bool,
         default=False,
         help="generate .js extensions for imports in Node.js files",
+    )
+
+    parser.subcommand('generate').add_argument(
+        '--rust',
+        type=str,
+        default=None,
+        help="output directory in which Rust adapter files will be generated",
+    )
+
+    parser.subcommand('generate').add_argument(
+        '--rust-module',
+        type=str,
+        default=None,
+        help="Rust module path containing the pre-existing protobuf bindings",
     )
 
     parser.subcommand('generate').add_argument(
@@ -360,6 +384,8 @@ async def get_output_paths_and_languages(
         output_by_language['nodejs'] = args.nodejs
     if args.web is not None:
         output_by_language['web'] = args.web
+    if args.rust is not None:
+        output_by_language['rust'] = args.rust
 
     return output_by_language
 
@@ -433,6 +459,12 @@ async def generate_direct(
             "`--react-extensions` cannot be combined with `--mobile`. "
             "Drop `--react-extensions` to generate the mobile client."
         )
+
+    rust_validation_error = rust_options_validation_error(
+        args.rust, args.rust_module
+    )
+    if rust_validation_error is not None:
+        terminal.fail(rust_validation_error)
 
     # Wire up that reuse. When `--react` is also requested we let React
     # generation happen normally and copy its output into the mobile
@@ -659,6 +691,8 @@ async def generate_direct(
             )
 
         if not is_on_path(PROTOC_PLUGIN_BY_LANGUAGE[language]):
+            if language == 'rust':
+                terminal.fail(missing_rust_plugin_message())
             raise FileNotFoundError(
                 f"Failed to find '{PROTOC_PLUGIN_BY_LANGUAGE[language]}'. "
                 "Please report this bug to the maintainers."
@@ -689,7 +723,12 @@ async def generate_direct(
                 language]
 
     for flag_name, out in protoc_plugin_out_flags.items():
-        all_plugins_args.append([f"{flag_name}={out}"])
+        if flag_name == RUST_PLUGIN_OUT_FLAG:
+            all_plugins_args.append(
+                rust_plugin_args(out, cast(str, args.rust_module))
+            )
+        else:
+            all_plugins_args.append([f"{flag_name}={out}"])
 
     if args.react is not None or args.nodejs is not None or args.web is not None:
         if not rbt_from_nodejs:

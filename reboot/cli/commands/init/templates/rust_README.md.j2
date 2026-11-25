@@ -1,0 +1,146 @@
+# {{ name }}
+
+Experimental Rust Reboot app. The local SDK is a path dependency because
+`reboot-rust-schema` is not yet published. Requires Rust edition 2024 and a
+compatible canonical C++ `reboot/server/database` executable.
+
+SECURITY: the current raw C++ Database listens on `0.0.0.0` without
+authentication. Use only an isolated/trusted development network. The CLI
+fails closed unless you pass `--rust-allow-insecure-database`; this opt-in is
+not stored in `.rbtrc`. Only the Rust public gRPC host binds loopback.
+Do not use this mode in production or expose the sidecar to an untrusted network.
+
+```sh
+export RBT_RUST_DATABASE_BINARY=/absolute/path/to/reboot/server/database
+rbt dev run --rust-allow-insecure-database
+# Another terminal, from this project:
+cargo run --manifest-path backend/Cargo.toml --bin client -- create
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet
+cargo run --manifest-path backend/Cargo.toml --bin client -- read
+```
+
+Cargo `build.rs` compiles `api/{{ name }}/v1/hello_world.proto` and emits both
+Tonic bindings and Reboot Database adapters/external typed clients in `OUT_DIR`.
+The app mounts the generated service through `ApplicationHost`; constructor,
+writer and reader use `DatabaseActorStore`. Re-running Create on an existing
+actor is an error; use a stable idempotency key to replay one logical write:
+`client greet hello 11111111-1111-4111-8111-111111111111`.
+
+`rbt dev run --rust-allow-insecure-database` owns one Database process and one Rust host. Source/proto
+changes rebuild/restart the host while retaining the sidecar; restarting the
+command reopens `.rbt/dev/{{ name }}/rust/rocksdb`. Ctrl-C reaps owned children.
+Set `RBT_RUST_URL` on the client when overriding `--port`. Logs are in the same
+Rust state directory. `--terminate-after-health-check` performs an actual gRPC
+health RPC then stops both processes. Run `rbt dev run --rust-allow-insecure-database --terminate-after-health-check` for a CLI startup smoke test.
+
+This is direct local gRPC, not Envoy/HTTP/React, cloud deployment, multi-server
+placement, cross-actor transactions, workflows or reactive-reader parity.
+Distributed placement is deliberately absent: all local actors use one shard.
+Python dev runtime switches are rejected, not silently ignored. Rust state is
+compatible with `rbt dev expunge --application-name={{ name }}`.
+
+## Independent reactive readers for multiple actors
+
+The ordinary greeting service can host an explicitly configured allowlist of
+reactive actors. Use the generated typed client to obtain canonical references:
+
+```sh
+ALPHA=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref alpha)
+BETA=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref beta)
+export RBT_RUST_REACTIVE_ACTORS="$ALPHA,$BETA"
+rbt dev run --rust-allow-insecure-database
+# Another shell: use the same references and RBT_RUST_URL when changing the port.
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$ALPHA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$BETA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch "$ALPHA" 2
+# In another shell, greet ALPHA to deliver its next changed snapshot.
+cargo run --manifest-path backend/Cargo.toml --bin client -- greet "$ALPHA"
+```
+
+Each subscription receives an initial snapshot and changed values for its exact
+actor. Writes to BETA do not invalidate ALPHA. Owners start before readiness;
+a missing actor fails rather than constructing state. Unknown subscription
+references are denied even if ordinary RPCs may construct them. The registry
+admits at most 64 actors and 64 simultaneous subscriptions across the host;
+duplicate references, malformed configuration and an empty allowlist fail closed.
+The allowlist is read at startup; changing it requires restarting `rbt dev run`.
+
+The default scaffold without this environment variable is unchanged. This is
+local routing for independent unary readers, not cross-actor dependency tracking,
+atomic multi-actor snapshots, distributed watches or durable stream resume.
+Dropping a stream releases admission; restart requires an explicit fresh watch.
+
+### Opt-in selected-source view
+
+Set `RBT_RUST_REACTIVE_COMPOSITION=1` alongside the actor allowlist to enable
+bounded one-hop composition. Register source actors plus a selector, construct
+them through the public client, then select a source:
+
+```sh
+SELECTOR=$(cargo run --quiet --manifest-path backend/Cargo.toml --bin client -- state-ref selector)
+export RBT_RUST_REACTIVE_ACTORS="$ALPHA,$BETA,$SELECTOR"
+export RBT_RUST_REACTIVE_COMPOSITION=1
+rbt dev run --rust-allow-insecure-database
+# In another shell after startup:
+cargo run --manifest-path backend/Cargo.toml --bin client -- create "$SELECTOR"
+cargo run --manifest-path backend/Cargo.toml --bin client -- select-source "$SELECTOR" "$ALPHA"
+cargo run --manifest-path backend/Cargo.toml --bin client -- watch "$SELECTOR" 2
+# Greet ALPHA in another shell to update the selector's view.
+```
+
+The selector persists its source. `select-source "$SELECTOR" -` clears it.
+A selected-source view requires a composed reactive scope; its ordinary unary
+reader fails rather than silently returning the selector's local count. Selecting
+a source that is itself a view rejects nested composition. Unknown/unregistered,
+self and mismatched-type dependencies fail closed. Reconnect starts a fresh view
+from persisted state; it is not event replay.
+
+SDK handlers can override the generated `{reader}_with_reader_context` hook and
+call generated `{reader}_read_local` helpers. Each evaluation retains at most
+eight distinct direct dependencies, registers revisions before reading, and
+retires unused actors even when its output is unchanged. Target authorization is
+rerun with original credentials. Snapshot leases are released before composed
+callbacks, preventing cross-actor lease cycles. Read errors or canceled reads
+poison the evaluation even if application code catches them; closing or dropping
+an evaluation cancels escaped in-flight reads.
+
+This is a same-host, same-Database, non-atomic view—not a recursive DAG,
+distributed invalidation, transparent retry or durable stream-resume contract.
+
+### Ordinary composed reader RPCs
+
+With composition enabled, the ordinary generated `NumGreetings` unary RPC and
+`client read <selector-ref>` evaluate the same authorized one-hop view as watch.
+Each request takes one fresh snapshot and drops its cursor before returning;
+there is no retained subscription or background dependency producer.
+
+A configured adapter requires exact registered roots. Unknown/type-mismatched
+roots, routing/auth/dependency failures and expired deadlines reject; they never
+retry through the ordinary local getter. Without registry attachment, legacy
+ordinary reader behavior is unchanged. Include every desired unary root in the
+explicit allowlist. The scaffold explicitly permits its existing raw `hello`
+actor as an authorized legacy unary root; it does not reinterpret `hello` as
+a canonical actor reference or automatically create/register an actor.
+
+For custom apps, finalize authorization on the baseline adapter, register its
+`local_readers` clones, enable registry composition, then attach a completed
+registry clone with `adapter.with_reader_registry(registry.clone())?` before
+serving; install the original registry on `ApplicationHost` as well. Attachment
+checks the exact Database endpoint and opaque generated handler/policy version.
+For deliberately retained non-composed roots, an explicit bounded exact list
+can be configured using `with_legacy_unary_roots`; registered roots cannot be
+shadowed by that list. Default custom adapter attachment is strict.
+Changing adapter authorization detaches an old registry and rotates its identity;
+re-register/re-attach the updated adapter rather than serving stale policies.
+Transaction/workflow root composition remains unsupported.
+
+Unary evaluations share the host-wide 64-slot stream/evaluation admission pool.
+The inbound gRPC timeout is parsed once and enforced as an absolute deadline over
+admission, authenticated snapshot Load, dependencies and result decoding. Drop or
+deadline cancellation releases permits and seals escaped reader contexts. Root
+extensions are retained; only existing trusted provenance and explicit target
+scope are delegated to leaf readers. A terminal evaluated `Unavailable` retains
+its status code and an SDK marker so generated reader clients do not reinterpret
+it as a disconnected transport and automatically start a new evaluation. Mutation/transaction metadata cannot grant
+composed reader authority. Separate actor Loads are not an atomic multi-actor
+snapshot. Remote invalidation, nested DAGs and durable resume remain unavailable.

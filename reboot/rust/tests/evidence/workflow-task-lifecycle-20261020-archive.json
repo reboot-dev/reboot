@@ -1,0 +1,7 @@
+{
+  "archive": "/home/benchbuild/.cache/workflow-task-lifecycle-20261020-raw.tar.gz",
+  "archive_sha256": "b7113dfb898067e4cf24a060e0b87d76172ab1c658e0cc74ff35b1249a00e326",
+  "archive_bytes": 4705129,
+  "retained_files": 5342,
+  "qualification_sha256": "e36ecb94dc658b6417c8f93a3990504034d197772354126cca67f6ca603a121b"
+}

@@ -1,0 +1,392 @@
+{
+  "scope": "Bounded pure SAME-EOF owned provisional task validation under unchanged graph refusals, plus native fixture compilation. No provisional checkpoint/adoption authority.",
+  "verification": {
+    "passed": true,
+    "failure": null,
+    "all_child_joins_verified": true,
+    "cleanup_failure": null,
+    "original_task_lock_acquirable": true,
+    "cid": "0a093252fef7edb19883b83aa83c07b6901396b0b64e2c29bd4c6fc49103046f",
+    "fresh_terminal": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-15T22:45:05.321078198Z",
+      "FinishedAt": "2026-10-15T22:47:56.331254685Z"
+    },
+    "config_sha256": "81836f91875526f456e2a965de5f5909c96041c637053bb91542eaebae587283",
+    "accepted_retired_sha256": "aa0fba6216c3f868b4f040e65194fb733d2799ef0fec385d007e283c6182cfe3",
+    "source_manifest_sha256": "a69a7e118573df03f3ad6ab3edea06688c462590c506c8ce3adf862df9d811f2",
+    "source_count": 3286,
+    "worker_sha256": "471445bc93513b14a887ebc16f7237f144a77df9565198857037cf6ba9c46fb6",
+    "full_native_acceptance": false
+  },
+  "attach_kernel_wait": {
+    "pid": 1758037,
+    "birth": "92443015",
+    "si_code": 1,
+    "si_status": 0,
+    "exit": 0,
+    "joined": true
+  },
+  "result": {
+    "passed": true,
+    "failure": null,
+    "rows": [
+      {
+        "name": "sdk-test",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/sdk-test.log",
+        "sha256": "0c5cf1ebb199e545516e4b331ee2a2394261e2f8bbdcabfaed94ffb6860f1802"
+      },
+      {
+        "name": "sdk-clippy",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/sdk-clippy.log",
+        "sha256": "611995dfc1008d58c633805855210479de82034955b9b0c6e7628efb5c3b0999"
+      },
+      {
+        "name": "membership-test",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/membership-test.log",
+        "sha256": "b53c63e7ee1601e734865de6a441607e2935fb49bc429eff780ed44186f7fed8"
+      },
+      {
+        "name": "membership-clippy",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/membership-clippy.log",
+        "sha256": "ea34021a50fffec68e88af6864d51b5086b60974fe1ac10f1cea47832d1e3a02"
+      },
+      {
+        "name": "legacy-build",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/legacy-build.log",
+        "sha256": "7d7c0bc1237c30db25050467a2408815cddca9491beb0c66c19bbe8b5e31bdc8"
+      },
+      {
+        "name": "legacy-clippy",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/legacy-clippy.log",
+        "sha256": "772c9dce3371526656e0dcc516a3e241af815b0b9279ec023c5eb3d905a13c8b"
+      },
+      {
+        "name": "constructor-fixture-compile",
+        "exit": 0,
+        "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/constructor-fixture-compile.log",
+        "sha256": "f605809d40b51f1a816e33f174f622a9ac7051552b29e0db3c07cc8d2d4ad0a6"
+      }
+    ],
+    "custody": {
+      "direct": [
+        {
+          "pid": 7,
+          "birth": "92443316",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "test",
+            "--lib",
+            "--features",
+            "test-support",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/Cargo.toml",
+            "--",
+            "--test-threads=1"
+          ],
+          "fd_identity": [
+            6,
+            1765633
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/sdk-test.log"
+        },
+        {
+          "pid": 908,
+          "birth": "92450469",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "clippy",
+            "--all-targets",
+            "--features",
+            "test-support",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/Cargo.toml",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "fd_identity": [
+            6,
+            1760287
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/sdk-clippy.log"
+        },
+        {
+          "pid": 989,
+          "birth": "92452694",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "test",
+            "--lib",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.toml"
+          ],
+          "fd_identity": [
+            6,
+            1766421
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/membership-test.log"
+        },
+        {
+          "pid": 1120,
+          "birth": "92455051",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "clippy",
+            "--all-targets",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.toml",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "fd_identity": [
+            6,
+            1766505
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/membership-clippy.log"
+        },
+        {
+          "pid": 1152,
+          "birth": "92456274",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "build",
+            "--bins",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/reboot_examples/hello-legacy-grpc/backend/Cargo.toml"
+          ],
+          "fd_identity": [
+            6,
+            1760421
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/legacy-build.log"
+        },
+        {
+          "pid": 1272,
+          "birth": "92458028",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "clippy",
+            "--all-targets",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/reboot_examples/hello-legacy-grpc/backend/Cargo.toml",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "fd_identity": [
+            6,
+            1760630
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/legacy-clippy.log"
+        },
+        {
+          "pid": 1316,
+          "birth": "92459030",
+          "exit": 0,
+          "spawn_returned": true,
+          "joined": true,
+          "command": [
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+            "test",
+            "--manifest-path",
+            "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/registered_constructor_child_native/Cargo.toml",
+            "--locked",
+            "--offline",
+            "--no-run",
+            "--message-format=json"
+          ],
+          "fd_identity": [
+            6,
+            1760685
+          ],
+          "log": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/runtime/constructor-fixture-compile.log"
+        }
+      ],
+      "adopted": [],
+      "cleanup_failure": null
+    },
+    "features": {
+      "sdk-test": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "test",
+          "--lib",
+          "--features",
+          "test-support",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/Cargo.toml",
+          "--",
+          "--test-threads=1"
+        ],
+        "exit": 0
+      },
+      "sdk-clippy": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "clippy",
+          "--all-targets",
+          "--features",
+          "test-support",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/Cargo.toml",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "membership-test": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "test",
+          "--lib",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.toml"
+        ],
+        "exit": 0
+      },
+      "membership-clippy": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "clippy",
+          "--all-targets",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/mixed_constructor_original/Cargo.toml",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "legacy-build": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "build",
+          "--bins",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/reboot_examples/hello-legacy-grpc/backend/Cargo.toml"
+        ],
+        "exit": 0
+      },
+      "legacy-clippy": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "clippy",
+          "--all-targets",
+          "--locked",
+          "--offline",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/reboot_examples/hello-legacy-grpc/backend/Cargo.toml",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "constructor_fixture_compile": {
+        "passed": true,
+        "command": [
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/toolchain/bin/cargo",
+          "test",
+          "--manifest-path",
+          "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rustMergedBank658-20261015/source/reboot/rust/tests/fixtures/registered_constructor_child_native/Cargo.toml",
+          "--locked",
+          "--offline",
+          "--no-run",
+          "--message-format=json"
+        ],
+        "binary": "/home/ladin/.cache/hermes-reboot-parity/ctor-196-4aac091058a0/rust198/target/debug/deps/registered_constructor_child_native_fixture-4bac65195e06084a",
+        "sha256": "0db19184c24174cb361fd7211b63a1fa2de9f6643b8da941fc477e6e0bfe2e7a",
+        "native_execution": false
+      },
+      "examples_revision": "5c332a2910122d6035799bfaf2a314bf1de830b8"
+    },
+    "native_acceptance": false,
+    "scope": "actual current SDK library baseline, not Bank feature or native/public acceptance"
+  },
+  "test_summaries": {
+    "sdk-test": [
+      "test result: ok. 741 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 22.00s"
+    ],
+    "membership-test": [
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+    ]
+  },
+  "provisional_tests": [
+    "test one_shot_tasks::provisional_snapshot652_tests::aggregate_bound_applies_across_pages ... ok",
+    "test one_shot_tasks::provisional_snapshot652_tests::canonical_failure_precedes_checkpoint_hold_and_all_mutations_stay_closed ... ok",
+    "test one_shot_tasks::provisional_snapshot652_tests::duplicate_across_transactions_or_committed_snapshot_is_rejected ... ok",
+    "test one_shot_tasks::provisional_snapshot652_tests::original_validator_rejects_wrong_actor_iteration_and_terminal ... ok",
+    "test one_shot_tasks::provisional_snapshot652_tests::valid_provisional_tasks_never_become_committed_or_activate ... ok"
+  ],
+  "current_sdk_inputs_match_before_ledger_edit": 313,
+  "source_review": "SOURCE654 PASS bounded pure helper; native/provisional graph adoption remains HOLD",
+  "limits": [
+    "Aggregate limits cover owned records/tasks/mutations, not arbitrary recovery bytes.",
+    "Collision checks cover visible committed Pending and provisional IDs, not completed identity absence.",
+    "All nonempty owned provisional idempotent mutations/checkpoints fail closed.",
+    "Coordinated graph guard still refuses all provisional tasks and mutations."
+  ]
+}
