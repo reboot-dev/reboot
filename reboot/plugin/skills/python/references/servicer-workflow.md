@@ -191,7 +191,7 @@ Classify before you write the call.
 | `await Service.ref().write(context, fn)` — inline state mutation on this workflow's actor                                                                                       | **Reboot-internal**    | `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` |
 | `await agent.run(context, prompt)` — Reboot `Agent` (LLM)                                                                                                                       | **Reboot-internal** \* | none — the `Agent` memoizes the model call for you             |
 | `await client.get(url)`, `await stripe.PaymentIntent.create(...)`, `await twilio.messages.create(...)`, `await s3.put_object(...)` — anything that talks to a non-Reboot system | **External**           | `at_least_once(...)` (default), or `at_most_once(...)`         |
-| `await until(...)`, `await until_changes(...)` — block the workflow until a callable derived from Reboot state goes truthy / changes                                            | **Reactive wait**      | `until(...)` / `until_changes(...)` (their own primitives)     |
+| `await until(...)`, `await until_changes(...)` — block the workflow until a callable derived from Reboot state stops returning `False` / changes                                  | **Reactive wait**      | `until(...)` / `until_changes(...)` (their own primitives)     |
 
 \* The `Agent` itself is durable Reboot code — it wraps the underlying
 HTTP call in `at_least_once` for you (see `agent-pydantic-ai.md`). At
@@ -1086,10 +1086,12 @@ not a polling loop; there's no interval to tune. The callable runs
 when there's a chance the answer might have changed — which the
 runtime can only infer from Reboot-state reads.
 
-### `until` — Wait for a Condition to Become Truthy
+### `until` — Wait Until the Callable Stops Returning `False`
 
 `until(alias, context, callable)` reactively re-runs `callable` until
-it returns a truthy value, then memoizes that value and resolves.
+it returns anything other than `False`, then memoizes that value and
+resolves. Only `False` keeps it waiting: `None`, `""`, `0` and `[]`
+resolve it at once.
 Use it whenever a workflow needs to wait for a Reboot-state
 condition: an approval to land in the actor's state, a stdlib value
 to flip, state to reach a particular shape.
@@ -1126,19 +1128,23 @@ async def control_loop(cls, context: WorkflowContext, request):
     # Execution resumes here only after `is_approved()` returns True.
 ```
 
-**`until` returns the truthy value.** If `callable` returns a value
+**`until` returns the value.** If `callable` returns something
 other than `True` (e.g. a settled `Order` object), `until` returns
-that value. The conventional shape is
-`Callable[[], Awaitable[bool]]`, but anything truthy works:
+that value. Return `False` while waiting, never `None` or another
+falsy value, and annotate the callable `bool | T`:
 
 ```python
-async def get_settled() -> Optional[Order.GetResponse]:
+async def get_settled() -> bool | Order.GetResponse:
     response = await Order.ref(request.order_id).get(context)
-    return response if response.settled else None  # None is falsy
+    return response if response.settled else False  # only False waits
 
 settled_order = await until("Settlement", context, get_settled)
 # settled_order is the populated response, not just True.
 ```
+
+For a value that is falsy until it's set, `return value or False`
+(e.g. `return state.queue_id or False` for an id that is `""` until
+assigned).
 
 `until` resolves once and memoizes; subsequent replays see the
 memoized value without re-running the callable. To wait again on a
@@ -1174,7 +1180,7 @@ class WorkerServicer(Worker.Servicer):
                 return True  # the writer's return value resolves `until`.
             return False
 
-        # `until` re-runs the writer reactively until it returns truthy;
+        # `until` re-runs the writer reactively until it returns True;
         # the actor guarantees no other caller claims the slot first.
         await until(
             "Claim slot",
@@ -1186,7 +1192,7 @@ class WorkerServicer(Worker.Servicer):
 This works because an inline `write(context, fn)` callback may return
 a value and `.write(...)` propagates it (see
 [Mutating this actor's state](#mutating-this-actors-state)) — so the
-truthy return both performs the claim and satisfies the wait. To
+`True` return both performs the claim and satisfies the wait. To
 claim atomically on **another** actor, declare a `Writer` method on
 it that does the check-and-mutate and returns the decision, and have
 `until` wait on that method's return value instead.
