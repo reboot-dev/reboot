@@ -890,6 +890,36 @@ plain form without an explicit scope defaults to `PER_ITERATION`
 when called inside a `context.loop` (see
 [Scope semantics and defaults](#scope-semantics-and-defaults)).
 
+**Effect validation runs the callable twice in development.** Under
+`rbt dev run` and the test harness, `at_least_once` invokes `callable`
+twice before anything commits and memoizes the **second** result.
+This is on purpose: in production a crash can land after the external
+call and before its result is memoized, and the callable then runs
+again. The dev-mode second run rehearses that crash, so a callable
+that can't survive it (a charge whose idempotency key is minted
+inside the callable) can't survive production either; and a test
+stand-in must answer from its input, never pop answers off a list.
+For a call that is only expensive, or
+deliberately non-deterministic, to repeat (a paid search API), opt
+that one call out, never the whole app:
+
+```python
+from reboot.aio.workflows import EffectValidation, at_least_once
+
+results = await at_least_once(
+    "Search the web",
+    context,
+    search,
+    effect_validation=EffectValidation.DISABLED,
+)
+```
+
+An opted-out call is no longer checked for surviving a crash, so a bug
+of that kind in it reaches production. `at_most_once` and `until`
+callables are not re-run. A re-run logs `Re-running block with
+idempotency alias '<alias>' to validate effects` at INFO (once per
+alias every few minutes under `EffectValidation.QUIET`).
+
 ### `at_most_once` — Non-Retryable External Calls, and STOP to Ask
 
 > **Critical:** `at_most_once` is **only** for external (non-Reboot)
