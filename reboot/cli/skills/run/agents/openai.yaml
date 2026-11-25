@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Reboot App"
+  short_description: "Run an existing Reboot app locally (backend, frontend, inspector)"
+  default_prompt: "Use Run Reboot App to bring an existing Reboot app up locally."

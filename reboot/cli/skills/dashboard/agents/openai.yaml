@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reboot Dashboard"
+  short_description: "Start the Reboot developer dashboard and open it in the browser"
+  default_prompt: "Use Reboot Dashboard to start the developer dashboard for this project."
