@@ -1975,19 +1975,41 @@ class GreeterInstance {
                             });
                             orphans = [];
                         }
+                        // A response may be due to more than one mutation, e.g.,
+                        // because the mutations happened faster than responses
+                        // were sent to us, so we need to observe every mutation
+                        // we are expecting that this response includes. Mutations
+                        // happen in the order that we made them, so those are
+                        // always the first ones that we are expecting.
+                        let observeds = [];
+                        for (const expected of expecteds) {
+                            if (!queryResponse.idempotencyKeys.includes(expected.idempotencyKey)) {
+                                break;
+                            }
+                            observeds = observeds.concat(expected);
+                        }
                         // We want to check the orphans list AND the expecteds list because
                         // it could be possible that we receive a query response that
                         // contains an idempotency key that we are expecting while having an
                         // orphans list with a length greater than 0. In this case, we don't
                         // want to skip checking the expecteds list just because we have
                         // already checked the orphans list.
-                        if (expecteds.length > 0 &&
-                            queryResponse.idempotencyKeys.includes(expecteds[0].idempotencyKey)) {
-                            await expecteds[0].observed(() => {
+                        if (observeds.length > 0) {
+                            // We are no longer expecting these, which we need to
+                            // record before we wait below so that nothing else
+                            // tries to observe or abort them as well.
+                            expecteds = expecteds.slice(observeds.length);
+                            // Just like for `orphans` above, we mark all mutations
+                            // as observed except the last one which we also invoke
+                            // all `setResponse`s, because the response is the
+                            // result of all of them.
+                            for (let i = 0; i < observeds.length - 1; i++) {
+                                observeds[i].observed(() => { });
+                            }
+                            await observeds[observeds.length - 1].observed(() => {
                                 if (response !== undefined) {
                                     reader.setResponse(response);
                                 }
-                                expecteds.shift();
                             });
                         }
                         // If we don't have any orphans to observe and we don't have any expecteds to observe,
