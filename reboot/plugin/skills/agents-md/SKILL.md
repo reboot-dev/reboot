@@ -26,8 +26,7 @@ If it exists, add only the sections it lacks; never rewrite what the
 user wrote. Otherwise fill this template from the project's real files
 (`.rbtrc`, `pyproject.toml` and the tree): each path as it is
 (`api/hotel/v1/hotel.py`), `<project>` the `.rbtrc`'s
-`--application-name`, the Reboot version from the `reboot` pin, no
-line for what the project doesn't have (no frontend; the `.env` row
+`--application-name`, no line for what the project doesn't have (no frontend; the `.env` row
 only when the file itself exists, not because `.rbtrc` names one), no
 placeholder left. It is written for any coding agent, with the Reboot
 plugin or without it, so every command is spelled out.
@@ -36,10 +35,11 @@ plugin or without it, so every command is spelled out.
 # <App name>
 
 <What the app does and who uses it, in a sentence.> A Reboot
-application, on Reboot <version>: durable state types whose APIs are
-Pydantic models in `api/` (not `.proto` files), with <a web app | an
-MCP App | both> in front. Reboot's docs: https://docs.reboot.dev; with
-the Reboot plugin installed, its skills know Reboot best.
+application, on the Reboot version `pyproject.toml` pins: durable
+state types whose APIs are Pydantic models in `api/` (not `.proto`
+files), with <a web app | an MCP App | both> in front. Reboot's docs:
+https://docs.reboot.dev; with the Reboot plugin installed, its skills
+know Reboot best.
 
 ## Setup, on a fresh clone
 
